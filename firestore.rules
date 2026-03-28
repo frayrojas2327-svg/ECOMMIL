@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (required, immutable)
+    //   - displayName: string (optional)
+    //   - role: string (required, enum: ['admin', 'client'])
+    //
+    // Collection: orders
+    // Document ID: {orderId}
+    // Fields:
+    //   - id: string (required, immutable)
+    //   - uid: string (required, immutable, owner)
+    //   - date: string (required, ISO 8601)
+    //   - product: string (required)
+    //   - cost: number (required, positive)
+    //   - price: number (required, positive)
+    //   - shippingCharged: number (optional)
+    //   - shippingReal: number (optional)
+    //   - adsCost: number (optional)
+    //   - platformFee: number (optional)
+    //   - status: string (required, enum: ['Confirmado', 'En tránsito', 'Devuelto', 'Cancelado', 'Pendiente'])
+    //   - provider: string (optional)
+    //   - country: string (optional)
+    //   - cancellationReason: string (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "milnerdelacruz03@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['admin', 'client'] &&
+             (data.displayName == null || (data.displayName is string && data.displayName.size() < 100));
+    }
+
+    function isValidOrder(data) {
+      return hasRequiredFields(['id', 'uid', 'date', 'product', 'cost', 'price', 'status']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.uid is string && data.uid.size() > 0 &&
+             isValidDateString(data.date) &&
+             data.product is string && data.product.size() > 0 && data.product.size() < 200 &&
+             data.cost is number && data.cost >= 0 &&
+             data.price is number && data.price >= 0 &&
+             data.status in ['Confirmado', 'En tránsito', 'Devuelto', 'Cancelado', 'Pendiente'] &&
+             (data.shippingCharged == null || data.shippingCharged is number) &&
+             (data.shippingReal == null || data.shippingReal is number) &&
+             (data.adsCost == null || data.adsCost is number) &&
+             (data.platformFee == null || data.platformFee is number) &&
+             (data.provider == null || data.provider is string) &&
+             (data.country == null || data.country is string) &&
+             (data.cancellationReason == null || data.cancellationReason is string);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                      (isOwner(userId) && request.resource.data.role == 'client' || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                      ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+    }
+
+    match /orders/{orderId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidOrder(request.resource.data) && 
+                      (request.resource.data.uid == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && isValidOrder(request.resource.data) && 
+                      ((isDocOwner() && request.resource.data.uid == resource.data.uid) || isAdmin());
+      allow delete: if isDocOwner() || isAdmin();
+    }
+  }
+}

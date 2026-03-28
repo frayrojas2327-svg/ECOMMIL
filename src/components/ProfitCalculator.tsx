@@ -1,0 +1,1128 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  Calculator as CalcIcon, 
+  RefreshCw, 
+  AlertTriangle, 
+  CheckCircle2, 
+  TrendingUp, 
+  DollarSign, 
+  Save, 
+  Trash2, 
+  ExternalLink,
+  Tag,
+  Link as LinkIcon,
+  FileText,
+  Hash,
+  Layout,
+  Table as TableIcon,
+  Download,
+  Upload,
+  CheckSquare,
+  Square
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
+import { CURRENCIES, CurrencyCode } from '../mockData';
+
+interface SavedProduct {
+  id: string;
+  productId: string;
+  name: string;
+  url: string;
+  notes: string;
+  currency: CurrencyCode;
+  inputs: {
+    price: number;
+    cost: number;
+    shippingCharged: number;
+    shippingReal: number;
+    adsCost: number;
+    platformFee: number;
+    confirmationRate: number;
+    cancellationRate: number;
+    returnRate: number;
+  };
+  results: {
+    netProfit: number;
+    margin: number;
+    roi: number;
+    breakEven: number;
+    status: string;
+  };
+  timestamp: number;
+}
+
+interface ProfitCalculatorProps {
+  formatCurrency: (amount: number) => string;
+  currencySymbol: string;
+}
+
+const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: globalFormat, currencySymbol: globalSymbol }) => {
+  const [viewMode, setViewMode] = useState<'form' | 'excel'>('form');
+  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyCode>('USD');
+  const [highlightedProductId, setHighlightedProductId] = useState<string | null>(null);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [showConfirm, setShowConfirm] = useState<{ type: 'deleteSelected' | 'deleteAll' | 'deleteOne', count?: number, id?: string } | null>(null);
+  const [inputs, setInputs] = useState({
+    name: '',
+    productId: '',
+    url: '',
+    notes: '',
+    price: '99.99',
+    cost: '35.00',
+    shippingCharged: '0',
+    shippingReal: '12.50',
+    adsCost: '15.00',
+    platformFee: '3',
+    confirmationRate: '90',
+    cancellationRate: '5',
+    returnRate: '8',
+  });
+
+  const [savedProducts, setSavedProducts] = useState<SavedProduct[]>(() => {
+    const saved = localStorage.getItem('ecommil_saved_products');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_saved_products', JSON.stringify(savedProducts));
+  }, [savedProducts]);
+
+  const currencyInfo = CURRENCIES[selectedCurrency];
+
+  const formatLocalCurrency = (amount: number, currency: CurrencyCode = selectedCurrency) => {
+    return new Intl.NumberFormat('es-ES', {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  const calculateResults = (
+    price: number, 
+    cost: number, 
+    shippingCharged: number, 
+    shippingReal: number, 
+    adsCost: number, 
+    platformFee: number,
+    confirmationRate: number = 90,
+    cancellationRate: number = 5,
+    returnRate: number = 8
+  ) => {
+    // Pro Calculation Model (Based on 100 potential orders/leads)
+    const baseOrders = 100;
+    const confirmedOrders = baseOrders * (confirmationRate / 100);
+    const shippedOrders = confirmedOrders * (1 - cancellationRate / 100);
+    const deliveredOrders = shippedOrders * (1 - returnRate / 100);
+    const returnedOrders = shippedOrders * (returnRate / 100);
+
+    const totalRevenue = deliveredOrders * (price + shippingCharged);
+    const totalProductCost = shippedOrders * cost;
+    const totalShippingCost = shippedOrders * shippingReal;
+    const totalReturnCost = returnedOrders * shippingReal; 
+    const totalAdsCost = baseOrders * adsCost;
+    const totalPlatformFee = deliveredOrders * price * (platformFee / 100);
+
+    const totalNetProfit = totalRevenue - totalProductCost - totalShippingCost - totalReturnCost - totalAdsCost - totalPlatformFee;
+    
+    const netProfit = totalNetProfit / baseOrders;
+    const margin = totalRevenue > 0 ? (totalNetProfit / totalRevenue) * 100 : 0;
+    const totalInvestment = totalAdsCost + totalProductCost + totalShippingCost + totalReturnCost;
+    const roi = totalInvestment > 0 ? (totalNetProfit / totalInvestment) * 100 : 0;
+    
+    const breakEven = (1 - (platformFee / 100)) !== 0 
+      ? (cost + shippingReal + adsCost - shippingCharged) / (1 - (platformFee / 100))
+      : 0;
+
+    let status: 'profitable' | 'limit' | 'loss' = 'profitable';
+    if (netProfit < 0) status = 'loss';
+    else if (margin < 15) status = 'limit';
+
+    return { netProfit, margin, roi, breakEven, status };
+  };
+
+  const results = useMemo(() => {
+    return calculateResults(
+      parseFloat(inputs.price) || 0,
+      parseFloat(inputs.cost) || 0,
+      parseFloat(inputs.shippingCharged) || 0,
+      parseFloat(inputs.shippingReal) || 0,
+      parseFloat(inputs.adsCost) || 0,
+      parseFloat(inputs.platformFee) || 0,
+      parseFloat(inputs.confirmationRate) || 0,
+      parseFloat(inputs.cancellationRate) || 0,
+      parseFloat(inputs.returnRate) || 0
+    );
+  }, [inputs]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setInputs(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSave = () => {
+    const numericInputs = {
+      price: parseFloat(inputs.price) || 0,
+      cost: parseFloat(inputs.cost) || 0,
+      shippingCharged: parseFloat(inputs.shippingCharged) || 0,
+      shippingReal: parseFloat(inputs.shippingReal) || 0,
+      adsCost: parseFloat(inputs.adsCost) || 0,
+      platformFee: parseFloat(inputs.platformFee) || 0,
+      confirmationRate: parseFloat(inputs.confirmationRate) || 0,
+      cancellationRate: parseFloat(inputs.cancellationRate) || 0,
+      returnRate: parseFloat(inputs.returnRate) || 0,
+    };
+
+    const newProduct: SavedProduct = {
+      id: Math.random().toString(36).substr(2, 9),
+      productId: inputs.productId || 'N/A',
+      name: inputs.name || 'Producto sin nombre',
+      url: inputs.url,
+      notes: inputs.notes,
+      currency: selectedCurrency,
+      inputs: numericInputs,
+      results: { ...results },
+      timestamp: Date.now(),
+    };
+    setSavedProducts([newProduct, ...savedProducts]);
+    // Reset basic info but keep numbers for next simulation if desired
+    setInputs(prev => ({ ...prev, name: '', productId: '', url: '', notes: '' }));
+  };
+
+  const handleDelete = (id: string) => {
+    setShowConfirm({ type: 'deleteOne', id });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedProductIds.length === 0) return;
+    setShowConfirm({ type: 'deleteSelected', count: selectedProductIds.length });
+  };
+
+  const handleDeleteAll = () => {
+    if (savedProducts.length === 0) return;
+    setShowConfirm({ type: 'deleteAll' });
+  };
+
+  const confirmDelete = () => {
+    if (!showConfirm) return;
+    if (showConfirm.type === 'deleteSelected') {
+      setSavedProducts(savedProducts.filter(p => !selectedProductIds.includes(p.id)));
+      setSelectedProductIds([]);
+    } else if (showConfirm.type === 'deleteAll') {
+      setSavedProducts([]);
+      setSelectedProductIds([]);
+    } else if (showConfirm.type === 'deleteOne' && showConfirm.id) {
+      setSavedProducts(savedProducts.filter(p => p.id !== showConfirm.id));
+      setSelectedProductIds(prev => prev.filter(selectedId => selectedId !== showConfirm.id));
+    }
+    setShowConfirm(null);
+  };
+
+  const toggleSelectProduct = (id: string) => {
+    setSelectedProductIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedProductIds.length === savedProducts.length) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(savedProducts.map(p => p.id));
+    }
+  };
+
+  const exportToExcel = () => {
+    const dataToExport = savedProducts.map(p => ({
+      'ID/SKU': p.productId,
+      'Nombre': p.name,
+      'Moneda': p.currency,
+      'Precio Venta': p.inputs.price,
+      'Costo': p.inputs.cost,
+      'Flete Cobrado': p.inputs.shippingCharged,
+      'Flete Real': p.inputs.shippingReal,
+      'Costo Ads': p.inputs.adsCost,
+      'Comisión %': p.inputs.platformFee,
+      'Confirmación %': p.inputs.confirmationRate,
+      'Cancelación %': p.inputs.cancellationRate,
+      'Devolución %': p.inputs.returnRate,
+      'Ganancia Neta': p.results.netProfit,
+      'Margen %': p.results.margin,
+      'ROI %': p.results.roi,
+      'Punto Equilibrio': p.results.breakEven,
+      'Notas': p.notes,
+      'URL': p.url,
+      'Fecha': new Date(p.timestamp).toLocaleString()
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Productos");
+    XLSX.writeFile(wb, `ECOMMIL_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const importFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'array' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+      const importedProducts: SavedProduct[] = data.map(row => {
+        // Dropi mapping or generic mapping
+        const name = row['Nombre'] || row['Nombre del producto'] || row['Producto'] || row['Item'] || 'Importado';
+        const price = parseFloat(row['Precio Venta'] || row['Precio de venta'] || row['Precio'] || row['Venta'] || 0);
+        const cost = parseFloat(row['Costo'] || row['Costo del producto'] || row['Costo Unitario'] || row['Compra'] || 0);
+        const shippingCharged = parseFloat(row['Flete Cobrado'] || row['Envío cobrado'] || row['Envío Cliente'] || 0);
+        const shippingReal = parseFloat(row['Flete Real'] || row['Costo de envío'] || row['Flete'] || row['Envío Real'] || 0);
+        const adsCost = parseFloat(row['Costo Ads'] || row['Publicidad'] || row['CPA'] || 0);
+        const platformFee = parseFloat(row['Comisión %'] || row['Comisión'] || row['Fee'] || 3);
+        const confirmationRate = parseFloat(row['Confirmación %'] || row['Confirmación'] || 90);
+        const cancellationRate = parseFloat(row['Cancelación %'] || row['Cancelación'] || 5);
+        const returnRate = parseFloat(row['Devolución %'] || row['Devolución'] || 8);
+        const productId = row['ID/SKU'] || row['SKU'] || row['Referencia'] || row['Código'] || 'N/A';
+        const notes = row['Notas'] || row['Descripción'] || row['Comentario'] || '';
+        const url = row['URL'] || row['Link'] || '';
+        const currency = (row['Moneda'] || selectedCurrency) as CurrencyCode;
+
+        // Calculate results for imported row using the new pro model
+        const results = calculateResults(price, cost, shippingCharged, shippingReal, adsCost, platformFee, confirmationRate, cancellationRate, returnRate);
+
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          productId,
+          name,
+          url,
+          notes,
+          currency,
+          inputs: { price, cost, shippingCharged, shippingReal, adsCost, platformFee, confirmationRate, cancellationRate, returnRate },
+          results,
+          timestamp: Date.now()
+        };
+      });
+
+      setSavedProducts(prev => [...importedProducts, ...prev]);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = ''; // Reset input
+  };
+
+  const loadProduct = (product: SavedProduct) => {
+    setSelectedCurrency(product.currency);
+    setInputs({
+      name: product.name,
+      productId: product.productId,
+      url: product.url,
+      notes: product.notes,
+      price: product.inputs.price.toString(),
+      cost: product.inputs.cost.toString(),
+      shippingCharged: product.inputs.shippingCharged.toString(),
+      shippingReal: product.inputs.shippingReal.toString(),
+      adsCost: product.inputs.adsCost.toString(),
+      platformFee: product.inputs.platformFee.toString(),
+      confirmationRate: product.inputs.confirmationRate.toString(),
+      cancellationRate: product.inputs.cancellationRate.toString(),
+      returnRate: product.inputs.returnRate.toString(),
+    });
+    setViewMode('form');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const viewInExcel = (productId: string) => {
+    setViewMode('excel');
+    setHighlightedProductId(productId);
+    setTimeout(() => {
+      const element = document.getElementById(`row-${productId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+    setTimeout(() => setHighlightedProductId(null), 3000);
+  };
+
+  return (
+    <div className="max-w-full mx-auto space-y-3 px-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-display font-bold text-white">Calculadora de Rentabilidad Pro</h2>
+          <p className="text-[13px] text-slate-500">Simulación avanzada con registro de productos y análisis horizontal</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {selectedProductIds.length > 0 && (
+            <button 
+              onClick={handleDeleteSelected}
+              className="bg-red-500 text-white px-3 py-1.5 rounded-xl text-[12px] font-bold uppercase tracking-widest hover:bg-red-600 transition-all flex items-center gap-2 shadow-lg shadow-red-500/20"
+            >
+              <Trash2 size={12} />
+              Borrar ({selectedProductIds.length})
+            </button>
+          )}
+          <div className="flex items-center bg-card border border-border rounded-xl p-1">
+            <button 
+              onClick={() => setViewMode('form')}
+              className={`p-1.5 rounded-lg transition-all flex items-center gap-2 text-[13px] font-bold uppercase tracking-widest ${viewMode === 'form' ? 'bg-neon text-background' : 'text-slate-500 hover:text-white'}`}
+            >
+              <Layout size={14} />
+              <span className="hidden sm:inline">Formulario</span>
+            </button>
+            <button 
+              onClick={() => setViewMode('excel')}
+              className={`p-1.5 rounded-lg transition-all flex items-center gap-2 text-[13px] font-bold uppercase tracking-widest ${viewMode === 'excel' ? 'bg-neon text-background' : 'text-slate-500 hover:text-white'}`}
+            >
+              <TableIcon size={14} />
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-2 py-1">
+            <DollarSign size={14} className="text-neon" />
+            <select 
+              value={selectedCurrency}
+              onChange={(e) => setSelectedCurrency(e.target.value as CurrencyCode)}
+              className="bg-transparent text-[13px] font-mono font-bold text-white focus:outline-none cursor-pointer"
+            >
+              {Object.keys(CURRENCIES).map((code) => (
+                <option key={code} value={code} className="bg-card text-white">
+                  {code} ({CURRENCIES[code as CurrencyCode].symbol})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button 
+            onClick={() => setInputs({ name: '', productId: '', url: '', notes: '', price: '', cost: '', shippingCharged: '', shippingReal: '', adsCost: '', platformFee: '', confirmationRate: '90', cancellationRate: '5', returnRate: '8' })}
+            className="p-2 text-slate-500 hover:text-neon transition-colors"
+            title="Limpiar campos"
+          >
+            <RefreshCw size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Calculator View Switcher */}
+      {viewMode === 'form' ? (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+          {/* Product Info Section */}
+          <div className="glass-card p-3 space-y-3 border-border/50">
+            <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
+              <Tag size={12} /> Información del Producto
+            </h3>
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Nombre</label>
+                  <div className="relative">
+                    <input 
+                      type="text" name="name" value={inputs.name} onChange={handleInputChange} placeholder="Ej: Smartwatch X"
+                      className="w-full bg-background border border-border rounded-lg py-1 px-3 text-white text-[15px] focus:outline-none focus:border-neon"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">ID / SKU</label>
+                  <div className="relative">
+                    <Hash size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input 
+                      type="text" name="productId" value={inputs.productId} onChange={handleInputChange} placeholder="SKU-001"
+                      className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white text-[15px] font-mono focus:outline-none focus:border-neon"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">URL del Producto</label>
+                <div className="relative">
+                  <LinkIcon size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input 
+                    type="text" name="url" value={inputs.url} onChange={handleInputChange} placeholder="https://..."
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white text-[15px] focus:outline-none focus:border-neon"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Notas</label>
+                <textarea 
+                  name="notes" value={inputs.notes} onChange={handleInputChange} placeholder="Detalles adicionales..."
+                  className="w-full bg-background border border-border rounded-lg py-1 px-3 text-white text-[15px] h-16 resize-none focus:outline-none focus:border-neon"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Operational Metrics Section */}
+          <div className="glass-card p-3 space-y-3 border-border/50">
+            <h3 className="text-[15px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
+              <RefreshCw size={14} /> Métricas de Operación
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <label className="text-[15px] uppercase tracking-widest text-slate-500 font-bold">Confirmación</label>
+                <div className="relative">
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
+                  <input 
+                    type="number" name="confirmationRate" value={inputs.confirmationRate} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[15px] uppercase tracking-widest text-slate-500 font-bold">Cancelación</label>
+                <div className="relative">
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
+                  <input 
+                    type="number" name="cancellationRate" value={inputs.cancellationRate} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-red-500"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[15px] uppercase tracking-widest text-slate-500 font-bold">Devolución</label>
+                <div className="relative">
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
+                  <input 
+                    type="number" name="returnRate" value={inputs.returnRate} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Financial Inputs Section */}
+          <div className="glass-card p-3 space-y-3 border-border/50">
+            <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
+              <DollarSign size={12} /> Parámetros Financieros
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Precio Venta</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neon font-mono text-[13px]">{currencyInfo.symbol}</span>
+                  <input 
+                    type="number" name="price" value={inputs.price} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Costo Producto</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gold font-mono text-[13px]">{currencyInfo.symbol}</span>
+                  <input 
+                    type="number" name="cost" value={inputs.cost} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Flete Cobrado</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
+                  <input 
+                    type="number" name="shippingCharged" value={inputs.shippingCharged} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Flete Real</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
+                  <input 
+                    type="number" name="shippingReal" value={inputs.shippingReal} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-red-500"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Costo Ads (CPA)</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
+                  <input 
+                    type="number" name="adsCost" value={inputs.adsCost} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Comisión (%)</label>
+                <div className="relative">
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">%</span>
+                  <input 
+                    type="number" name="platformFee" value={inputs.platformFee} onChange={handleInputChange}
+                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Results Section */}
+          <div className="glass-card p-3 flex flex-col justify-between relative overflow-hidden border-neon/20 bg-neon/5">
+            <div className={`absolute top-0 right-0 w-32 h-32 -mr-16 -mt-16 rounded-full blur-3xl opacity-20 ${
+              results.status === 'profitable' ? 'bg-neon' : results.status === 'limit' ? 'bg-gold' : 'bg-red-500'
+            }`} />
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display">Análisis</h3>
+                <div className={`flex items-center gap-2 px-2 py-0.5 rounded-full border text-[13px] font-bold uppercase tracking-widest ${
+                  results.status === 'profitable' ? 'bg-neon/10 text-neon border-neon/20' : 
+                  results.status === 'limit' ? 'bg-gold/10 text-gold border-gold/20' : 
+                  'bg-red-500/10 text-red-400 border-red-500/20'
+                }`}>
+                  {results.status === 'profitable' ? 'Rentable' : results.status === 'limit' ? 'Límite' : 'Pérdida'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">Ganancia Neta</p>
+                  <p className={`text-3xl font-mono font-bold ${results.netProfit >= 0 ? 'text-white' : 'text-red-400'}`}>
+                    {formatLocalCurrency(results.netProfit)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">Margen Neto</p>
+                  <p className={`text-3xl font-mono font-bold ${results.margin > 15 ? 'text-neon' : results.margin > 0 ? 'text-gold' : 'text-red-400'}`}>
+                    {Math.round(results.margin || 0)}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">ROI Estimado</p>
+                  <p className="text-2xl font-mono font-bold text-white">
+                    {Math.round(results.roi || 0)}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">Punto Equilibrio</p>
+                  <p className="text-2xl font-mono font-bold text-gold">
+                    {formatLocalCurrency(results.breakEven)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border/50">
+                <div className="flex items-center gap-2 text-[13px] text-slate-400 italic">
+                  <TrendingUp size={12} className="text-neon" />
+                  <span>Sugerido (20%): <span className="text-white font-mono">{formatLocalCurrency(results.breakEven * 1.25)}</span></span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button 
+                onClick={handleSave}
+                className="flex-1 bg-neon text-background font-bold py-2 rounded-xl flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-lg shadow-neon/20 text-[13px]"
+              >
+                <Save size={16} /> Guardar Producto
+              </button>
+              <button 
+                onClick={handleDeleteAll}
+                className="px-3 bg-slate-800 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all flex items-center justify-center border border-slate-700"
+                title="Borrar todos los registros"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="glass-card overflow-hidden border-border/50">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-card/50 border-b border-border">
+                  <th className="p-2 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={toggleSelectAll} 
+                        className="p-1 hover:text-neon transition-colors flex items-center gap-2" 
+                        title="Seleccionar Todo"
+                      >
+                        {selectedProductIds.length === savedProducts.length && savedProducts.length > 0 ? <CheckSquare size={16} className="text-neon" /> : <Square size={16} />}
+                        <span className="hidden sm:inline">Todo</span>
+                      </button>
+                    </div>
+                  </th>
+                  <th className="p-2 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Producto / SKU</th>
+                  <th className="p-2 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Precio Venta</th>
+                  <th className="p-2 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Costo Prod.</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Flete Cob.</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Flete Real</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Ads (CPA)</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Métricas %</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Comis. %</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-neon font-bold whitespace-nowrap">Ganancia</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-neon font-bold whitespace-nowrap">Margen</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Live Simulation Row */}
+                <tr className="border-b border-border/30 bg-neon/5 hover:bg-neon/10 transition-colors">
+                  <td className="p-1.5"></td>
+                  <td className="p-1.5 space-y-1 min-w-[180px]">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-neon animate-pulse" />
+                      <span className="text-[14px] font-bold text-neon uppercase tracking-tighter">Simulación en Vivo</span>
+                    </div>
+                    <input 
+                      type="text" name="name" value={inputs.name} onChange={handleInputChange} placeholder="Nombre"
+                      className="w-full bg-background/50 border border-border rounded-lg px-2 py-0.5 text-white text-[15px] focus:outline-none focus:border-neon"
+                    />
+                    <input 
+                      type="text" name="productId" value={inputs.productId} onChange={handleInputChange} placeholder="SKU"
+                      className="w-full bg-background/50 border border-border rounded-lg px-2 py-0.5 text-slate-400 text-[13px] font-mono focus:outline-none focus:border-neon"
+                    />
+                  </td>
+                  <td className="p-1.5 min-w-[100px]">
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neon font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="price" value={inputs.price} onChange={handleInputChange}
+                        className="w-full bg-background/50 border border-border rounded-lg py-0.5 pl-6 pr-2 text-white font-mono text-[15px] focus:outline-none"
+                      />
+                    </div>
+                  </td>
+                  <td className="p-1.5 min-w-[100px]">
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gold font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="cost" value={inputs.cost} onChange={handleInputChange}
+                        className="w-full bg-background/50 border border-border rounded-lg py-0.5 pl-6 pr-2 text-white font-mono text-[15px] focus:outline-none"
+                      />
+                    </div>
+                  </td>
+                  <td className="p-1.5 min-w-[80px]">
+                    <input 
+                      type="number" name="shippingCharged" value={inputs.shippingCharged} onChange={handleInputChange}
+                      className="w-full bg-background/50 border border-border rounded-lg py-0.5 px-2 text-white font-mono text-[15px] focus:outline-none"
+                    />
+                  </td>
+                  <td className="p-1.5 min-w-[80px]">
+                    <input 
+                      type="number" name="shippingReal" value={inputs.shippingReal} onChange={handleInputChange}
+                      className="w-full bg-background/50 border border-border rounded-lg py-0.5 px-2 text-white font-mono text-[15px] focus:outline-none"
+                    />
+                  </td>
+                  <td className="p-1.5 min-w-[80px]">
+                    <input 
+                      type="number" name="adsCost" value={inputs.adsCost} onChange={handleInputChange}
+                      className="w-full bg-background/50 border border-border rounded-lg py-0.5 px-2 text-white font-mono text-[15px] focus:outline-none"
+                    />
+                  </td>
+                  <td className="p-1.5 min-w-[140px]">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[12px] text-slate-500 uppercase font-bold">Conf</span>
+                        <div className="relative">
+                          <input type="number" name="confirmationRate" value={inputs.confirmationRate} onChange={handleInputChange} className="w-16 bg-background/50 border border-border rounded px-1 pr-4 text-[15px] text-white font-mono text-right" />
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">%</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[12px] text-slate-500 uppercase font-bold">Canc</span>
+                        <div className="relative">
+                          <input type="number" name="cancellationRate" value={inputs.cancellationRate} onChange={handleInputChange} className="w-16 bg-background/50 border border-border rounded px-1 pr-4 text-[15px] text-red-400 font-mono text-right" />
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">%</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[12px] text-slate-500 uppercase font-bold">Dev</span>
+                        <div className="relative">
+                          <input type="number" name="returnRate" value={inputs.returnRate} onChange={handleInputChange} className="w-16 bg-background/50 border border-border rounded px-1 pr-4 text-[15px] text-gold font-mono text-right" />
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-1.5 min-w-[60px]">
+                    <input 
+                      type="number" name="platformFee" value={inputs.platformFee} onChange={handleInputChange}
+                      className="w-full bg-background/50 border border-border rounded-lg py-0.5 px-2 text-white font-mono text-[15px] focus:outline-none"
+                    />
+                  </td>
+                  <td className="p-1.5">
+                    <p className={`font-mono font-bold text-[15px] ${results.netProfit >= 0 ? 'text-white' : 'text-red-400'}`}>
+                      {formatLocalCurrency(results.netProfit)}
+                    </p>
+                  </td>
+                  <td className="p-1.5">
+                    <p className={`font-mono font-bold text-[15px] ${results.margin > 15 ? 'text-neon' : 'text-gold'}`}>
+                      {Math.round(results.margin || 0)}%
+                    </p>
+                  </td>
+                  <td className="p-1.5">
+                    <button 
+                      onClick={handleSave}
+                      className="bg-neon text-background p-1 rounded-lg hover:scale-110 transition-all"
+                      title="Guardar"
+                    >
+                      <Save size={12} />
+                    </button>
+                  </td>
+                </tr>
+
+                {/* Saved Products Rows */}
+                {savedProducts.map((product) => (
+                  <tr 
+                    key={product.id} 
+                    id={`row-${product.id}`}
+                    className={`border-b border-border/30 hover:bg-white/5 transition-all duration-500 ${highlightedProductId === product.id ? 'bg-neon/20' : ''} ${selectedProductIds.includes(product.id) ? 'bg-neon/5' : ''}`}
+                  >
+                    <td className="p-2">
+                      <button onClick={() => toggleSelectProduct(product.id)} className="p-1 hover:text-neon transition-colors text-slate-500">
+                        {selectedProductIds.includes(product.id) ? <CheckSquare size={14} className="text-neon" /> : <Square size={14} />}
+                      </button>
+                    </td>
+                    <td className="p-2 min-w-[200px]">
+                      <div className="flex flex-col">
+                        <span className="text-white text-[15px] font-bold truncate max-w-[180px]">{product.name}</span>
+                        <span className="text-slate-500 text-[13px] font-mono">{product.productId}</span>
+                      </div>
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-white">
+                      {formatLocalCurrency(product.inputs.price, product.currency)}
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-white">
+                      {formatLocalCurrency(product.inputs.cost, product.currency)}
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-slate-400">
+                      {formatLocalCurrency(product.inputs.shippingCharged, product.currency)}
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-slate-400">
+                      {formatLocalCurrency(product.inputs.shippingReal, product.currency)}
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-slate-400">
+                      {formatLocalCurrency(product.inputs.shippingReal, product.currency)}
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-slate-400">
+                      {formatLocalCurrency(product.inputs.adsCost, product.currency)}
+                    </td>
+                    <td className="p-2 min-w-[120px]">
+                      <div className="flex flex-col text-[15px] font-mono">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 text-[12px] uppercase font-bold">C:</span>
+                          <span className="text-white">{product.inputs.confirmationRate}%</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 text-[12px] uppercase font-bold">X:</span>
+                          <span className="text-red-400">{product.inputs.cancellationRate}%</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 text-[12px] uppercase font-bold">D:</span>
+                          <span className="text-gold">{product.inputs.returnRate}%</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-slate-400">
+                      {product.inputs.platformFee}%
+                    </td>
+                    <td className="p-2">
+                      <p className={`font-mono font-bold text-[15px] ${product.results.netProfit >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                        {formatLocalCurrency(product.results.netProfit, product.currency)}
+                      </p>
+                    </td>
+                    <td className="p-2">
+                      <p className={`font-mono font-bold text-[15px] ${product.results.margin > 15 ? 'text-neon' : 'text-gold'}`}>
+                        {Math.round(product.results.margin || 0)}%
+                      </p>
+                    </td>
+                    <td className="p-2">
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => loadProduct(product)}
+                        className="px-2 py-1 bg-neon/10 hover:bg-neon text-neon hover:text-black border border-neon/20 rounded-lg transition-all flex items-center gap-1"
+                        title="Editar"
+                      >
+                        <CalcIcon size={14} />
+                        <span className="text-[13px] font-bold uppercase">Editar</span>
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(product.id)}
+                        className="px-2 py-1 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-lg transition-all flex items-center gap-1"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={14} />
+                        <span className="text-[13px] font-bold uppercase">Eliminar</span>
+                      </button>
+                    </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="p-2 bg-neon/5 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-4 text-[15px] text-slate-400 italic">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={16} className="text-neon" />
+                <span>Punto Equilibrio: <span className="text-white font-mono">{formatLocalCurrency(results.breakEven)}</span></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-neon" />
+                <span>ROI: <span className="text-white font-mono">{Math.round(results.roi || 0)}%</span></span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {selectedProductIds.length > 0 && (
+                <button 
+                  onClick={handleDeleteSelected}
+                  className="bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-lg text-[13px] font-bold uppercase tracking-widest text-red-400 hover:bg-red-500 hover:text-white transition-all flex items-center gap-2"
+                >
+                  <Trash2 size={12} />
+                  Borrar Seleccionados ({selectedProductIds.length})
+                </button>
+              )}
+              <button 
+                onClick={handleDeleteAll}
+                className="bg-slate-800 border border-slate-700 px-3 py-1 rounded-lg text-[13px] font-bold uppercase tracking-widest text-slate-400 hover:bg-red-500 hover:text-white transition-all flex items-center gap-2"
+              >
+                <Trash2 size={12} />
+                Borrar Todo
+              </button>
+              <div className="text-[13px] text-slate-500 font-mono ml-2">
+                {savedProducts.length} registros
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Saved Products List */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
+            <FileText className="text-neon" size={18} /> Productos Registrados
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <button 
+              onClick={handleDeleteSelected}
+              disabled={selectedProductIds.length === 0}
+              className={`px-4 py-2 rounded-xl text-[13px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl ${
+                selectedProductIds.length > 0 
+                ? 'bg-red-500 text-white hover:bg-red-600 shadow-red-500/40 scale-105' 
+                : 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
+              }`}
+            >
+              <Trash2 size={16} />
+              Eliminar Seleccionados {selectedProductIds.length > 0 && `(${selectedProductIds.length})`}
+            </button>
+            <button 
+              onClick={toggleSelectAll}
+              className={`bg-card border border-border px-3 py-2 rounded-xl text-[13px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${selectedProductIds.length === savedProducts.length && savedProducts.length > 0 ? 'text-neon border-neon/50' : 'text-slate-400 hover:text-white hover:border-neon/30'}`}
+            >
+              {selectedProductIds.length === savedProducts.length && savedProducts.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}
+              {selectedProductIds.length === savedProducts.length && savedProducts.length > 0 ? 'Deseleccionar' : 'Seleccionar Todo'}
+            </button>
+            <label className="cursor-pointer bg-card border border-border hover:border-neon/50 px-3 py-2 rounded-xl text-[13px] font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all flex items-center gap-2">
+              <Upload size={14} className="text-neon" />
+              Importar
+              <input type="file" accept=".xlsx, .xls" onChange={importFromExcel} className="hidden" />
+            </label>
+            <button 
+              onClick={exportToExcel}
+              className="bg-card border border-border hover:border-neon/50 px-3 py-2 rounded-xl text-[13px] font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all flex items-center gap-2"
+            >
+              <Download size={14} className="text-neon" />
+              Exportar
+            </button>
+            <button 
+              onClick={handleDeleteAll}
+              className="bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl text-[13px] font-bold uppercase tracking-widest text-slate-400 hover:bg-red-500 hover:text-white transition-all flex items-center gap-2"
+            >
+              <Trash2 size={14} />
+              Borrar Todo
+            </button>
+            <span className="text-[13px] text-slate-500 font-mono ml-2">{savedProducts.length} registros</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <AnimatePresence>
+            {savedProducts.map((product) => (
+              <motion.div
+                key={product.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className={`glass-card p-3 space-y-2 group hover:border-neon/30 transition-all relative ${selectedProductIds.includes(product.id) ? 'border-neon/50 bg-neon/5' : ''}`}
+              >
+                <button 
+                  onClick={() => toggleSelectProduct(product.id)}
+                  className="absolute top-2 left-2 p-1 text-slate-500 hover:text-neon transition-colors z-10"
+                >
+                  {selectedProductIds.includes(product.id) ? <CheckSquare size={14} className="text-neon" /> : <Square size={14} />}
+                </button>
+                <div className="flex justify-between items-start pl-8 pr-2">
+                  <div className="space-y-0.5">
+                    <h4 className="text-[15px] font-bold text-white truncate max-w-[180px]">{product.name}</h4>
+                    <p className="text-[13px] font-mono text-slate-500">{product.productId}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {product.url && (
+                      <a href={product.url} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-500 hover:text-neon hover:bg-neon/10 rounded-lg transition-all" title="Ver enlace">
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                    <button 
+                      onClick={() => handleDelete(product.id)} 
+                      className="px-2 py-1 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 rounded-lg transition-all flex items-center gap-1"
+                      title="Eliminar este pedido"
+                    >
+                      <Trash2 size={12} />
+                      <span className="text-[13px] font-bold uppercase">Eliminar</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 py-1.5 border-y border-border/50">
+                  <div className="space-y-1">
+                    <p className="text-[13px] uppercase tracking-widest text-slate-500">Métricas Op.</p>
+                    <div className="flex flex-col gap-0.5 text-[15px] font-mono">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 text-[12px] uppercase font-bold">Conf:</span>
+                        <span className="text-white">{product.inputs.confirmationRate}%</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 text-[12px] uppercase font-bold">Canc:</span>
+                        <span className="text-red-400">{product.inputs.cancellationRate}%</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 text-[12px] uppercase font-bold">Dev:</span>
+                        <span className="text-gold">{product.inputs.returnRate}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[13px] uppercase tracking-widest text-slate-500">Ganancia</p>
+                    <p className={`text-[15px] font-mono font-bold ${product.results.netProfit >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                      {formatLocalCurrency(product.results.netProfit, product.currency)}
+                    </p>
+                    <p className="text-[13px] uppercase tracking-widest text-slate-500">Margen</p>
+                    <p className={`text-[15px] font-mono font-bold ${product.results.margin > 15 ? 'text-neon' : 'text-gold'}`}>
+                      {Math.round(product.results.margin || 0)}%
+                    </p>
+                  </div>
+                </div>
+
+                {product.notes && (
+                  <p className="text-[13px] text-slate-400 line-clamp-2 italic">"{product.notes}"</p>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => viewInExcel(product.id)}
+                    className="flex-1 py-1 text-[13px] font-bold uppercase tracking-widest text-slate-500 hover:text-neon border border-border hover:border-neon/30 rounded-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <TableIcon size={10} /> Ver
+                  </button>
+                  <button 
+                    onClick={() => loadProduct(product)}
+                    className="flex-1 py-1 text-[13px] font-bold uppercase tracking-widest text-slate-500 hover:text-neon border border-border hover:border-neon/30 rounded-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <CalcIcon size={10} /> Editar
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {savedProducts.length === 0 && (
+            <div className="col-span-full py-8 flex flex-col items-center justify-center text-slate-500 border border-dashed border-border rounded-2xl">
+              <CalcIcon size={32} className="mb-2 opacity-20" />
+              <p className="text-[13px]">No hay productos guardados aún.</p>
+              <p className="text-[13px]">Realiza una simulación y haz clic en "Guardar Producto".</p>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Floating Selection Bar (Shopify Style) */}
+      <AnimatePresence>
+        {selectedProductIds.length > 0 && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-2xl"
+          >
+            <div className="bg-slate-900/90 backdrop-blur-md border border-neon/30 rounded-2xl p-4 shadow-2xl shadow-neon/20 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-neon/20 p-2 rounded-lg">
+                  <CheckSquare size={18} className="text-neon" />
+                </div>
+                <div>
+                  <p className="text-white font-bold text-sm">{selectedProductIds.length} seleccionados</p>
+                  <p className="text-slate-400 text-[13px] uppercase tracking-widest">Acciones en lote</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={toggleSelectAll}
+                  className="px-4 py-2 rounded-xl text-[13px] font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all"
+                >
+                  Deseleccionar
+                </button>
+                <button 
+                  onClick={handleDeleteSelected}
+                  className="bg-red-500 text-white px-6 py-2 rounded-xl text-[13px] font-bold uppercase tracking-widest hover:bg-red-600 transition-all flex items-center gap-2 shadow-lg shadow-red-500/20"
+                >
+                  <Trash2 size={14} />
+                  Eliminar Selección
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {showConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-card p-6 max-w-sm w-full space-y-4 border-neon/30"
+            >
+              <div className="flex items-center gap-3 text-gold">
+                <AlertTriangle size={24} />
+                <h4 className="text-lg font-display font-bold text-white">¿Confirmar Acción?</h4>
+              </div>
+              <p className="text-sm text-slate-400">
+                {showConfirm.type === 'deleteSelected' 
+                  ? `¿Estás seguro de que deseas eliminar ${showConfirm.count} productos seleccionados?`
+                  : showConfirm.type === 'deleteAll'
+                  ? '¿Estás seguro de que deseas eliminar TODOS los productos registrados? Esta acción no se puede deshacer.'
+                  : '¿Estás seguro de que deseas eliminar este producto?'}
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowConfirm(null)}
+                  className="flex-1 py-2 rounded-xl border border-border text-slate-400 hover:text-white transition-all text-[13px] font-bold uppercase tracking-widest"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 py-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-all text-[13px] font-bold uppercase tracking-widest"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default ProfitCalculator;

@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier for the user" },
+        "email": { "type": "string", "format": "email", "description": "User's email address" },
+        "displayName": { "type": "string", "description": "User's display name" },
+        "role": { "type": "string", "enum": ["admin", "client"], "description": "User's role in the system" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Logistics order data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string", "description": "Owner of the order" },
+        "date": { "type": "string", "format": "date-time" },
+        "product": { "type": "string" },
+        "cost": { "type": "number" },
+        "price": { "type": "number" },
+        "shippingCharged": { "type": "number" },
+        "shippingReal": { "type": "number" },
+        "adsCost": { "type": "number" },
+        "platformFee": { "type": "number" },
+        "status": { "type": "string", "enum": ["Confirmado", "En tránsito", "Devuelto", "Cancelado", "Pendiente"] },
+        "provider": { "type": "string" },
+        "country": { "type": "string" },
+        "cancellationReason": { "type": "string" }
+      },
+      "required": ["id", "uid", "date", "product", "cost", "price", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Global orders collection"
+    }
+  }
+}
