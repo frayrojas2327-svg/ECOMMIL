@@ -33,6 +33,20 @@ service cloud.firestore {
     //
     // ===============================================================
 
+    // Collection: ad_expenses
+    // Document ID: {expenseId}
+    // Fields:
+    //   - uid: string (required, owner)
+    //   - productId: string (optional)
+    //   - productName: string (required)
+    //   - date: string (required, YYYY-MM-DD)
+    //   - accountName: string (required)
+    //   - platform: string (required)
+    //   - amount: number (required, positive)
+    //   - timestamp: number (required)
+    //
+    // ===============================================================
+
     // ===============================================================
     // Helper Functions
     // ===============================================================
@@ -71,6 +85,10 @@ service cloud.firestore {
       return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
     }
 
+    function isValidSimpleDate(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -101,6 +119,18 @@ service cloud.firestore {
              (data.cancellationReason == null || data.cancellationReason is string);
     }
 
+    function isValidAdExpense(data) {
+      return hasRequiredFields(['uid', 'productName', 'date', 'accountName', 'platform', 'amount', 'timestamp']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.productName is string && data.productName.size() > 0 && data.productName.size() < 200 &&
+             isValidSimpleDate(data.date) &&
+             data.accountName is string && data.accountName.size() > 0 && data.accountName.size() < 200 &&
+             data.platform is string && data.platform.size() > 0 && data.platform.size() < 100 &&
+             data.amount is number && data.amount >= 0 &&
+             data.timestamp is number &&
+             (data.productId == null || (data.productId is string && data.productId.size() < 100));
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -118,6 +148,15 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidOrder(request.resource.data) && 
                       (request.resource.data.uid == request.auth.uid || isAdmin());
       allow update: if isAuthenticated() && isValidOrder(request.resource.data) && 
+                      ((isDocOwner() && request.resource.data.uid == resource.data.uid) || isAdmin());
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /ad_expenses/{expenseId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidAdExpense(request.resource.data) && 
+                      (request.resource.data.uid == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && isValidAdExpense(request.resource.data) && 
                       ((isDocOwner() && request.resource.data.uid == resource.data.uid) || isAdmin());
       allow delete: if isDocOwner() || isAdmin();
     }

@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { ArrowUpRight, ArrowDownRight, FileText, Download } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, FileText, Download, ChevronDown, ArrowUp } from 'lucide-react';
 import { Order, calculateOrderProfit } from '../mockData';
 
 interface FinancialSummaryProps {
@@ -9,6 +9,12 @@ interface FinancialSummaryProps {
 }
 
 const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurrency }) => {
+  const topRef = useRef<HTMLDivElement>(null);
+
+  const scrollToTop = () => {
+    topRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   const financialData = useMemo(() => {
     let revenue = 0;
     let cogs = 0;
@@ -52,14 +58,17 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
 
   return (
     <div className="space-y-8">
+      <div ref={topRef} />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-display font-bold text-white">Resumen Financiero Mensual</h2>
           <p className="text-sm text-slate-500">Estado de resultados (P&L) y desglose de gastos</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 border border-border rounded-xl text-slate-400 font-bold text-sm hover:text-white hover:bg-white/5 transition-all">
-          <Download size={18} /> Descargar PDF
-        </button>
+        <div className="flex items-center gap-3">
+          <button className="flex items-center gap-2 px-4 py-2 border border-border rounded-xl text-slate-400 font-bold text-sm hover:text-white hover:bg-white/5 transition-all">
+            <Download size={18} /> Descargar PDF
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -165,6 +174,14 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
           </div>
         </div>
       </div>
+
+      {/* Floating Scroll to Top Button */}
+      <button 
+        onClick={scrollToTop}
+        className="fixed bottom-8 right-8 p-3 bg-neon text-background rounded-full shadow-2xl shadow-neon/40 hover:scale-110 transition-all z-50"
+      >
+        <ArrowUp size={24} />
+      </button>
     </div>
   );
 };

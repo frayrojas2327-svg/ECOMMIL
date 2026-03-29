@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   ShoppingCart, 
@@ -16,7 +16,8 @@ import {
   LogOut,
   Globe,
   Settings as SettingsIcon,
-  Bell
+  Bell,
+  Megaphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
@@ -28,6 +29,7 @@ import ProfitCalculator from './components/ProfitCalculator';
 import ReturnsAnalysis from './components/ReturnsAnalysis';
 import ShippingAnalysis from './components/ShippingAnalysis';
 import FinancialSummary from './components/FinancialSummary';
+import AdvertisingExpenses from './components/AdvertisingExpenses';
 import LogisticsAI from './components/LogisticsAI';
 import KPIPanel from './components/KPIPanel';
 import Settings from './components/Settings';
@@ -285,6 +287,20 @@ function AppContent() {
           ))}
         </nav>
 
+        <div className="px-4 mb-2">
+          <button
+            onClick={() => setActiveTab('ads')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'ads' 
+                ? 'bg-neon/10 text-neon border border-neon/20' 
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <Megaphone size={20} className={activeTab === 'ads' ? 'text-neon' : 'group-hover:text-neon'} />
+            {!isSidebarCollapsed && <span className="font-medium">Publicidad</span>}
+          </button>
+        </div>
+
         <div className="p-4 border-t border-border">
           <div className={`relative flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
             <div className="w-8 h-8 rounded-full bg-neon/20 border border-neon/40 flex items-center justify-center text-neon font-bold text-xs">
@@ -414,8 +430,16 @@ function AppContent() {
               {activeTab === 'orders' && <OrderManagement orders={orders} formatCurrency={formatCurrency} onDeleteOrders={deleteOrders} />}
               {activeTab === 'calculator' && <ProfitCalculator formatCurrency={formatCurrency} currencySymbol={currencyInfo.symbol} />}
               {activeTab === 'returns' && <ReturnsAnalysis orders={orders} formatCurrency={formatCurrency} />}
+              {activeTab === 'ads' && <AdvertisingExpenses formatCurrency={formatCurrency} />}
               {activeTab === 'shipping' && <ShippingAnalysis orders={orders} formatCurrency={formatCurrency} />}
-              {activeTab === 'financial' && <FinancialSummary orders={orders} formatCurrency={formatCurrency} />}
+              {activeTab === 'financial' && (
+                <div className="space-y-6">
+                  <FinancialSummary 
+                    orders={orders} 
+                    formatCurrency={formatCurrency} 
+                  />
+                </div>
+              )}
               {activeTab === 'settings' && (
                 <Settings 
                   onResetData={resetData} 

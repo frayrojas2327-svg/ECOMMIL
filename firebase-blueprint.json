@@ -33,6 +33,23 @@
         "cancellationReason": { "type": "string" }
       },
       "required": ["id", "uid", "date", "product", "cost", "price", "status"]
+    },
+    "AdExpense": {
+      "title": "AdExpense",
+      "description": "Advertising expense record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "accountName": { "type": "string" },
+        "platform": { "type": "string" },
+        "amount": { "type": "number" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["uid", "productName", "date", "platform", "amount"]
     }
   },
   "firestore": {
@@ -43,6 +60,10 @@
     "/orders/{orderId}": {
       "schema": "Order",
       "description": "Global orders collection"
+    },
+    "/ad_expenses/{expenseId}": {
+      "schema": "AdExpense",
+      "description": "Advertising expenses collection"
     }
   }
 }
