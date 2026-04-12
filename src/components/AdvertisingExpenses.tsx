@@ -56,7 +56,7 @@ const PLATFORMS = [
   'Otro'
 ];
 
-const COLORS = ['#00ff88', '#00ccff', '#ffcc00', '#ff00ff', '#ff4444', '#9966ff', '#ff8800', '#44ff44'];
+const COLORS = ['#22c55e', '#38bdf8', '#fbbf24', '#f472b6', '#f87171', '#a78bfa', '#fb923c', '#4ade80'];
 
 export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency: (amount: number) => string }) {
   const { user } = useAuth();
@@ -78,7 +78,7 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
   // Load saved products from localStorage (from ProfitCalculator)
   useEffect(() => {
     const loadProducts = () => {
-      const saved = localStorage.getItem('ecommil_saved_products');
+      const saved = localStorage.getItem('budgettrack_saved_products');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -216,46 +216,47 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-neon/20 border-t-neon rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
-            <Megaphone className="text-neon" /> Gastos de Publicidad
+            <Megaphone className="text-primary" /> Gastos de Publicidad
           </h2>
-          <p className="text-slate-500 text-sm">Control aislado de inversión publicitaria por producto y plataforma</p>
+          <p className="text-slate-500 text-[15px]">Control aislado de inversión publicitaria por producto y plataforma</p>
         </div>
         <button 
           onClick={() => setShowAddForm(true)}
-          className="bg-neon text-background font-bold px-4 py-2 rounded-xl flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-neon/20"
+          className="bg-primary text-background font-bold px-4 py-2 rounded-xl flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20 text-[15px]"
         >
           <Plus size={18} /> Registrar Gasto
         </button>
       </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass-card p-6 border-neon/50 bg-card/30 backdrop-blur-md">
+        <div className="fintech-card p-6 border-primary/30">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-display uppercase tracking-[0.2em] text-slate-400 font-bold">Inversión Total</span>
-            <div className="p-2 bg-neon/20 rounded-lg">
-              <DollarSign size={18} className="text-neon" />
+            <span className="text-[13px] font-display uppercase tracking-widest text-slate-400 font-bold">Inversión Total</span>
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <DollarSign size={18} className="text-primary" />
             </div>
           </div>
-          <p className="text-4xl font-mono font-bold text-white tracking-tighter">
+          <p className="text-3xl font-mono font-bold text-white tracking-tighter">
             {formatCurrency(stats.total)}
           </p>
         </div>
         
-        <div className="glass-card p-6 border-gold/50 bg-card/30 backdrop-blur-md">
+        <div className="fintech-card p-6 border-secondary/30">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-display uppercase tracking-[0.2em] text-slate-400 font-bold">Gastos por Plataforma</span>
-            <div className="p-2 bg-gold/20 rounded-lg">
-              <Target size={18} className="text-gold" />
+            <span className="text-[13px] font-display uppercase tracking-widest text-slate-400 font-bold">Por Plataforma</span>
+            <div className="p-2 bg-secondary/10 rounded-lg">
+              <Target size={18} className="text-secondary" />
             </div>
           </div>
           {stats.platformData.length > 0 ? (
@@ -264,25 +265,25 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
                 <div key={plat.name} className="flex items-center justify-between group">
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                    <p className="text-sm font-bold text-white truncate max-w-[120px]">{plat.name}</p>
+                    <p className="text-[15px] font-bold text-white truncate max-w-[120px]">{plat.name}</p>
                   </div>
-                  <p className="text-sm font-mono text-gold font-bold">{formatCurrency(plat.value)}</p>
+                  <p className="text-[15px] font-mono text-secondary font-bold">{formatCurrency(plat.value)}</p>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-slate-500 italic">Sin datos</p>
+            <p className="text-slate-500 italic text-[15px]">Sin datos</p>
           )}
         </div>
 
-        <div className="glass-card p-6 border-blue-500/50 bg-card/30 backdrop-blur-md">
+        <div className="fintech-card p-6 border-gold/30">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-display uppercase tracking-[0.2em] text-slate-400 font-bold">Registros</span>
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Layers size={18} className="text-blue-400" />
+            <span className="text-[13px] font-display uppercase tracking-widest text-slate-400 font-bold">Registros</span>
+            <div className="p-2 bg-gold/10 rounded-lg">
+              <Layers size={18} className="text-gold" />
             </div>
           </div>
-          <p className="text-4xl font-mono font-bold text-white tracking-tighter">
+          <p className="text-3xl font-mono font-bold text-white tracking-tighter">
             {expenses.length}
           </p>
         </div>
@@ -295,38 +296,38 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="glass-card p-6 border-neon/30 bg-card/60 relative overflow-hidden"
+            className="fintech-card p-8 border-primary/30 relative overflow-hidden"
           >
-            <div className="absolute top-0 left-0 w-1 h-full bg-neon" />
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
-                <Plus className="text-neon" size={20} /> Nuevo Registro de Gasto
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-xl font-display font-bold text-white flex items-center gap-3">
+                <Plus className="text-primary" size={24} /> Nuevo Registro de Gasto
               </h3>
               <button 
                 onClick={() => setShowAddForm(false)}
-                className="text-slate-500 hover:text-white transition-colors"
+                className="text-slate-500 hover:text-white transition-colors text-[15px] font-bold uppercase tracking-widest"
               >
                 Cancelar
               </button>
             </div>
 
-            <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Fecha</label>
+            <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Fecha</label>
                 <div className="relative">
-                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                   <input 
                     type="date"
                     required
                     value={formData.date}
                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full bg-background/50 border border-border/50 rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:border-neon/50 outline-none transition-all"
+                    className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-[15px] text-white focus:border-primary outline-none transition-all"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Producto</label>
+              <div className="space-y-2">
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Producto</label>
                 <select 
                   value={formData.productId}
                   onChange={(e) => {
@@ -337,7 +338,7 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
                       productName: prod ? prod.name : ''
                     });
                   }}
-                  className="w-full bg-background/50 border border-border/50 rounded-lg py-2 px-3 text-sm text-white focus:border-neon/50 outline-none transition-all"
+                  className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
                 >
                   <option value="" className="bg-slate-900">Seleccionar Producto...</option>
                   {savedProducts.map(p => (
@@ -348,25 +349,25 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
               </div>
 
               {formData.productId === 'manual' && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Nombre del Producto</label>
+                <div className="space-y-2">
+                  <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Nombre del Producto</label>
                   <input 
                     type="text"
                     required
                     placeholder="Ej: Producto Especial"
                     value={formData.productName}
                     onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
-                    className="w-full bg-background/50 border border-border/50 rounded-lg py-2 px-3 text-sm text-white focus:border-neon/50 outline-none transition-all"
+                    className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
                   />
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Plataforma</label>
+              <div className="space-y-2">
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Plataforma</label>
                 <select 
                   value={formData.platform}
                   onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                  className="w-full bg-background/50 border border-border/50 rounded-lg py-2 px-3 text-sm text-white focus:border-neon/50 outline-none transition-all"
+                  className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
                 >
                   {PLATFORMS.map(p => (
                     <option key={p} value={p} className="bg-slate-900">{p}</option>
@@ -375,35 +376,35 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
               </div>
 
               {formData.platform === 'Otro' && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Nombre de Plataforma</label>
+                <div className="space-y-2">
+                  <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Nombre de Plataforma</label>
                   <input 
                     type="text"
                     required
                     placeholder="Ej: Twitter Ads"
                     value={formData.customPlatform}
                     onChange={(e) => setFormData({ ...formData, customPlatform: e.target.value })}
-                    className="w-full bg-background/50 border border-border/50 rounded-lg py-2 px-3 text-sm text-white focus:border-neon/50 outline-none transition-all"
+                    className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
                   />
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Cuenta Publicitaria</label>
+              <div className="space-y-2">
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Cuenta Publicitaria</label>
                 <input 
                   type="text"
                   required
                   placeholder="Ej: Cuenta Principal"
                   value={formData.accountName}
                   onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
-                  className="w-full bg-background/50 border border-border/50 rounded-lg py-2 px-3 text-sm text-white focus:border-neon/50 outline-none transition-all"
+                  className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Monto Invertido</label>
+              <div className="space-y-2">
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Monto Invertido</label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                   <input 
                     type="number"
                     step="0.01"
@@ -411,7 +412,7 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
                     placeholder="0.00"
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full bg-background/50 border border-border/50 rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:border-neon/50 outline-none transition-all font-mono"
+                    className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-[15px] text-white focus:border-primary outline-none transition-all font-mono"
                   />
                 </div>
               </div>
@@ -419,7 +420,7 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
               <div className="flex items-end">
                 <button 
                   type="submit"
-                  className="w-full bg-neon text-background font-bold py-2 rounded-lg hover:brightness-110 transition-all shadow-lg shadow-neon/20"
+                  className="w-full bg-primary text-background font-bold py-3 rounded-xl hover:brightness-110 transition-all shadow-lg shadow-primary/20 text-[15px] uppercase tracking-widest"
                 >
                   Guardar Gasto
                 </button>
@@ -429,53 +430,53 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
         )}
       </AnimatePresence>
 
-      {/* Expenses Table - MOVED ABOVE CHARTS */}
-      <div className="glass-card overflow-hidden border-border/50 bg-card/30 backdrop-blur-md">
-        <div className="p-4 border-b border-border/50 flex items-center justify-between bg-white/5">
-          <h3 className="text-sm font-display font-bold text-white uppercase tracking-wider">Historial de Gastos</h3>
-          <span className="text-[10px] text-slate-500 font-mono italic">Últimos registros primero</span>
+      {/* Expenses Table */}
+      <div className="fintech-card overflow-hidden">
+        <div className="p-4 border-b border-border flex items-center justify-between bg-white/5">
+          <h3 className="text-[13px] font-display font-bold text-white uppercase tracking-widest">Historial de Gastos</h3>
+          <span className="text-[13px] text-slate-500 font-mono italic">Últimos registros primero</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-card/80 border-b border-border">
-                <th className="p-4 text-xs uppercase tracking-widest text-slate-400 font-bold">Fecha</th>
-                <th className="p-4 text-xs uppercase tracking-widest text-slate-400 font-bold">Producto</th>
-                <th className="p-4 text-xs uppercase tracking-widest text-slate-400 font-bold">Plataforma</th>
-                <th className="p-4 text-xs uppercase tracking-widest text-slate-400 font-bold">Cuenta</th>
-                <th className="p-4 text-xs uppercase tracking-widest text-slate-400 font-bold text-right">Monto</th>
-                <th className="p-4 text-xs uppercase tracking-widest text-slate-400 font-bold text-center">Acción</th>
+              <tr className="bg-background/50 text-[13px] uppercase tracking-widest text-slate-500 font-display">
+                <th className="p-4 font-bold border-b border-border">Fecha</th>
+                <th className="p-4 font-bold border-b border-border">Producto</th>
+                <th className="p-4 font-bold border-b border-border">Plataforma</th>
+                <th className="p-4 font-bold border-b border-border">Cuenta</th>
+                <th className="p-4 font-bold border-b border-border text-right">Monto</th>
+                <th className="p-4 font-bold border-b border-border text-center">Acción</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="text-[15px] font-mono">
               {expenses.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500 italic">
+                  <td colSpan={6} className="p-12 text-center text-slate-500 italic">
                     No hay gastos registrados aún.
                   </td>
                 </tr>
               ) : (
                 expenses.map((expense) => (
-                  <tr key={expense.id} className="border-b border-border/30 hover:bg-white/10 transition-colors group">
-                    <td className="p-4 text-sm text-white font-mono font-medium">
+                  <tr key={expense.id} className="border-b border-border/30 hover:bg-white/5 transition-colors group">
+                    <td className="p-4 text-white font-medium">
                       {format(new Date(expense.date), 'dd MMM, yyyy', { locale: es })}
                     </td>
                     <td className="p-4">
                       <div className="flex flex-col">
-                        <span className="text-sm font-bold text-white">{expense.productName}</span>
-                        <span className="text-[10px] text-slate-500 font-mono uppercase">ID: {expense.productId || 'N/A'}</span>
+                        <span className="font-bold text-white">{expense.productName}</span>
+                        <span className="text-[13px] text-slate-500 uppercase tracking-widest">ID: {expense.productId || 'N/A'}</span>
                       </div>
                     </td>
                     <td className="p-4">
-                      <span className="px-2 py-1 rounded-full bg-white/10 border border-border/50 text-[10px] font-bold uppercase tracking-widest text-slate-200">
+                      <span className="px-2 py-1 rounded-lg bg-white/5 border border-border text-[13px] font-bold uppercase tracking-widest text-slate-300">
                         {expense.platform}
                       </span>
                     </td>
-                    <td className="p-4 text-sm text-slate-300 font-medium">
+                    <td className="p-4 text-slate-300">
                       {expense.accountName}
                     </td>
                     <td className="p-4 text-right">
-                      <span className="text-sm font-mono font-bold text-neon">
+                      <span className="font-bold text-primary">
                         {formatCurrency(expense.amount)}
                       </span>
                     </td>
@@ -484,7 +485,7 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
                         onClick={() => handleDeleteExpense(expense.id)}
                         className="p-2 text-slate-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={16} />
                       </button>
                     </td>
                   </tr>
@@ -495,12 +496,12 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
         </div>
       </div>
 
-      {/* Charts Section - MOVED BELOW TABLE */}
+      {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Daily Spending Chart */}
-        <div className="glass-card p-6 border-border/50 bg-card/20">
-          <div className="flex items-center gap-2 mb-6">
-            <Activity size={18} className="text-neon" />
+        <div className="fintech-card p-6 border-primary/20">
+          <div className="flex items-center gap-2 mb-8">
+            <Activity size={20} className="text-primary" />
             <h3 className="text-lg font-display font-bold text-white">Inversión Diaria (14D)</h3>
           </div>
           <div className="h-[250px] w-full">
@@ -508,39 +509,41 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
               <AreaChart data={stats.dailyData}>
                 <defs>
                   <linearGradient id="colorAd" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00ff88" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#00ff88" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f1f2e" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                 <XAxis 
                   dataKey="date" 
-                  stroke="#94a3b8" 
-                  fontSize={10} 
+                  stroke="#64748b" 
+                  fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
+                  dy={10}
                 />
                 <YAxis 
-                  stroke="#94a3b8" 
-                  fontSize={10} 
+                  stroke="#64748b" 
+                  fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
                   tickFormatter={(value) => `$${value}`}
+                  dx={-10}
                 />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#12121a', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                  itemStyle={{ color: '#00ff88', fontSize: '12px' }}
-                  labelStyle={{ color: '#94a3b8', fontSize: '10px' }}
-                  cursor={{ stroke: '#00ff88', strokeWidth: 1, strokeDasharray: '3 3' }}
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px' }}
+                  itemStyle={{ color: '#22c55e', fontSize: '15px', fontWeight: 'bold' }}
+                  labelStyle={{ color: '#94a3b8', fontSize: '13px', marginBottom: '4px' }}
+                  cursor={{ stroke: '#22c55e', strokeWidth: 1, strokeDasharray: '3 3' }}
                 />
                 <Area 
                   type="monotone" 
                   dataKey="amount" 
-                  stroke="#00ff88" 
+                  stroke="#22c55e" 
                   fillOpacity={1} 
                   fill="url(#colorAd)" 
-                  strokeWidth={2}
-                  activeDot={{ r: 6, fill: '#00ff88', stroke: '#12121a', strokeWidth: 2 }}
+                  strokeWidth={3}
+                  activeDot={{ r: 6, fill: '#22c55e', stroke: '#000000', strokeWidth: 2 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -548,32 +551,32 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
         </div>
 
         {/* Platform Distribution Chart */}
-        <div className="glass-card p-6 border-border/50 bg-card/20">
-          <div className="flex items-center gap-2 mb-6">
-            <PieChartIcon size={18} className="text-blue-400" />
-            <h3 className="text-lg font-display font-bold text-white">Inversión por Plataforma</h3>
+        <div className="fintech-card p-6 border-secondary/20">
+          <div className="flex items-center gap-2 mb-8">
+            <PieChartIcon size={20} className="text-secondary" />
+            <h3 className="text-lg font-display font-bold text-white">Por Plataforma</h3>
           </div>
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.platformData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f1f2e" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" horizontal={false} />
                 <XAxis type="number" hide />
                 <YAxis 
                   dataKey="name" 
                   type="category" 
                   stroke="#cbd5e1" 
-                  fontSize={10} 
+                  fontSize={13} 
                   width={100}
                   axisLine={false}
                   tickLine={false}
                 />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#12121a', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                  itemStyle={{ color: '#fff', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px' }}
+                  itemStyle={{ color: '#fff', fontSize: '15px', fontWeight: 'bold' }}
                   formatter={(value: number) => formatCurrency(value)}
                   cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                 />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20} activeBar={false}>
+                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={24} activeBar={false}>
                   {stats.platformData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
@@ -584,36 +587,38 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
         </div>
 
         {/* Account Analysis Chart */}
-        <div className="glass-card p-6 border-border/50 lg:col-span-2 bg-card/20">
-          <div className="flex items-center gap-2 mb-6">
-            <BarChart3 size={18} className="text-gold" />
-            <h3 className="text-lg font-display font-bold text-white">Análisis por Cuenta Publicitaria</h3>
+        <div className="fintech-card p-6 border-gold/20 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-8">
+            <BarChart3 size={20} className="text-gold" />
+            <h3 className="text-lg font-display font-bold text-white">Análisis por Cuenta</h3>
           </div>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.accountData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f1f2e" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
                 <XAxis 
                   dataKey="name" 
-                  stroke="#94a3b8" 
-                  fontSize={10} 
+                  stroke="#64748b" 
+                  fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
+                  dy={10}
                 />
                 <YAxis 
-                  stroke="#94a3b8" 
-                  fontSize={10} 
+                  stroke="#64748b" 
+                  fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
                   tickFormatter={(value) => `$${value}`}
+                  dx={-10}
                 />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#12121a', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                  itemStyle={{ color: '#ffcc00', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px' }}
+                  itemStyle={{ color: '#fbbf24', fontSize: '15px', fontWeight: 'bold' }}
                   formatter={(value: number) => formatCurrency(value)}
                   cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                 />
-                <Bar dataKey="value" fill="#ffcc00" radius={[4, 4, 0, 0]} barSize={40} activeBar={false}>
+                <Bar dataKey="value" fill="#fbbf24" radius={[8, 8, 0, 0]} barSize={48} activeBar={false}>
                   {stats.accountData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} fillOpacity={0.8} />
                   ))}

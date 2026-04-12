@@ -62,10 +62,10 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-display font-bold text-white">Resumen Financiero Mensual</h2>
-          <p className="text-sm text-slate-500">Estado de resultados (P&L) y desglose de gastos</p>
+          <p className="text-base text-slate-500">Estado de resultados (P&L) y desglose de gastos</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 border border-border rounded-xl text-slate-400 font-bold text-sm hover:text-white hover:bg-white/5 transition-all">
+          <button className="flex items-center gap-2 px-4 py-2 border border-border rounded-xl text-slate-400 font-bold text-base hover:text-white hover:bg-white/5 transition-all">
             <Download size={18} /> Descargar PDF
           </button>
         </div>
@@ -75,55 +75,55 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
         {/* P&L Table */}
         <div className="lg:col-span-2 glass-card overflow-hidden">
           <div className="p-6 border-b border-border bg-white/5 flex items-center justify-between">
-            <h3 className="text-sm font-display font-bold text-white flex items-center gap-2">
+            <h3 className="text-base font-display font-bold text-white flex items-center gap-2">
               <FileText size={16} className="text-neon" /> Profit & Loss Statement
             </h3>
-            <span className="text-[10px] text-slate-500 font-mono">MARZO 2026</span>
+            <span className="text-[15px] text-slate-500 font-mono">MARZO 2026</span>
           </div>
           
           <div className="p-6 space-y-4">
             <div className="flex justify-between items-center py-2 border-b border-border/50">
-              <span className="text-sm text-slate-300">Ingresos Totales</span>
-              <span className="text-sm font-mono font-bold text-white">{formatCurrency(financialData.revenue)}</span>
+              <span className="text-base text-slate-300">Ingresos Totales</span>
+              <span className="text-base font-mono font-bold text-white">{formatCurrency(financialData.revenue)}</span>
             </div>
             <div className="flex justify-between items-center py-2 border-b border-border/50">
-              <span className="text-sm text-slate-400">(-) Costo de Mercadería (COGS)</span>
-              <span className="text-sm font-mono text-red-400">({formatCurrency(financialData.cogs)})</span>
+              <span className="text-base text-slate-400">(-) Costo de Mercadería (COGS)</span>
+              <span className="text-base font-mono text-red-400">({formatCurrency(financialData.cogs)})</span>
             </div>
             <div className="flex justify-between items-center py-3 bg-neon/5 px-4 rounded-lg">
-              <span className="text-sm font-bold text-neon">Utilidad Bruta</span>
-              <span className="text-sm font-mono font-bold text-neon">{formatCurrency(financialData.grossProfit)}</span>
+              <span className="text-base font-bold text-neon">Utilidad Bruta</span>
+              <span className="text-base font-mono font-bold text-neon">{formatCurrency(financialData.grossProfit)}</span>
             </div>
             
             <div className="space-y-2 pt-4">
               <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-slate-400">(-) Gastos de Envío</span>
-                <span className="text-sm font-mono text-slate-300">{formatCurrency(financialData.shipping)}</span>
+                <span className="text-base text-slate-400">(-) Gastos de Envío</span>
+                <span className="text-base font-mono text-slate-300">{formatCurrency(financialData.shipping)}</span>
               </div>
               <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-slate-400">(-) Marketing & Ads</span>
-                <span className="text-sm font-mono text-slate-300">{formatCurrency(financialData.ads)}</span>
+                <span className="text-base text-slate-400">(-) Marketing & Ads</span>
+                <span className="text-base font-mono text-slate-300">{formatCurrency(financialData.ads)}</span>
               </div>
               <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-slate-400">(-) Comisiones de Plataforma</span>
-                <span className="text-sm font-mono text-slate-300">{formatCurrency(financialData.fees)}</span>
+                <span className="text-base text-slate-400">(-) Comisiones de Plataforma</span>
+                <span className="text-base font-mono text-slate-300">{formatCurrency(financialData.fees)}</span>
               </div>
               <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-slate-400">(-) Logística de Devoluciones</span>
-                <span className="text-sm font-mono text-slate-300">{formatCurrency(financialData.returnsLoss)}</span>
+                <span className="text-base text-slate-400">(-) Logística de Devoluciones</span>
+                <span className="text-base font-mono text-slate-300">{formatCurrency(financialData.returnsLoss)}</span>
               </div>
             </div>
 
             <div className="mt-6 p-6 bg-card border border-neon/30 rounded-xl flex justify-between items-center neon-glow">
               <div>
-                <p className="text-[10px] uppercase tracking-widest text-neon font-bold mb-1">Ganancia Neta Final</p>
+                <p className="text-[15px] uppercase tracking-widest text-neon font-bold mb-1">Ganancia Neta Final</p>
                 <p className="text-3xl font-mono font-bold text-white">{formatCurrency(financialData.ebitda)}</p>
               </div>
               <div className="text-right">
-                <div className="flex items-center gap-1 text-neon text-xs font-bold mb-1">
+                <div className="flex items-center gap-1 text-neon text-base font-bold mb-1">
                   <ArrowUpRight size={14} /> 14.2%
                 </div>
-                <p className="text-[10px] text-slate-500 uppercase">vs mes anterior</p>
+                <p className="text-[15px] text-slate-500 uppercase">vs mes anterior</p>
               </div>
             </div>
           </div>
@@ -141,7 +141,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
                   dataKey="name" 
                   type="category" 
                   stroke="#475569" 
-                  fontSize={10} 
+                  fontSize={15} 
                   tickLine={false} 
                   axisLine={false}
                   width={80}
@@ -149,7 +149,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
                 <Tooltip 
                   cursor={{ fill: 'transparent' }}
                   contentStyle={{ backgroundColor: '#12121a', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                  itemStyle={{ fontSize: '12px', fontFamily: 'DM Mono' }}
+                  itemStyle={{ fontSize: '15px', fontFamily: 'DM Mono' }}
                   formatter={(value: number) => formatCurrency(Math.abs(value))}
                 />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
@@ -164,8 +164,8 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
           <div className="mt-8 space-y-4">
             <div className="p-4 bg-background rounded-xl border border-border">
               <div className="flex justify-between items-center mb-1">
-                <span className="text-[10px] uppercase text-slate-500">Break-even Point</span>
-                <span className="text-xs font-mono text-white">{formatCurrency(financialData.revenue * 0.65)}</span>
+                <span className="text-[15px] uppercase text-slate-500">Break-even Point</span>
+                <span className="text-base font-mono text-white">{formatCurrency(financialData.revenue * 0.65)}</span>
               </div>
               <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
                 <div className="h-full bg-gold w-[65%]" />

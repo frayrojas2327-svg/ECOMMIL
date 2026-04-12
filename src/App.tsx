@@ -17,12 +17,16 @@ import {
   Globe,
   Settings as SettingsIcon,
   Bell,
-  Megaphone
+  Megaphone,
+  Search,
+  CreditCard,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { generateMockData, CURRENCIES, CurrencyCode, Order, calculateOrderProfit } from './mockData';
+import { fetchExchangeRates } from './services/currencyService';
 import Dashboard from './components/Dashboard';
 import OrderManagement from './components/OrderManagement';
 import ProfitCalculator from './components/ProfitCalculator';
@@ -30,17 +34,86 @@ import ReturnsAnalysis from './components/ReturnsAnalysis';
 import ShippingAnalysis from './components/ShippingAnalysis';
 import FinancialSummary from './components/FinancialSummary';
 import AdvertisingExpenses from './components/AdvertisingExpenses';
+import MarketResearch from './components/MarketResearch';
 import LogisticsAI from './components/LogisticsAI';
+import PlatformExpenses from './components/PlatformExpenses';
 import KPIPanel from './components/KPIPanel';
 import Settings from './components/Settings';
 import { AuthProvider, AuthScreen, useAuth } from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
 
+const Logo = ({ size = 32, className = "" }: { size?: number, className?: string }) => (
+  <div className={`relative flex items-center justify-center shrink-0 ${className}`} style={{ width: size, height: size }}>
+    <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_0_12px_rgba(34,197,94,0.6)]">
+      {/* Magnifying Glass Handle */}
+      <rect x="68" y="68" width="22" height="8" rx="4" transform="rotate(45 68 68)" fill="#475569" />
+      {/* Magnifying Glass Circle */}
+      <circle cx="45" cy="45" r="38" fill="none" stroke="#22C55E" strokeWidth="7" />
+      {/* Bars */}
+      <rect x="25" y="55" width="10" height="15" rx="2" fill="#22C55E" />
+      <rect x="40" y="40" width="10" height="30" rx="2" fill="#00FF88" />
+      <rect x="55" y="25" width="10" height="45" rx="2" fill="#22C55E" />
+      {/* Arrow */}
+      <path d="M20 70 L85 15 M85 15 L70 15 M85 15 L85 30" stroke="#00FF88" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  </div>
+);
+
+const GlowingAnalysisIcon = ({ size = 20, className = "" }: { size?: number, className?: string }) => (
+  <div className={`relative flex items-center justify-center ${className}`} style={{ width: size + 10, height: size + 10 }}>
+    <div className="absolute inset-0 bg-neon/20 blur-lg rounded-full animate-pulse" />
+    <Activity size={size} className="relative text-neon drop-shadow-[0_0_10px_rgba(34,197,94,0.9)]" />
+  </div>
+);
+
 function AppContent() {
   const { user, loading: authLoading, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [currency, setCurrency] = useState<CurrencyCode>('USD');
+  const [dynamicCurrencies, setDynamicCurrencies] = useState(CURRENCIES);
+  const [currency, setCurrency] = useState<CurrencyCode>(() => {
+    const saved = localStorage.getItem('profit_os_currency');
+    return (saved as CurrencyCode) || 'USD';
+  });
+  const [isConversionActive, setIsConversionActive] = useState(() => {
+    const saved = localStorage.getItem('profit_os_conversion_active');
+    return saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('profit_os_currency', currency);
+  }, [currency]);
+
+  useEffect(() => {
+    localStorage.setItem('profit_os_conversion_active', String(isConversionActive));
+  }, [isConversionActive]);
+
+  // Fetch live rates on mount
+  useEffect(() => {
+    const updateRates = async () => {
+      const liveRates = await fetchExchangeRates();
+      if (liveRates) {
+        console.log('Live rates fetched:', liveRates);
+        setDynamicCurrencies(prev => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach(code => {
+            if (liveRates[code]) {
+              updated[code as CurrencyCode] = {
+                ...updated[code as CurrencyCode],
+                rate: liveRates[code]
+              };
+            }
+          });
+          return updated;
+        });
+      }
+    };
+    updateRates();
+    // Refresh rates every 1 hour
+    const interval = setInterval(updateRates, 3600000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -78,6 +151,7 @@ function AppContent() {
           const newDoc = doc(collection(db, 'orders'));
           batch.set(newDoc, { 
             ...o, 
+            id: newDoc.id,
             uid: user.uid,
             date: o.date.toISOString() 
           });
@@ -107,6 +181,25 @@ function AppContent() {
     }
   };
 
+  const addOrders = async (newOrders: Omit<Order, 'id' | 'uid'>[]) => {
+    if (!user) return;
+    try {
+      const batch = writeBatch(db);
+      newOrders.forEach(o => {
+        const newDoc = doc(collection(db, 'orders'));
+        batch.set(newDoc, { 
+          ...o, 
+          id: newDoc.id,
+          uid: user.uid,
+          date: o.date.toISOString() 
+        });
+      });
+      await batch.commit();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'orders');
+    }
+  };
+
   const resetData = async () => {
     if (!user) return;
     try {
@@ -124,6 +217,7 @@ function AppContent() {
         const newDoc = doc(collection(db, 'orders'));
         seedBatch.set(newDoc, { 
           ...o, 
+          id: newDoc.id,
           uid: user.uid,
           date: o.date.toISOString() 
         });
@@ -160,14 +254,11 @@ function AppContent() {
     window.location.reload(); // Reload to apply changes
   };
 
-  const currencyInfo = CURRENCIES[currency];
+  const currencyInfo = dynamicCurrencies[currency];
 
   const formatCurrency = (amount: number) => {
-    const info = CURRENCIES[currency];
-    const converted = amount * info.rate;
-    
-    // For currencies like CLP, COP, ARS we want 0 decimals
-    // For USD, EUR, PEN we might want 2 decimals if it's small, but the user request said "minimumFractionDigits: 0"
+    const info = dynamicCurrencies[currency];
+    const converted = isConversionActive ? amount * info.rate : amount;
     
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
@@ -211,7 +302,7 @@ function AppContent() {
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'kpis', label: 'KPIs Pro', icon: BarChart3 },
+    { id: 'kpis', label: 'Análisis Pro', icon: Activity, isGlowing: true },
     { id: 'logistics-ai', label: 'Asesor IA', icon: Bot },
     { id: 'orders', label: 'Pedidos', icon: ShoppingCart },
     { id: 'calculator', label: 'Calculadora', icon: Calculator },
@@ -249,25 +340,37 @@ function AppContent() {
         animate={{ width: isSidebarCollapsed ? 80 : 260 }}
         className="border-r border-border bg-card flex flex-col z-20"
       >
-        <div className="p-6 flex items-center justify-between">
-          {!isSidebarCollapsed && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-center gap-2"
-            >
-              <Globe className="text-neon" size={24} />
-              <h1 className="text-2xl font-display font-bold text-white tracking-tighter">
-                ECOMM<span className="text-neon">IL</span>
-              </h1>
-            </motion.div>
+        <div className="p-6 flex flex-col items-center gap-4">
+          {isSidebarCollapsed ? (
+            <>
+              <Logo size={32} />
+              <button 
+                onClick={() => setIsSidebarCollapsed(false)}
+                className="p-1.5 rounded-lg bg-background border border-border text-slate-400 hover:text-neon transition-colors"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </>
+          ) : (
+            <div className="flex items-center justify-between w-full">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-center gap-3"
+              >
+                <Logo size={32} />
+                <h1 className="text-2xl font-display font-bold text-white tracking-tighter">
+                  ECOMM<span className="text-neon">IL</span>
+                </h1>
+              </motion.div>
+              <button 
+                onClick={() => setIsSidebarCollapsed(true)}
+                className="p-1.5 rounded-lg bg-background border border-border text-slate-400 hover:text-neon transition-colors"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            </div>
           )}
-          <button 
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="p-1.5 rounded-lg bg-background border border-border text-slate-400 hover:text-neon transition-colors"
-          >
-            {isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
         </div>
 
         <nav className="flex-1 px-4 space-y-2 mt-4">
@@ -281,13 +384,31 @@ function AppContent() {
                   : 'text-slate-400 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <item.icon size={20} className={activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'} />
+              {item.isGlowing ? (
+                <div className="relative">
+                  <div className={`absolute inset-0 bg-neon/20 blur-md rounded-full transition-opacity ${activeTab === item.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+                  <item.icon size={20} className={`relative ${activeTab === item.id ? 'text-neon drop-shadow-[0_0_5px_rgba(34,197,94,0.8)]' : 'group-hover:text-neon'}`} />
+                </div>
+              ) : (
+                <item.icon size={20} className={activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'} />
+              )}
               {!isSidebarCollapsed && <span className="font-medium">{item.label}</span>}
             </button>
           ))}
         </nav>
 
-        <div className="px-4 mb-2">
+        <div className="px-4 mb-2 space-y-2">
+          <button
+            onClick={() => setActiveTab('research')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'research' 
+                ? 'bg-neon/10 text-neon border border-neon/20' 
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <Search size={20} className={activeTab === 'research' ? 'text-neon' : 'group-hover:text-neon'} />
+            {!isSidebarCollapsed && <span className="font-medium">Investigación</span>}
+          </button>
           <button
             onClick={() => setActiveTab('ads')}
             className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
@@ -299,11 +420,22 @@ function AppContent() {
             <Megaphone size={20} className={activeTab === 'ads' ? 'text-neon' : 'group-hover:text-neon'} />
             {!isSidebarCollapsed && <span className="font-medium">Publicidad</span>}
           </button>
+          <button
+            onClick={() => setActiveTab('platform-expenses')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'platform-expenses' 
+                ? 'bg-neon/10 text-neon border border-neon/20' 
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <CreditCard size={20} className={activeTab === 'platform-expenses' ? 'text-neon' : 'group-hover:text-neon'} />
+            {!isSidebarCollapsed && <span className="font-medium">Gastos Plataforma</span>}
+          </button>
         </div>
 
         <div className="p-4 border-t border-border">
           <div className={`relative flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-            <div className="w-8 h-8 rounded-full bg-neon/20 border border-neon/40 flex items-center justify-center text-neon font-bold text-xs">
+            <div className="w-9 h-9 rounded-full bg-neon/10 border border-neon/30 flex items-center justify-center text-neon font-bold text-sm shadow-[0_0_10px_rgba(34,197,94,0.1)]">
               {user?.displayName?.charAt(0) || user?.email?.charAt(0) || 'U'}
             </div>
             {!isSidebarCollapsed && (
@@ -360,8 +492,29 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 px-3 py-1 bg-card border border-border rounded-lg">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono text-slate-500 uppercase leading-none">Conversión</span>
+                {isConversionActive && currency !== 'USD' && (
+                  <span className="text-[9px] font-mono text-neon/70 leading-none mt-1">
+                    1 USD = {dynamicCurrencies[currency].rate.toFixed(2)} {currency}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setIsConversionActive(!isConversionActive)}
+                className={`w-8 h-4 rounded-full relative transition-all ${isConversionActive ? 'bg-neon' : 'bg-slate-700'}`}
+                title={isConversionActive ? "Desactivar conversión de moneda" : "Activar conversión en tiempo real"}
+              >
+                <motion.div
+                  animate={{ x: isConversionActive ? 16 : 0 }}
+                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow-sm"
+                />
+              </button>
+            </div>
+
             <div className="flex p-1 bg-card border border-border rounded-lg">
-              {(Object.keys(CURRENCIES) as CurrencyCode[]).map((code) => (
+              {(Object.keys(dynamicCurrencies) as CurrencyCode[]).map((code) => (
                 <button
                   key={code}
                   onClick={() => setCurrency(code)}
@@ -407,9 +560,12 @@ function AppContent() {
               </AnimatePresence>
             </div>
             <div className="h-8 w-px bg-border mx-2" />
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-widest text-slate-500 font-display">Net Profit 30D</p>
-              <p className="text-lg font-mono font-bold text-neon">{formatCurrency(stats.totalNetProfit)}</p>
+            <div className="flex items-center gap-3">
+              <GlowingAnalysisIcon size={24} />
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-display">Net Profit 30D</p>
+                <p className="text-lg font-mono font-bold text-neon">{formatCurrency(stats.totalNetProfit)}</p>
+              </div>
             </div>
           </div>
         </header>
@@ -427,10 +583,28 @@ function AppContent() {
               {activeTab === 'dashboard' && <Dashboard orders={orders} stats={stats} formatCurrency={formatCurrency} currencySymbol={currencyInfo.symbol} />}
               {activeTab === 'kpis' && <KPIPanel orders={orders} stats={stats} formatCurrency={formatCurrency} />}
               {activeTab === 'logistics-ai' && <LogisticsAI orders={orders} stats={stats} formatCurrency={formatCurrency} />}
-              {activeTab === 'orders' && <OrderManagement orders={orders} formatCurrency={formatCurrency} onDeleteOrders={deleteOrders} />}
-              {activeTab === 'calculator' && <ProfitCalculator formatCurrency={formatCurrency} currencySymbol={currencyInfo.symbol} />}
+              {activeTab === 'orders' && <OrderManagement orders={orders} formatCurrency={formatCurrency} onDeleteOrders={deleteOrders} onAddOrders={addOrders} />}
+              {activeTab === 'calculator' && (
+                <ProfitCalculator 
+                  formatCurrency={formatCurrency} 
+                  currencySymbol={currencyInfo.symbol} 
+                  currency={currency}
+                  setCurrency={setCurrency}
+                  isConversionActive={isConversionActive}
+                  currencies={dynamicCurrencies}
+                />
+              )}
+              {activeTab === 'research' && <MarketResearch />}
               {activeTab === 'returns' && <ReturnsAnalysis orders={orders} formatCurrency={formatCurrency} />}
               {activeTab === 'ads' && <AdvertisingExpenses formatCurrency={formatCurrency} />}
+              {activeTab === 'platform-expenses' && (
+                <PlatformExpenses 
+                  formatCurrency={formatCurrency} 
+                  currencySymbol={currencyInfo.symbol} 
+                  currency={currency}
+                  currencies={dynamicCurrencies}
+                />
+              )}
               {activeTab === 'shipping' && <ShippingAnalysis orders={orders} formatCurrency={formatCurrency} />}
               {activeTab === 'financial' && (
                 <div className="space-y-6">
@@ -444,7 +618,12 @@ function AppContent() {
                 <Settings 
                   onResetData={resetData} 
                   onClearAllData={clearAllData} 
-                  onClearAIConfig={clearAIConfig} 
+                  onClearAIConfig={clearAIConfig}
+                  currency={currency}
+                  setCurrency={setCurrency}
+                  isConversionActive={isConversionActive}
+                  setIsConversionActive={setIsConversionActive}
+                  currencies={dynamicCurrencies}
                 />
               )}
             </motion.div>

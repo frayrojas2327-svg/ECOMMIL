@@ -232,21 +232,21 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
-            <Bot className="text-neon" /> Asesor Logístico IA <span className="text-xs bg-neon/20 text-neon px-2 py-1 rounded-full uppercase tracking-widest font-mono">Pro</span>
+            <Bot className="text-neon" /> Asesor Logístico IA <span className="text-base bg-neon/20 text-neon px-2 py-1 rounded-full uppercase tracking-widest font-mono">Pro</span>
           </h2>
-          <p className="text-sm text-slate-500">Análisis experto y estrategias de optimización en tiempo real</p>
+          <p className="text-base text-slate-500">Análisis experto y estrategias de optimización en tiempo real</p>
         </div>
         <div className="flex items-center gap-3">
           <button 
             onClick={() => setIsConfigOpen(!isConfigOpen)}
-            className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-xs font-mono transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-base font-mono transition-all ${
               isConfigOpen ? 'bg-neon text-background border-neon' : 'bg-neon/10 border-neon/20 text-neon hover:bg-neon/20'
             }`}
           >
             <Settings size={14} className={isConfigOpen ? 'animate-spin-slow' : ''} />
             Configuración IA
           </button>
-          <div className="flex items-center gap-2 px-4 py-2 bg-neon/10 border border-neon/20 rounded-xl text-neon text-xs font-mono">
+          <div className="flex items-center gap-2 px-4 py-2 bg-neon/10 border border-neon/20 rounded-xl text-neon text-base font-mono">
             <Sparkles size={14} className="animate-pulse" />
             {aiConfig.provider === 'gemini' && !aiConfig.geminiKey ? 'Gemini Pro (Default)' : `${aiConfig.provider.toUpperCase()} Activo`}
           </div>
@@ -264,19 +264,19 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
             >
               <div className="flex items-center gap-2 text-neon mb-2">
                 <Shield size={16} />
-                <h3 className="text-xs uppercase tracking-widest font-bold">Seguridad & Multi-IA</h3>
+                <h3 className="text-base uppercase tracking-widest font-bold">Seguridad & Multi-IA</h3>
               </div>
               
               <div className="space-y-4">
                 {/* Provider Selector */}
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                  <label className="text-[15px] uppercase tracking-widest text-slate-500 flex items-center gap-2">
                     <Cpu size={10} /> Proveedor de IA
                   </label>
                   <div className="grid grid-cols-4 gap-1">
                     <button 
                       onClick={() => setAiConfig(prev => ({ ...prev, provider: 'gemini' }))}
-                      className={`p-2 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center gap-1 ${
+                      className={`p-2 rounded-lg border text-[15px] font-bold transition-all flex flex-col items-center gap-1 ${
                         aiConfig.provider === 'gemini' ? 'bg-neon border-neon text-background' : 'bg-background/50 border-border text-slate-400 hover:border-neon/50'
                       }`}
                     >
@@ -284,7 +284,7 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                     </button>
                     <button 
                       onClick={() => setAiConfig(prev => ({ ...prev, provider: 'openai' }))}
-                      className={`p-2 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center gap-1 ${
+                      className={`p-2 rounded-lg border text-[15px] font-bold transition-all flex flex-col items-center gap-1 ${
                         aiConfig.provider === 'openai' ? 'bg-neon border-neon text-background' : 'bg-background/50 border-border text-slate-400 hover:border-neon/50'
                       }`}
                     >
@@ -292,7 +292,7 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                     </button>
                     <button 
                       onClick={() => setAiConfig(prev => ({ ...prev, provider: 'anthropic' }))}
-                      className={`p-2 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center gap-1 ${
+                      className={`p-2 rounded-lg border text-[15px] font-bold transition-all flex flex-col items-center gap-1 ${
                         aiConfig.provider === 'anthropic' ? 'bg-neon border-neon text-background' : 'bg-background/50 border-border text-slate-400 hover:border-neon/50'
                       }`}
                     >
@@ -300,7 +300,7 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                     </button>
                     <button 
                       onClick={() => setAiConfig(prev => ({ ...prev, provider: 'deepseek' }))}
-                      className={`p-2 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center gap-1 ${
+                      className={`p-2 rounded-lg border text-[15px] font-bold transition-all flex flex-col items-center gap-1 ${
                         aiConfig.provider === 'deepseek' ? 'bg-neon border-neon text-background' : 'bg-background/50 border-border text-slate-400 hover:border-neon/50'
                       }`}
                     >
@@ -311,7 +311,7 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
 
                 {/* API Key Input based on provider */}
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                  <label className="text-[15px] uppercase tracking-widest text-slate-500 flex items-center gap-2">
                     <Key size={10} /> {aiConfig.provider.toUpperCase()} API Key
                   </label>
                   <div className="relative">
@@ -339,7 +339,7 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                         aiConfig.provider === 'anthropic' ? "sk-ant-..." :
                         "sk-..."
                       }
-                      className="w-full bg-background/50 border border-border rounded-lg py-2 pl-3 pr-10 text-xs text-white font-mono focus:outline-none focus:border-neon"
+                      className="w-full bg-background/50 border border-border rounded-lg py-2 pl-3 pr-10 text-base text-white font-mono focus:outline-none focus:border-neon"
                     />
                     <button 
                       onClick={() => setShowApiKey(!showApiKey)}
@@ -348,27 +348,27 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                       {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
-                  <p className="text-[9px] text-slate-500 leading-tight">
+                  <p className="text-[15px] text-slate-500 leading-tight">
                     Tus llaves se encriptan con AES-256 localmente.
                   </p>
                 </div>
 
                 {/* Custom Instructions */}
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                  <label className="text-[15px] uppercase tracking-widest text-slate-500 flex items-center gap-2">
                     <MessageSquare size={10} /> Instrucciones Libres
                   </label>
                   <textarea 
                     value={aiConfig.customInstruction}
                     onChange={(e) => setAiConfig(prev => ({ ...prev, customInstruction: e.target.value }))}
                     placeholder="Ej: Analiza como un experto en logística de última milla..."
-                    className="w-full bg-background/50 border border-border rounded-lg py-2 px-3 text-xs text-white h-20 resize-none focus:outline-none focus:border-neon"
+                    className="w-full bg-background/50 border border-border rounded-lg py-2 px-3 text-base text-white h-20 resize-none focus:outline-none focus:border-neon"
                   />
                 </div>
 
                 <button 
                   onClick={saveConfig}
-                  className="w-full py-2 bg-neon text-background rounded-lg font-bold text-xs flex items-center justify-center gap-2 hover:scale-[1.02] transition-all"
+                  className="w-full py-2 bg-neon text-background rounded-lg font-bold text-base flex items-center justify-center gap-2 hover:scale-[1.02] transition-all"
                 >
                   <Save size={14} />
                   Guardar y Encriptar
@@ -378,12 +378,12 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
           ) : (
             <>
               <div className="glass-card p-6 border-neon/20 bg-neon/5">
-                <h3 className="text-[10px] uppercase tracking-widest text-slate-500 mb-4 font-display">Estado de Salud</h3>
+                <h3 className="text-[15px] uppercase tracking-widest text-slate-500 mb-4 font-display">Estado de Salud</h3>
                 <div className="flex items-end gap-2 mb-2">
                   <span className={`text-4xl font-mono font-bold ${stats.healthScore > 70 ? 'text-neon' : stats.healthScore > 40 ? 'text-gold' : 'text-red-500'}`}>
                     {Math.round(stats.healthScore || 0)}
                   </span>
-                  <span className="text-slate-500 text-sm mb-1">/100</span>
+                  <span className="text-slate-500 text-base mb-1">/100</span>
                 </div>
                 <div className="w-full h-2 bg-border rounded-full overflow-hidden">
                   <motion.div 
@@ -400,33 +400,33 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                     <div className="p-2 bg-red-500/10 rounded-lg text-red-400">
                       <TrendingDown size={16} />
                     </div>
-                    <span className="text-xs text-slate-400">Devoluciones</span>
+                    <span className="text-base text-slate-400">Devoluciones</span>
                   </div>
-                  <span className="text-sm font-mono font-bold text-white">{orders.filter(o => o.status === 'Devuelto').length}</span>
+                  <span className="text-base font-mono font-bold text-white">{orders.filter(o => o.status === 'Devuelto').length}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400">
                       <AlertCircle size={16} />
                     </div>
-                    <span className="text-xs text-slate-400">Cancelaciones</span>
+                    <span className="text-base text-slate-400">Cancelaciones</span>
                   </div>
-                  <span className="text-sm font-mono font-bold text-white">{orders.filter(o => o.status === 'Cancelado').length}</span>
+                  <span className="text-base font-mono font-bold text-white">{orders.filter(o => o.status === 'Cancelado').length}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="p-2 bg-neon/10 rounded-lg text-neon">
                       <TrendingUp size={16} />
                     </div>
-                    <span className="text-xs text-slate-400">Margen Neto</span>
+                    <span className="text-base text-slate-400">Margen Neto</span>
                   </div>
-                  <span className="text-sm font-mono font-bold text-white">{(stats.margin || 0).toFixed(1)}%</span>
+                  <span className="text-base font-mono font-bold text-white">{(stats.margin || 0).toFixed(1)}%</span>
                 </div>
               </div>
 
               <div className="p-4 rounded-xl bg-gold/5 border border-gold/20">
-                <p className="text-[10px] text-gold uppercase font-bold mb-2">Tip del Asesor</p>
-                <p className="text-xs text-slate-300 leading-relaxed italic">
+                <p className="text-[15px] text-gold uppercase font-bold mb-2">Tip del Asesor</p>
+                <p className="text-base text-slate-300 leading-relaxed italic">
                   "Si tu ROI es menor al 30%, estás trabajando para la plataforma de ads, no para ti. Revisa tus costos de flete inmediatamente."
                 </p>
               </div>
@@ -454,11 +454,11 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                       : 'bg-neon text-background font-medium'
                   }`}>
                     {msg.role === 'ai' ? (
-                      <div className="markdown-body prose prose-invert prose-sm max-w-none">
+                      <div className="markdown-body prose prose-invert prose-base max-w-none">
                         <Markdown>{msg.content}</Markdown>
                       </div>
                     ) : (
-                      <p>{msg.content}</p>
+                      <p className="text-base">{msg.content}</p>
                     )}
                   </div>
                 </motion.div>
@@ -468,12 +468,12 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
               <div className="flex justify-start">
                 <div className="bg-card border border-border p-4 rounded-2xl flex items-center gap-3">
                   <Loader2 size={18} className="animate-spin text-neon" />
-                  <span className="text-xs text-slate-400 animate-pulse">Analizando métricas y generando estrategias...</span>
+                  <span className="text-base text-slate-400 animate-pulse">Analizando métricas y generando estrategias...</span>
                 </div>
               </div>
             )}
             {error && (
-              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-center gap-2">
+              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-base flex items-center gap-2">
                 <AlertCircle size={14} />
                 {error}
               </div>
@@ -488,7 +488,7 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="Pregunta al asesor sobre tus pérdidas, fletes o rentabilidad..."
-                className="flex-1 bg-card border border-border rounded-xl py-3 pl-4 pr-12 text-sm text-white focus:outline-none focus:border-neon transition-all"
+                className="flex-1 bg-card border border-border rounded-xl py-3 pl-4 pr-12 text-base text-white focus:outline-none focus:border-neon transition-all"
               />
               <button
                 onClick={handleSend}

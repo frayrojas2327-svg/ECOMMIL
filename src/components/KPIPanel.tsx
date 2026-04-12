@@ -34,13 +34,13 @@ const MetricCard = ({ title, value, subValue, trend, icon: Icon, description, co
       <div className={`p-2 rounded-lg bg-${color}/10 text-${color}`}>
         <Icon size={18} />
       </div>
-      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">{title}</span>
+      <span className="text-[15px] font-mono uppercase tracking-widest text-slate-500">{title}</span>
     </div>
 
     <div className="flex items-baseline gap-3">
       <h3 className="text-3xl font-mono font-bold text-white tracking-tighter">{value}</h3>
       {trend !== undefined && (
-        <div className={`flex items-center gap-0.5 text-[10px] font-mono ${trend >= 0 ? 'text-neon' : 'text-red-500'}`}>
+        <div className={`flex items-center gap-0.5 text-[15px] font-mono ${trend >= 0 ? 'text-neon' : 'text-red-500'}`}>
           {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
           {Math.abs(trend)}%
         </div>
@@ -48,8 +48,8 @@ const MetricCard = ({ title, value, subValue, trend, icon: Icon, description, co
     </div>
     
     <div className="mt-4 space-y-1">
-      <p className="text-xs text-slate-400 font-medium">{subValue}</p>
-      <p className="text-[10px] text-slate-600 italic leading-tight">{description}</p>
+      <p className="text-base text-slate-400 font-medium">{subValue}</p>
+      <p className="text-[15px] text-slate-600 italic leading-tight">{description}</p>
     </div>
 
     {/* Technical Grid Accent */}
@@ -78,11 +78,15 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-6">
         <div>
           <h2 className="text-3xl font-display font-bold text-white tracking-tight flex items-center gap-3">
-            <Activity className="text-neon" /> Panel de KPIs Profesionales
+            <div className="relative">
+              <div className="absolute inset-0 bg-neon/20 blur-xl rounded-full animate-pulse" />
+              <Activity className="relative text-neon drop-shadow-[0_0_15px_rgba(34,197,94,0.8)]" size={32} />
+            </div>
+            Panel de Análisis Pro
           </h2>
-          <p className="text-slate-500 text-sm mt-1">Métricas clave de rendimiento y eficiencia operativa.</p>
+          <p className="text-slate-500 text-base mt-1">Métricas clave de rendimiento y eficiencia operativa.</p>
         </div>
-        <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+        <div className="flex items-center gap-4 text-[15px] font-mono text-slate-500 uppercase tracking-widest">
           <span className="flex items-center gap-1"><Zap size={10} className="text-neon" /> Actualizado: Tiempo Real</span>
           <span className="w-1 h-1 rounded-full bg-slate-700" />
           <span>Periodo: Últimos 30 Días</span>
@@ -181,12 +185,12 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
           <div className="glass-card p-8 border-neon/10">
             <div className="flex items-center justify-between mb-8">
               <div>
-                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Logistics Cost Ratio</p>
+                <p className="text-[15px] uppercase tracking-widest text-slate-500 font-mono">Logistics Cost Ratio</p>
                 <h4 className="text-2xl font-mono font-bold text-white">{(kpis.shippingEfficiency || 0).toFixed(1)}%</h4>
               </div>
               <div className="text-right">
-                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Benchmark</p>
-                <p className="text-xs text-neon font-mono">Ideal: &lt; 15%</p>
+                <p className="text-[15px] uppercase tracking-widest text-slate-500 font-mono">Benchmark</p>
+                <p className="text-base text-neon font-mono">Ideal: &lt; 15%</p>
               </div>
             </div>
             
@@ -200,15 +204,15 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
             
             <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="p-4 bg-white/5 border border-border rounded-lg">
-                <p className="text-[10px] uppercase text-slate-500 mb-1">Costo Flete</p>
+                <p className="text-[15px] uppercase text-slate-500 mb-1">Costo Flete</p>
                 <p className="text-lg font-mono font-bold text-white">{formatCurrency(orders.reduce((acc, o) => acc + o.shippingReal, 0))}</p>
               </div>
               <div className="p-4 bg-white/5 border border-border rounded-lg">
-                <p className="text-[10px] uppercase text-slate-500 mb-1">Costo Producto</p>
+                <p className="text-[15px] uppercase text-slate-500 mb-1">Costo Producto</p>
                 <p className="text-lg font-mono font-bold text-white">{formatCurrency(orders.reduce((acc, o) => acc + o.cost, 0))}</p>
               </div>
               <div className="p-4 bg-white/5 border border-border rounded-lg">
-                <p className="text-[10px] uppercase text-slate-500 mb-1">Costo Ads</p>
+                <p className="text-[15px] uppercase text-slate-500 mb-1">Costo Ads</p>
                 <p className="text-lg font-mono font-bold text-white">{formatCurrency(orders.reduce((acc, o) => acc + o.adsCost, 0))}</p>
               </div>
             </div>
@@ -229,8 +233,8 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
             ].map((goal) => (
               <div key={goal.label} className="glass-card p-4 border-border/50">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-mono text-slate-300">{goal.label}</span>
-                  <span className="text-xs font-mono text-slate-500">Meta: {goal.target}{goal.label.includes('ROAS') ? 'x' : '%'}</span>
+                  <span className="text-base font-mono text-slate-300">{goal.label}</span>
+                  <span className="text-base font-mono text-slate-500">Meta: {goal.target}{goal.label.includes('ROAS') ? 'x' : '%'}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-1.5 bg-slate-900 rounded-full overflow-hidden">
@@ -240,7 +244,7 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
                       className={`h-full bg-${goal.color}`}
                     />
                   </div>
-                  <span className={`text-xs font-mono font-bold text-${goal.color}`}>
+                  <span className={`text-base font-mono font-bold text-${goal.color}`}>
                     {(goal.current || 0).toFixed(1)}{goal.label.includes('ROAS') ? 'x' : '%'}
                   </span>
                 </div>

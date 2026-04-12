@@ -181,7 +181,7 @@ export const AuthScreen = () => {
           <h1 className="text-4xl font-display font-bold text-white tracking-tighter mb-2">
             ECOMM<span className="text-neon">IL</span>
           </h1>
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-400 text-base">
             {isLogin ? 'Bienvenido de nuevo a tu centro logístico' : 'Crea tu cuenta profesional hoy'}
           </p>
         </div>
@@ -195,7 +195,7 @@ export const AuthScreen = () => {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-1.5"
               >
-                <label className="text-xs font-display uppercase tracking-widest text-slate-500 ml-1">Nombre Completo</label>
+                <label className="text-[15px] font-display uppercase tracking-widest text-slate-500 ml-1">Nombre Completo</label>
                 <div className="relative">
                   <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                   <input
@@ -203,7 +203,7 @@ export const AuthScreen = () => {
                     required
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-white focus:border-neon focus:ring-1 focus:ring-neon/20 transition-all outline-none"
+                    className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-white focus:border-neon focus:ring-1 focus:ring-neon/20 transition-all outline-none text-base"
                     placeholder="Tu nombre"
                   />
                 </div>
@@ -212,7 +212,7 @@ export const AuthScreen = () => {
           </AnimatePresence>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-display uppercase tracking-widest text-slate-500 ml-1">Correo Electrónico</label>
+            <label className="text-[15px] font-display uppercase tracking-widest text-slate-500 ml-1">Correo Electrónico</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               <input
@@ -220,14 +220,14 @@ export const AuthScreen = () => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-white focus:border-neon focus:ring-1 focus:ring-neon/20 transition-all outline-none"
+                className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-white focus:border-neon focus:ring-1 focus:ring-neon/20 transition-all outline-none text-base"
                 placeholder="correo@ejemplo.com"
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-display uppercase tracking-widest text-slate-500 ml-1">Contraseña</label>
+            <label className="text-[15px] font-display uppercase tracking-widest text-slate-500 ml-1">Contraseña</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               <input
@@ -235,7 +235,7 @@ export const AuthScreen = () => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-12 text-white focus:border-neon focus:ring-1 focus:ring-neon/20 transition-all outline-none"
+                className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-12 text-white focus:border-neon focus:ring-1 focus:ring-neon/20 transition-all outline-none text-base"
                 placeholder="••••••••"
               />
               <button
@@ -252,7 +252,7 @@ export const AuthScreen = () => {
             <motion.div 
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs"
+              className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-base"
             >
               <AlertCircle size={14} />
               {error}
@@ -263,7 +263,7 @@ export const AuthScreen = () => {
             <motion.div 
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2 p-3 rounded-xl bg-neon/10 border border-neon/20 text-neon text-xs"
+              className="flex items-center gap-2 p-3 rounded-xl bg-neon/10 border border-neon/20 text-neon text-base"
             >
               <AlertCircle size={14} />
               {message}
@@ -274,7 +274,7 @@ export const AuthScreen = () => {
             <button
               type="button"
               onClick={handleForgotPassword}
-              className="text-[10px] font-mono uppercase tracking-widest text-slate-500 hover:text-neon transition-colors"
+              className="text-[15px] font-mono uppercase tracking-widest text-slate-500 hover:text-neon transition-colors"
             >
               ¿Olvidaste tu contraseña?
             </button>
@@ -300,7 +300,7 @@ export const AuthScreen = () => {
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-border"></div>
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
+          <div className="relative flex justify-center text-base uppercase">
             <span className="bg-card px-2 text-slate-500">O continúa con</span>
           </div>
         </div>
@@ -317,7 +317,7 @@ export const AuthScreen = () => {
         <div className="mt-8 text-center">
           <button
             onClick={() => setIsLogin(!isLogin)}
-            className="text-sm text-slate-400 hover:text-neon transition-colors"
+            className="text-base text-slate-400 hover:text-neon transition-colors"
           >
             {isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
           </button>

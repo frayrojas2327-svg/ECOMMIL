@@ -48,6 +48,20 @@ service cloud.firestore {
     // ===============================================================
 
     // ===============================================================
+    //
+    // Collection: market_research
+    // Document ID: {researchId}
+    // Fields:
+    //   - uid: string (required, owner)
+    //   - productName: string (required)
+    //   - storeUrls: list (optional, strings)
+    //   - notes: string (optional)
+    //   - videoUrls: list (optional, strings)
+    //   - timestamp: number (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
     // Helper Functions
     // ===============================================================
     
@@ -65,8 +79,11 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "milnerdelacruz03@gmail.com" && request.auth.token.email_verified == true));
+        (
+          (request.auth.token.email in ["milnerdelacruz03@gmail.com", "mill03@gmail.com"]) ||
+          (request.auth.uid in ["Jd5wvVvZbKYoYr8sDf9TG6Edelf2"]) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
     }
 
     function hasRequiredFields(fields) {
@@ -110,13 +127,13 @@ service cloud.firestore {
              data.cost is number && data.cost >= 0 &&
              data.price is number && data.price >= 0 &&
              data.status in ['Confirmado', 'En tránsito', 'Devuelto', 'Cancelado', 'Pendiente'] &&
-             (data.shippingCharged == null || data.shippingCharged is number) &&
-             (data.shippingReal == null || data.shippingReal is number) &&
-             (data.adsCost == null || data.adsCost is number) &&
-             (data.platformFee == null || data.platformFee is number) &&
-             (data.provider == null || data.provider is string) &&
-             (data.country == null || data.country is string) &&
-             (data.cancellationReason == null || data.cancellationReason is string);
+             (data.get('shippingCharged', null) == null || data.shippingCharged is number) &&
+             (data.get('shippingReal', null) == null || data.shippingReal is number) &&
+             (data.get('adsCost', null) == null || data.adsCost is number) &&
+             (data.get('platformFee', null) == null || data.platformFee is number) &&
+             (data.get('provider', null) == null || data.provider is string) &&
+             (data.get('country', null) == null || data.country is string) &&
+             (data.get('cancellationReason', null) == null || data.cancellationReason is string);
     }
 
     function isValidAdExpense(data) {
@@ -128,7 +145,17 @@ service cloud.firestore {
              data.platform is string && data.platform.size() > 0 && data.platform.size() < 100 &&
              data.amount is number && data.amount >= 0 &&
              data.timestamp is number &&
-             (data.productId == null || (data.productId is string && data.productId.size() < 100));
+             (data.get('productId', null) == null || (data.productId is string && data.productId.size() < 100));
+    }
+
+    function isValidMarketResearch(data) {
+      return hasRequiredFields(['uid', 'productName', 'timestamp']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.productName is string && data.productName.size() > 0 && data.productName.size() < 200 &&
+             data.timestamp is number &&
+             (data.get('storeUrls', null) == null || (data.storeUrls is list && data.storeUrls.size() <= 20)) &&
+             (data.get('notes', null) == null || (data.notes is string && data.notes.size() < 5000)) &&
+             (data.get('videoUrls', null) == null || (data.videoUrls is list && data.videoUrls.size() <= 10));
     }
 
     // ===============================================================
@@ -157,6 +184,15 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidAdExpense(request.resource.data) && 
                       (request.resource.data.uid == request.auth.uid || isAdmin());
       allow update: if isAuthenticated() && isValidAdExpense(request.resource.data) && 
+                      ((isDocOwner() && request.resource.data.uid == resource.data.uid) || isAdmin());
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /market_research/{researchId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidMarketResearch(request.resource.data) && 
+                      (request.resource.data.uid == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && isValidMarketResearch(request.resource.data) && 
                       ((isDocOwner() && request.resource.data.uid == resource.data.uid) || isAdmin());
       allow delete: if isDocOwner() || isAdmin();
     }

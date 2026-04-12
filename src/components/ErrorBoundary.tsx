@@ -58,11 +58,11 @@ export default class ErrorBoundary extends Component<Props, State> {
               <h2 className="text-2xl font-display font-bold text-white tracking-tight">
                 Oops! Algo salió mal
               </h2>
-              <p className="text-slate-400 text-sm leading-relaxed">
+              <p className="text-slate-400 text-base leading-relaxed">
                 {errorMessage}
               </p>
               {isFirebaseError && (
-                <p className="text-[10px] text-slate-500 font-mono mt-2">
+                <p className="text-[15px] text-slate-500 font-mono mt-2">
                   Por favor, contacta a soporte si el problema persiste.
                 </p>
               )}
@@ -70,7 +70,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
             <button
               onClick={this.handleReset}
-              className="w-full flex items-center justify-center gap-2 bg-neon text-background font-bold py-3 rounded-xl hover:opacity-90 transition-all active:scale-95"
+              className="w-full flex items-center justify-center gap-2 bg-neon text-background font-bold py-3 rounded-xl hover:opacity-90 transition-all active:scale-95 text-base"
             >
               <RefreshCcw size={18} />
               Reiniciar Aplicación

@@ -8,17 +8,34 @@ import {
   HardDrive, 
   Bot,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Globe,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { CURRENCIES } from '../mockData';
 
 interface SettingsProps {
   onResetData: () => Promise<void>;
   onClearAllData: () => Promise<void>;
   onClearAIConfig: () => void;
+  currency: string;
+  setCurrency: (currency: any) => void;
+  isConversionActive: boolean;
+  setIsConversionActive: (active: boolean) => void;
+  currencies: any;
 }
 
-const Settings: React.FC<SettingsProps> = ({ onResetData, onClearAllData, onClearAIConfig }) => {
+const Settings: React.FC<SettingsProps> = ({ 
+  onResetData, 
+  onClearAllData, 
+  onClearAIConfig,
+  currency,
+  setCurrency,
+  isConversionActive,
+  setIsConversionActive,
+  currencies
+}) => {
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -95,6 +112,91 @@ const Settings: React.FC<SettingsProps> = ({ onResetData, onClearAllData, onClea
             <Trash2 size={18} />
             Borrar Todos los Datos
           </button>
+        </div>
+      </div>
+
+      <div className="glass-card p-6 border-border bg-card/50">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-neon/10 rounded-2xl text-neon">
+              <Globe size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">Configuración de Moneda</h3>
+              <p className="text-sm text-slate-500">Personaliza cómo se visualizan los valores monetarios en toda la plataforma.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-widest">Moneda Predeterminada</label>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.keys(currencies).map((code) => (
+                <button
+                  key={code}
+                  onClick={() => setCurrency(code)}
+                  className={`py-2 px-3 rounded-xl border text-sm font-mono transition-all flex flex-col items-center gap-1 ${
+                    currency === code 
+                      ? 'bg-neon/10 border-neon text-neon font-bold shadow-lg shadow-neon/10' 
+                      : 'bg-white/5 border-border text-slate-400 hover:border-slate-500'
+                  }`}
+                >
+                  <span className="text-xs opacity-60">{currencies[code].symbol}</span>
+                  {code}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 italic">
+              * La moneda seleccionada se guardará automáticamente y persistirá en tus próximas sesiones.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            <div className="p-4 rounded-2xl bg-white/5 border border-border space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${isConversionActive ? 'bg-neon/20 text-neon' : 'bg-slate-800 text-slate-500'}`}>
+                    <RefreshCw size={18} className={isConversionActive ? 'animate-spin-slow' : ''} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Conversión en Tiempo Real</h4>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[11px] text-slate-500">Activa el cálculo automático basado en tasas de cambio.</p>
+                      {isConversionActive && currency !== 'USD' && (
+                        <span className="text-[10px] font-mono text-neon bg-neon/10 px-1.5 py-0.5 rounded border border-neon/20">
+                          1 USD = {currencies[currency].rate.toFixed(2)} {currency}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsConversionActive(!isConversionActive)}
+                  className={`w-12 h-6 rounded-full relative transition-all ${isConversionActive ? 'bg-neon' : 'bg-slate-700'}`}
+                >
+                  <motion.div
+                    animate={{ x: isConversionActive ? 24 : 0 }}
+                    className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-md"
+                  />
+                </button>
+              </div>
+
+              <div className="text-[12px] text-slate-400 leading-relaxed bg-black/20 p-3 rounded-xl border border-white/5">
+                {isConversionActive ? (
+                  <p>
+                    <span className="text-neon font-bold">MODO ACTIVO:</span> Los valores se multiplican por la tasa de cambio de la moneda seleccionada (Base: USD). 
+                    Ejemplo: 100 USD → {currencies[currency].symbol} {(100 * currencies[currency].rate).toLocaleString()}
+                  </p>
+                ) : (
+                  <p>
+                    <span className="text-slate-300 font-bold">MODO MANUAL:</span> Los valores se muestran tal cual están en la base de datos, cambiando únicamente el símbolo.
+                    Ejemplo: 100 → {currencies[currency].symbol} 100
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

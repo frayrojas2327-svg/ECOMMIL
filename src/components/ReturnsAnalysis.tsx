@@ -39,10 +39,10 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-display font-bold text-white">Análisis de Devoluciones y Cancelaciones</h2>
-          <p className="text-sm text-slate-500">Impacto financiero de pedidos no completados</p>
+          <p className="text-base text-slate-500">Impacto financiero de pedidos no completados</p>
         </div>
         {stats.returnRate > 8 && (
-          <div className="flex items-center gap-3 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-bold animate-pulse">
+          <div className="flex items-center gap-3 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-base font-bold animate-pulse">
             <AlertTriangle size={18} />
             Alerta: Tasa de devolución crítica ({(stats.returnRate || 0).toFixed(1)}%)
           </div>
@@ -52,14 +52,14 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="glass-card p-8 flex flex-col justify-center items-center text-center">
           <RotateCcw size={48} className="text-orange-400 mb-4 opacity-20" />
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Tasa de Devolución</p>
+          <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-1">Tasa de Devolución</p>
           <h3 className="text-5xl font-mono font-bold text-white mb-2">{(stats.returnRate || 0).toFixed(1)}%</h3>
-          <p className="text-xs text-slate-500">{stats.returnsCount} pedidos devueltos de {orders.length}</p>
+          <p className="text-base text-slate-500">{stats.returnsCount} pedidos devueltos de {orders.length}</p>
           
           <div className="mt-8 w-full pt-8 border-t border-border">
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-4">Costo Absorbido</p>
+            <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-4">Costo Absorbido</p>
             <p className="text-3xl font-mono font-bold text-red-400">{formatCurrency(stats.totalReturnCost)}</p>
-            <p className="text-[10px] text-slate-500 mt-2 italic">Flete ida/vuelta + Ads perdidos</p>
+            <p className="text-[15px] text-slate-500 mt-2 italic">Flete ida/vuelta + Ads perdidos</p>
           </div>
         </div>
 
@@ -84,7 +84,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                   </Pie>
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#12121a', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff', fontSize: '12px', fontFamily: 'DM Mono' }}
+                    itemStyle={{ color: '#fff', fontSize: '15px', fontFamily: 'DM Mono' }}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -94,9 +94,9 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-background border-b border-border">
-                    <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-slate-500 font-display">Motivo</th>
-                    <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-slate-500 font-display text-right">Pedidos</th>
-                    <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-slate-500 font-display text-right">%</th>
+                    <th className="px-4 py-3 text-[15px] uppercase tracking-widest text-slate-500 font-display">Motivo</th>
+                    <th className="px-4 py-3 text-[15px] uppercase tracking-widest text-slate-500 font-display text-right">Pedidos</th>
+                    <th className="px-4 py-3 text-[15px] uppercase tracking-widest text-slate-500 font-display text-right">%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -104,10 +104,10 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                     <tr key={entry.name} className="border-b border-border/50 hover:bg-white/5 transition-colors">
                       <td className="px-4 py-3 flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                        <span className="text-xs text-slate-300 truncate">{entry.name}</span>
+                        <span className="text-base text-slate-300 truncate">{entry.name}</span>
                       </td>
-                      <td className="px-4 py-3 text-xs font-mono font-bold text-white text-right">{entry.value}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-slate-500 text-right">
+                      <td className="px-4 py-3 text-base font-mono font-bold text-white text-right">{entry.value}</td>
+                      <td className="px-4 py-3 text-base font-mono text-slate-500 text-right">
                         {(stats.cancellationsCount > 0 ? (entry.value / stats.cancellationsCount) * 100 : 0).toFixed(1)}%
                       </td>
                     </tr>
@@ -124,27 +124,27 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
         <div className="flex items-center gap-8">
           <div className="flex-1 p-6 bg-background rounded-xl border border-border">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-display text-slate-500 uppercase">Pérdida por Cancelaciones</span>
+              <span className="text-base font-display text-slate-500 uppercase">Pérdida por Cancelaciones</span>
               <XCircle size={16} className="text-red-500" />
             </div>
             <p className="text-2xl font-mono font-bold text-white">{formatCurrency(stats.cancellationsCount * 10)}</p>
-            <p className="text-[10px] text-slate-500 mt-1 italic">*Estimado de $10 USD en ads por cada cancelación</p>
+            <p className="text-[15px] text-slate-500 mt-1 italic">*Estimado de $10 USD en ads por cada cancelación</p>
           </div>
           <div className="flex-1 p-6 bg-background rounded-xl border border-border">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-display text-slate-500 uppercase">Pérdida por Devoluciones</span>
+              <span className="text-base font-display text-slate-500 uppercase">Pérdida por Devoluciones</span>
               <RotateCcw size={16} className="text-orange-400" />
             </div>
             <p className="text-2xl font-mono font-bold text-white">{formatCurrency(stats.totalReturnCost)}</p>
-            <p className="text-[10px] text-slate-500 mt-1 italic">*Incluye logística inversa y costo de adquisición</p>
+            <p className="text-[15px] text-slate-500 mt-1 italic">*Incluye logística inversa y costo de adquisición</p>
           </div>
           <div className="flex-1 p-6 bg-neon/5 rounded-xl border border-neon/20">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-display text-neon uppercase">Impacto Total</span>
+              <span className="text-base font-display text-neon uppercase">Impacto Total</span>
               <TrendingDown size={16} className="text-red-500" />
             </div>
             <p className="text-3xl font-mono font-bold text-red-400">{formatCurrency(stats.totalReturnCost + (stats.cancellationsCount * 10))}</p>
-            <p className="text-[10px] text-slate-500 mt-1 italic">Capital drenado este mes</p>
+            <p className="text-[15px] text-slate-500 mt-1 italic">Capital drenado este mes</p>
           </div>
         </div>
       </div>

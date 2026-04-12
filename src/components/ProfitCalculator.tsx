@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Calculator as CalcIcon, 
   RefreshCw, 
@@ -18,11 +18,35 @@ import {
   Download,
   Upload,
   CheckSquare,
-  Square
+  Square,
+  Package,
+  Plus,
+  X,
+  Calendar,
+  CreditCard,
+  Wallet,
+  Megaphone,
+  Receipt
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { CURRENCIES, CurrencyCode } from '../mockData';
+
+interface FixedExpense {
+  id: string;
+  name: string;
+  category: string;
+  amount: number;
+  frequency: 'monthly' | 'yearly';
+  startDate: string;
+  endDate: string;
+}
+
+interface VariableExpense {
+  id: string;
+  name: string;
+  amount: number;
+}
 
 interface SavedProduct {
   id: string;
@@ -41,6 +65,8 @@ interface SavedProduct {
     confirmationRate: number;
     cancellationRate: number;
     returnRate: number;
+    fixedExpenses: FixedExpense[];
+    variableExpenses: VariableExpense[];
   };
   results: {
     netProfit: number;
@@ -48,6 +74,8 @@ interface SavedProduct {
     roi: number;
     breakEven: number;
     status: string;
+    totalFixedExpenses: number;
+    totalVariableExpenses: number;
   };
   timestamp: number;
 }
@@ -55,11 +83,47 @@ interface SavedProduct {
 interface ProfitCalculatorProps {
   formatCurrency: (amount: number) => string;
   currencySymbol: string;
+  currency: CurrencyCode;
+  setCurrency: (currency: CurrencyCode) => void;
+  isConversionActive: boolean;
+  currencies: any;
 }
 
-const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: globalFormat, currencySymbol: globalSymbol }) => {
-  const [viewMode, setViewMode] = useState<'form' | 'excel'>('form');
-  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyCode>('USD');
+const EXPENSE_CATEGORIES = ['Software', 'Publicidad', 'Servicios', 'Personal', 'Suscripciones', 'Otros'];
+
+const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ 
+  formatCurrency: globalFormat, 
+  currencySymbol: globalSymbol,
+  currency,
+  setCurrency,
+  isConversionActive,
+  currencies
+}) => {
+  const [viewMode, setViewMode] = useState<'form' | 'excel'>(() => {
+    const saved = localStorage.getItem('ecommil_view_mode');
+    return (saved === 'form' || saved === 'excel') ? saved : 'form';
+  });
+  const [projectionOrders, setProjectionOrders] = useState<number>(() => {
+    const saved = localStorage.getItem('ecommil_projection_orders');
+    return saved ? parseInt(saved) : 100;
+  });
+  const [isProjectionActive, setIsProjectionActive] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ecommil_projection_active');
+    return saved === null ? true : saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_view_mode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_projection_active', String(isProjectionActive));
+  }, [isProjectionActive]);
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_projection_orders', String(projectionOrders));
+  }, [projectionOrders]);
+  const prevCurrencyRef = useRef<CurrencyCode>(currency);
   const [highlightedProductId, setHighlightedProductId] = useState<string | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [showConfirm, setShowConfirm] = useState<{ type: 'deleteSelected' | 'deleteAll' | 'deleteOne', count?: number, id?: string } | null>(null);
@@ -79,6 +143,46 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
     returnRate: '8',
   });
 
+  const [fixedExpenses, setFixedExpenses] = useState<FixedExpense[]>(() => {
+    const saved = localStorage.getItem('ecommil_fixed_expenses');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [variableExpenses, setVariableExpenses] = useState<VariableExpense[]>(() => {
+    const saved = localStorage.getItem('ecommil_variable_expenses');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Sync with localStorage if changed elsewhere
+  useEffect(() => {
+    const handleStorage = () => {
+      const savedFixed = localStorage.getItem('ecommil_fixed_expenses');
+      const savedVar = localStorage.getItem('ecommil_variable_expenses');
+      if (savedFixed) setFixedExpenses(JSON.parse(savedFixed));
+      if (savedVar) setVariableExpenses(JSON.parse(savedVar));
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  // Real-time conversion logic
+  useEffect(() => {
+    if (isConversionActive && prevCurrencyRef.current !== currency) {
+      const oldRate = currencies[prevCurrencyRef.current].rate;
+      const newRate = currencies[currency].rate;
+      const ratio = newRate / oldRate;
+
+      setInputs(prev => ({
+        ...prev,
+        price: (parseFloat(prev.price) * ratio).toFixed(2),
+        cost: (parseFloat(prev.cost) * ratio).toFixed(2),
+        shippingCharged: (parseFloat(prev.shippingCharged) * ratio).toFixed(2),
+        shippingReal: (parseFloat(prev.shippingReal) * ratio).toFixed(2),
+        adsCost: (parseFloat(prev.adsCost) * ratio).toFixed(2),
+      }));
+    }
+    prevCurrencyRef.current = currency;
+  }, [currency, isConversionActive]);
+
   const [savedProducts, setSavedProducts] = useState<SavedProduct[]>(() => {
     const saved = localStorage.getItem('ecommil_saved_products');
     return saved ? JSON.parse(saved) : [];
@@ -88,12 +192,12 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
     localStorage.setItem('ecommil_saved_products', JSON.stringify(savedProducts));
   }, [savedProducts]);
 
-  const currencyInfo = CURRENCIES[selectedCurrency];
+  const currencyInfo = currencies[currency];
 
-  const formatLocalCurrency = (amount: number, currency: CurrencyCode = selectedCurrency) => {
+  const formatLocalCurrency = (amount: number, curr: CurrencyCode = currency) => {
     return new Intl.NumberFormat('es-ES', {
       style: 'currency',
-      currency: currency,
+      currency: curr,
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
     }).format(amount);
@@ -108,7 +212,9 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
     platformFee: number,
     confirmationRate: number = 90,
     cancellationRate: number = 5,
-    returnRate: number = 8
+    returnRate: number = 8,
+    expenses: FixedExpense[] = [],
+    varExpenses: VariableExpense[] = []
   ) => {
     // Pro Calculation Model (Based on 100 potential orders/leads)
     const baseOrders = 100;
@@ -117,29 +223,38 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
     const deliveredOrders = shippedOrders * (1 - returnRate / 100);
     const returnedOrders = shippedOrders * (returnRate / 100);
 
+    const unitVarExpenses = varExpenses.reduce((acc, exp) => acc + exp.amount, 0);
+
     const totalRevenue = deliveredOrders * (price + shippingCharged);
     const totalProductCost = shippedOrders * cost;
     const totalShippingCost = shippedOrders * shippingReal;
     const totalReturnCost = returnedOrders * shippingReal; 
     const totalAdsCost = baseOrders * adsCost;
     const totalPlatformFee = deliveredOrders * price * (platformFee / 100);
+    const totalVariableExpenses = shippedOrders * unitVarExpenses;
 
-    const totalNetProfit = totalRevenue - totalProductCost - totalShippingCost - totalReturnCost - totalAdsCost - totalPlatformFee;
+    const totalNetProfit = totalRevenue - totalProductCost - totalShippingCost - totalReturnCost - totalAdsCost - totalPlatformFee - totalVariableExpenses;
     
     const netProfit = totalNetProfit / baseOrders;
     const margin = totalRevenue > 0 ? (totalNetProfit / totalRevenue) * 100 : 0;
-    const totalInvestment = totalAdsCost + totalProductCost + totalShippingCost + totalReturnCost;
+    const totalInvestment = totalAdsCost + totalProductCost + totalShippingCost + totalReturnCost + totalVariableExpenses;
     const roi = totalInvestment > 0 ? (totalNetProfit / totalInvestment) * 100 : 0;
     
     const breakEven = (1 - (platformFee / 100)) !== 0 
-      ? (cost + shippingReal + adsCost - shippingCharged) / (1 - (platformFee / 100))
+      ? (cost + shippingReal + adsCost + unitVarExpenses - shippingCharged) / (1 - (platformFee / 100))
       : 0;
+
+    const totalFixedExpenses = expenses.reduce((acc, exp) => {
+      if (exp.frequency === 'monthly') return acc + exp.amount;
+      if (exp.frequency === 'yearly') return acc + (exp.amount / 12);
+      return acc;
+    }, 0);
 
     let status: 'profitable' | 'limit' | 'loss' = 'profitable';
     if (netProfit < 0) status = 'loss';
     else if (margin < 15) status = 'limit';
 
-    return { netProfit, margin, roi, breakEven, status };
+    return { netProfit, margin, roi, breakEven, status, totalFixedExpenses, totalVariableExpenses: unitVarExpenses };
   };
 
   const results = useMemo(() => {
@@ -152,9 +267,49 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
       parseFloat(inputs.platformFee) || 0,
       parseFloat(inputs.confirmationRate) || 0,
       parseFloat(inputs.cancellationRate) || 0,
-      parseFloat(inputs.returnRate) || 0
+      parseFloat(inputs.returnRate) || 0,
+      fixedExpenses,
+      variableExpenses
     );
-  }, [inputs]);
+  }, [inputs, fixedExpenses, variableExpenses]);
+
+  const removeExpense = (id: string) => {
+    setFixedExpenses(prev => prev.filter(exp => exp.id !== id));
+  };
+
+  const addExpense = () => {
+    const newExpense: FixedExpense = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: '',
+      category: 'Software',
+      amount: 0,
+      frequency: 'monthly',
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: ''
+    };
+    setFixedExpenses([...fixedExpenses, newExpense]);
+  };
+
+  const updateExpense = (id: string, field: keyof FixedExpense, value: any) => {
+    setFixedExpenses(prev => prev.map(exp => exp.id === id ? { ...exp, [field]: value } : exp));
+  };
+
+  const addVariableExpense = () => {
+    const newExpense: VariableExpense = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: '',
+      amount: 0
+    };
+    setVariableExpenses([...variableExpenses, newExpense]);
+  };
+
+  const removeVariableExpense = (id: string) => {
+    setVariableExpenses(prev => prev.filter(exp => exp.id !== id));
+  };
+
+  const updateVariableExpense = (id: string, field: keyof VariableExpense, value: any) => {
+    setVariableExpenses(prev => prev.map(exp => exp.id === id ? { ...exp, [field]: value } : exp));
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -172,6 +327,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
       confirmationRate: parseFloat(inputs.confirmationRate) || 0,
       cancellationRate: parseFloat(inputs.cancellationRate) || 0,
       returnRate: parseFloat(inputs.returnRate) || 0,
+      fixedExpenses: [...fixedExpenses],
+      variableExpenses: [...variableExpenses],
     };
 
     const newProduct: SavedProduct = {
@@ -180,14 +337,16 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
       name: inputs.name || 'Producto sin nombre',
       url: inputs.url,
       notes: inputs.notes,
-      currency: selectedCurrency,
+      currency: currency,
       inputs: numericInputs,
       results: { ...results },
       timestamp: Date.now(),
     };
     setSavedProducts([newProduct, ...savedProducts]);
-    // Reset basic info but keep numbers for next simulation if desired
+    // Reset basic info and expenses
     setInputs(prev => ({ ...prev, name: '', productId: '', url: '', notes: '' }));
+    setFixedExpenses([]);
+    setVariableExpenses([]);
   };
 
   const handleDelete = (id: string) => {
@@ -289,7 +448,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
         const productId = row['ID/SKU'] || row['SKU'] || row['Referencia'] || row['Código'] || 'N/A';
         const notes = row['Notas'] || row['Descripción'] || row['Comentario'] || '';
         const url = row['URL'] || row['Link'] || '';
-        const currency = (row['Moneda'] || selectedCurrency) as CurrencyCode;
+        const curr = (row['Moneda'] || currency) as CurrencyCode;
 
         // Calculate results for imported row using the new pro model
         const results = calculateResults(price, cost, shippingCharged, shippingReal, adsCost, platformFee, confirmationRate, cancellationRate, returnRate);
@@ -300,9 +459,9 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
           name,
           url,
           notes,
-          currency,
-          inputs: { price, cost, shippingCharged, shippingReal, adsCost, platformFee, confirmationRate, cancellationRate, returnRate },
-          results,
+          currency: curr,
+          inputs: { price, cost, shippingCharged, shippingReal, adsCost, platformFee, confirmationRate, cancellationRate, returnRate, fixedExpenses: [], variableExpenses: [] },
+          results: { ...results, totalFixedExpenses: 0, totalVariableExpenses: 0 },
           timestamp: Date.now()
         };
       });
@@ -314,7 +473,9 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
   };
 
   const loadProduct = (product: SavedProduct) => {
-    setSelectedCurrency(product.currency);
+    setCurrency(product.currency);
+    setFixedExpenses(product.inputs.fixedExpenses || []);
+    setVariableExpenses(product.inputs.variableExpenses || []);
     setInputs({
       name: product.name,
       productId: product.productId,
@@ -330,8 +491,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
       cancellationRate: product.inputs.cancellationRate.toString(),
       returnRate: product.inputs.returnRate.toString(),
     });
-    setViewMode('form');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Removed automatic setViewMode('form') to respect user request
+    if (viewMode === 'form') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const viewInExcel = (productId: string) => {
@@ -348,6 +511,15 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
 
   return (
     <div className="max-w-full mx-auto space-y-3 px-4">
+      <datalist id="expense-categories">
+        <option value="Software" />
+        <option value="Marketing" />
+        <option value="Publicidad" />
+        <option value="Suscripciones" />
+        <option value="Servicios" />
+        <option value="Personal" />
+        <option value="Otros" />
+      </datalist>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-display font-bold text-white">Calculadora de Rentabilidad Pro</h2>
@@ -363,6 +535,34 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
               Borrar ({selectedProductIds.length})
             </button>
           )}
+          <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-1.5">
+            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Proyección</span>
+            <button 
+              onClick={() => setIsProjectionActive(!isProjectionActive)}
+              className={`relative w-8 h-4 rounded-full transition-colors duration-300 focus:outline-none ${isProjectionActive ? 'bg-neon' : 'bg-slate-700'}`}
+              title={isProjectionActive ? "Desactivar Proyección" : "Activar Proyección"}
+            >
+              <motion.div 
+                animate={{ x: isProjectionActive ? 16 : 2 }}
+                className="absolute top-0.5 left-0 w-3 h-3 bg-white rounded-full shadow-sm"
+              />
+            </button>
+            {isProjectionActive && (
+              <div className="flex items-center gap-2 ml-2 pl-2 border-l border-border group">
+                <Package size={12} className="text-neon group-hover:scale-110 transition-transform" />
+                <div className="relative">
+                  <input 
+                    type="number"
+                    value={projectionOrders}
+                    onChange={(e) => setProjectionOrders(Math.max(1, parseInt(e.target.value) || 0))}
+                    className="w-16 bg-background/50 border border-neon/20 rounded px-1.5 py-0.5 text-white font-mono text-[13px] focus:outline-none focus:border-neon transition-all"
+                    title="Cantidad de pedidos para proyección"
+                  />
+                  <div className="absolute -top-3 left-0 text-[8px] text-slate-500 uppercase font-bold opacity-0 group-hover:opacity-100 transition-opacity">Pedidos</div>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="flex items-center bg-card border border-border rounded-xl p-1">
             <button 
               onClick={() => setViewMode('form')}
@@ -382,13 +582,13 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
           <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-2 py-1">
             <DollarSign size={14} className="text-neon" />
             <select 
-              value={selectedCurrency}
-              onChange={(e) => setSelectedCurrency(e.target.value as CurrencyCode)}
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
               className="bg-transparent text-[13px] font-mono font-bold text-white focus:outline-none cursor-pointer"
             >
-              {Object.keys(CURRENCIES).map((code) => (
+              {Object.keys(currencies).map((code) => (
                 <option key={code} value={code} className="bg-card text-white">
-                  {code} ({CURRENCIES[code as CurrencyCode].symbol})
+                  {code} ({currencies[code as CurrencyCode].symbol})
                 </option>
               ))}
             </select>
@@ -405,171 +605,186 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
 
       {/* Calculator View Switcher */}
       {viewMode === 'form' ? (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-          {/* Product Info Section */}
-          <div className="glass-card p-3 space-y-3 border-border/50">
-            <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
-              <Tag size={12} /> Información del Producto
-            </h3>
-            <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Nombre</label>
-                  <div className="relative">
-                    <input 
-                      type="text" name="name" value={inputs.name} onChange={handleInputChange} placeholder="Ej: Smartwatch X"
-                      className="w-full bg-background border border-border rounded-lg py-1 px-3 text-white text-[15px] focus:outline-none focus:border-neon"
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          {/* Left Column: Inputs */}
+          <div className="xl:col-span-2 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Product Info Section */}
+              <div className="glass-card p-4 space-y-4 border-border/50">
+                <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
+                  <Tag size={12} /> Información del Producto
+                </h3>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Nombre</label>
+                      <div className="relative">
+                        <input 
+                          type="text" name="name" value={inputs.name} onChange={handleInputChange} placeholder="Ej: Smartwatch X"
+                          className="w-full bg-background border border-border rounded-lg py-1.5 px-3 text-white text-[15px] focus:outline-none focus:border-neon"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">ID / SKU</label>
+                      <div className="relative">
+                        <Hash size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                        <input 
+                          type="text" name="productId" value={inputs.productId} onChange={handleInputChange} placeholder="SKU-001"
+                          className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white text-[15px] font-mono focus:outline-none focus:border-neon"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">URL del Producto</label>
+                    <div className="relative">
+                      <LinkIcon size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input 
+                        type="text" name="url" value={inputs.url} onChange={handleInputChange} placeholder="https://..."
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white text-[15px] focus:outline-none focus:border-neon"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Notas</label>
+                    <textarea 
+                      name="notes" value={inputs.notes} onChange={handleInputChange} placeholder="Detalles adicionales..."
+                      className="w-full bg-background border border-border rounded-lg py-1.5 px-3 text-white text-[15px] h-20 resize-none focus:outline-none focus:border-neon"
                     />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">ID / SKU</label>
-                  <div className="relative">
-                    <Hash size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input 
-                      type="text" name="productId" value={inputs.productId} onChange={handleInputChange} placeholder="SKU-001"
-                      className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white text-[15px] font-mono focus:outline-none focus:border-neon"
-                    />
+              </div>
+
+              {/* Operational Metrics Section */}
+              <div className="glass-card p-4 space-y-4 border-border/50">
+                <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
+                  <RefreshCw size={12} /> Métricas de Operación
+                </h3>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Confirmación</label>
+                    <div className="relative">
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
+                      <input 
+                        type="number" name="confirmationRate" value={inputs.confirmationRate} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Cancelación</label>
+                    <div className="relative">
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
+                      <input 
+                        type="number" name="cancellationRate" value={inputs.cancellationRate} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Devolución</label>
+                    <div className="relative">
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
+                      <input 
+                        type="number" name="returnRate" value={inputs.returnRate} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">URL del Producto</label>
-                <div className="relative">
-                  <LinkIcon size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input 
-                    type="text" name="url" value={inputs.url} onChange={handleInputChange} placeholder="https://..."
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white text-[15px] focus:outline-none focus:border-neon"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Notas</label>
-                <textarea 
-                  name="notes" value={inputs.notes} onChange={handleInputChange} placeholder="Detalles adicionales..."
-                  className="w-full bg-background border border-border rounded-lg py-1 px-3 text-white text-[15px] h-16 resize-none focus:outline-none focus:border-neon"
-                />
-              </div>
             </div>
-          </div>
 
-          {/* Operational Metrics Section */}
-          <div className="glass-card p-3 space-y-3 border-border/50">
-            <h3 className="text-[15px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
-              <RefreshCw size={14} /> Métricas de Operación
-            </h3>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <label className="text-[15px] uppercase tracking-widest text-slate-500 font-bold">Confirmación</label>
-                <div className="relative">
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
-                  <input 
-                    type="number" name="confirmationRate" value={inputs.confirmationRate} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
-                  />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Financial Inputs Section */}
+              <div className="glass-card p-4 space-y-4 border-border/50 bg-slate-900/40">
+                <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
+                  <DollarSign size={12} className="text-neon" /> Parámetros de Venta
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Precio Venta</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neon font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="price" value={inputs.price} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Costo Producto</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gold font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="cost" value={inputs.cost} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Flete Cobrado</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="shippingCharged" value={inputs.shippingCharged} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Flete Real</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="shippingReal" value={inputs.shippingReal} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Comisión Pasarela (%)</label>
+                    <div className="relative">
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">%</span>
+                      <input 
+                        type="number" name="platformFee" value={inputs.platformFee} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[15px] uppercase tracking-widest text-slate-500 font-bold">Cancelación</label>
-                <div className="relative">
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
-                  <input 
-                    type="number" name="cancellationRate" value={inputs.cancellationRate} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-red-500"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[15px] uppercase tracking-widest text-slate-500 font-bold">Devolución</label>
-                <div className="relative">
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[15px]">%</span>
-                  <input 
-                    type="number" name="returnRate" value={inputs.returnRate} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Financial Inputs Section */}
-          <div className="glass-card p-3 space-y-3 border-border/50">
-            <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
-              <DollarSign size={12} /> Parámetros Financieros
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Precio Venta</label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neon font-mono text-[13px]">{currencyInfo.symbol}</span>
-                  <input 
-                    type="number" name="price" value={inputs.price} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Costo Producto</label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gold font-mono text-[13px]">{currencyInfo.symbol}</span>
-                  <input 
-                    type="number" name="cost" value={inputs.cost} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Flete Cobrado</label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
-                  <input 
-                    type="number" name="shippingCharged" value={inputs.shippingCharged} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Flete Real</label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
-                  <input 
-                    type="number" name="shippingReal" value={inputs.shippingReal} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-red-500"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Costo Ads (CPA)</label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
-                  <input 
-                    type="number" name="adsCost" value={inputs.adsCost} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Comisión (%)</label>
-                <div className="relative">
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">%</span>
-                  <input 
-                    type="number" name="platformFee" value={inputs.platformFee} onChange={handleInputChange}
-                    className="w-full bg-background border border-border rounded-lg py-1 pl-3 pr-8 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
-                  />
+                          {/* Publicidad Section */}
+                <div className="glass-card p-4 space-y-3 border-border/50 bg-slate-900/40">
+                  <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display flex items-center gap-2">
+                    <Megaphone size={12} className="text-neon" /> Publicidad
+                  </h3>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Costo Ads (CPA)</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="adsCost" value={inputs.adsCost} onChange={handleInputChange}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 italic">Inversión por cada venta (CPA)</p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Results Section */}
-          <div className="glass-card p-3 flex flex-col justify-between relative overflow-hidden border-neon/20 bg-neon/5">
-            <div className={`absolute top-0 right-0 w-32 h-32 -mr-16 -mt-16 rounded-full blur-3xl opacity-20 ${
-              results.status === 'profitable' ? 'bg-neon' : results.status === 'limit' ? 'bg-gold' : 'bg-red-500'
-            }`} />
+            {/* Right Column: Results */}
+            <div className="xl:col-span-1">
+            <div className="sticky top-4 space-y-4">
+              {/* Results Section */}
+              <div className="glass-card p-4 flex flex-col justify-between relative overflow-hidden border-neon/20 bg-neon/5 min-h-[400px]">
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display">Análisis</h3>
+                <h3 className="text-[13px] uppercase tracking-widest text-slate-500 font-display">Análisis y Ajustes</h3>
                 <div className={`flex items-center gap-2 px-2 py-0.5 rounded-full border text-[13px] font-bold uppercase tracking-widest ${
                   results.status === 'profitable' ? 'bg-neon/10 text-neon border-neon/20' : 
                   results.status === 'limit' ? 'bg-gold/10 text-gold border-gold/20' : 
@@ -581,7 +796,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">Ganancia Neta</p>
+                  <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">Ganancia Neta (Unidad)</p>
                   <p className={`text-3xl font-mono font-bold ${results.netProfit >= 0 ? 'text-white' : 'text-red-400'}`}>
                     {formatLocalCurrency(results.netProfit)}
                   </p>
@@ -605,6 +820,33 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                   </p>
                 </div>
               </div>
+
+              {isProjectionActive && (
+                <div className="pt-3 border-t border-border/30 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-1 font-bold">N° Pedidos Proyectados</p>
+                      <div className="relative">
+                        <input 
+                          type="number" 
+                          value={projectionOrders} 
+                          onChange={(e) => setProjectionOrders(Math.max(1, parseInt(e.target.value) || 0))}
+                          className="w-full bg-background/50 border border-neon/30 rounded-lg py-1.5 px-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon transition-all shadow-inner"
+                        />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-neon/50 pointer-events-none">
+                          <Package size={14} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex-1 text-right">
+                      <p className="text-[13px] uppercase tracking-widest text-neon mb-1 font-bold">Ganancia Total</p>
+                      <p className={`text-2xl font-mono font-bold ${results.netProfit * projectionOrders - results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                        {formatLocalCurrency(results.netProfit * projectionOrders - results.totalFixedExpenses)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-2 border-t border-border/50">
                 <div className="flex items-center gap-2 text-[13px] text-slate-400 italic">
@@ -631,9 +873,11 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
             </div>
           </div>
         </div>
-      ) : (
-        <div className="glass-card overflow-hidden border-border/50">
-          <div className="overflow-x-auto">
+      </div>
+    </div>
+  ) : (
+    <div className="glass-card overflow-hidden border-border/50">
+      <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-card/50 border-b border-border">
@@ -659,6 +903,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Comis. %</th>
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-neon font-bold whitespace-nowrap">Ganancia</th>
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-neon font-bold whitespace-nowrap">Margen</th>
+                  {isProjectionActive && <th className="p-1.5 text-[15px] uppercase tracking-widest text-neon font-bold whitespace-nowrap">Total ({projectionOrders})</th>}
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Acción</th>
                 </tr>
               </thead>
@@ -677,7 +922,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                     />
                     <input 
                       type="text" name="productId" value={inputs.productId} onChange={handleInputChange} placeholder="SKU"
-                      className="w-full bg-background/50 border border-border rounded-lg px-2 py-0.5 text-slate-400 text-[13px] font-mono focus:outline-none focus:border-neon"
+                      className="w-full bg-background/50 border border-border rounded-lg px-2 py-0.5 text-slate-400 text-[15px] font-mono focus:outline-none focus:border-neon"
                     />
                   </td>
                   <td className="p-1.5 min-w-[100px]">
@@ -757,6 +1002,13 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                       {Math.round(results.margin || 0)}%
                     </p>
                   </td>
+                  {isProjectionActive && (
+                    <td className="p-1.5">
+                      <p className={`font-mono font-bold text-[15px] ${results.netProfit * projectionOrders - results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                        {formatLocalCurrency(results.netProfit * projectionOrders - results.totalFixedExpenses)}
+                      </p>
+                    </td>
+                  )}
                   <td className="p-1.5">
                     <button 
                       onClick={handleSave}
@@ -783,7 +1035,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                     <td className="p-2 min-w-[200px]">
                       <div className="flex flex-col">
                         <span className="text-white text-[15px] font-bold truncate max-w-[180px]">{product.name}</span>
-                        <span className="text-slate-500 text-[13px] font-mono">{product.productId}</span>
+                        <span className="text-slate-500 text-[15px] font-mono">{product.productId}</span>
                       </div>
                     </td>
                     <td className="p-2 text-[15px] font-mono text-white">
@@ -794,9 +1046,6 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                     </td>
                     <td className="p-2 text-[15px] font-mono text-slate-400">
                       {formatLocalCurrency(product.inputs.shippingCharged, product.currency)}
-                    </td>
-                    <td className="p-2 text-[15px] font-mono text-slate-400">
-                      {formatLocalCurrency(product.inputs.shippingReal, product.currency)}
                     </td>
                     <td className="p-2 text-[15px] font-mono text-slate-400">
                       {formatLocalCurrency(product.inputs.shippingReal, product.currency)}
@@ -833,6 +1082,13 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                         {Math.round(product.results.margin || 0)}%
                       </p>
                     </td>
+                    {isProjectionActive && (
+                      <td className="p-2">
+                        <p className={`font-mono font-bold text-[15px] ${product.results.netProfit * projectionOrders - product.results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                          {formatLocalCurrency(product.results.netProfit * projectionOrders - product.results.totalFixedExpenses, product.currency)}
+                        </p>
+                      </td>
+                    )}
                     <td className="p-2">
                     <div className="flex items-center gap-1">
                       <button 
@@ -963,7 +1219,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
                 <div className="flex justify-between items-start pl-8 pr-2">
                   <div className="space-y-0.5">
                     <h4 className="text-[15px] font-bold text-white truncate max-w-[180px]">{product.name}</h4>
-                    <p className="text-[13px] font-mono text-slate-500">{product.productId}</p>
+                    <p className="text-[15px] font-mono text-slate-500">{product.productId}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     {product.url && (
@@ -1014,6 +1270,22 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({ formatCurrency: glo
 
                 {product.notes && (
                   <p className="text-[13px] text-slate-400 line-clamp-2 italic">"{product.notes}"</p>
+                )}
+
+                {isProjectionActive && (
+                  <div className="py-2 border-t border-border/30">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1.5">
+                        <Package size={10} className="text-slate-500" />
+                        <span className="text-[11px] uppercase tracking-widest text-slate-500 font-bold">x{projectionOrders} Pedidos:</span>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-[14px] font-mono font-bold ${product.results.netProfit * projectionOrders - product.results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                          {formatLocalCurrency(product.results.netProfit * projectionOrders - product.results.totalFixedExpenses, product.currency)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-2">

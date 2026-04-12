@@ -50,24 +50,24 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-display font-bold text-white">Análisis de Fletes</h2>
-        <p className="text-sm text-slate-500">Comparativa de logística y eficiencia en envíos</p>
+        <p className="text-base text-slate-500">Comparativa de logística y eficiencia en envíos</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="glass-card p-6">
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Flete Cobrado Total</p>
+          <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-1">Flete Cobrado Total</p>
           <h3 className="text-2xl font-mono font-bold text-white">{formatCurrency(stats.totalCharged)}</h3>
         </div>
         <div className="glass-card p-6">
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Flete Real Pagado</p>
+          <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-1">Flete Real Pagado</p>
           <h3 className="text-2xl font-mono font-bold text-white">{formatCurrency(stats.totalReal)}</h3>
         </div>
         <div className="glass-card p-6 border-red-500/20 bg-red-500/5">
-          <p className="text-[10px] uppercase tracking-widest text-red-400 mb-1">Pérdida Logística</p>
+          <p className="text-[15px] uppercase tracking-widest text-red-400 mb-1">Pérdida Logística</p>
           <h3 className="text-2xl font-mono font-bold text-red-400">{formatCurrency(stats.totalShippingLoss)}</h3>
         </div>
         <div className="glass-card p-6">
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">% Flete Absorbido</p>
+          <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-1">% Flete Absorbido</p>
           <h3 className="text-2xl font-mono font-bold text-gold">{(stats.absorbedRate || 0).toFixed(1)}%</h3>
         </div>
       </div>
@@ -79,13 +79,13 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f1f2e" vertical={false} />
-                <XAxis dataKey="name" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                <XAxis dataKey="name" stroke="#475569" fontSize={15} tickLine={false} axisLine={false} />
+                <YAxis stroke="#475569" fontSize={15} tickLine={false} axisLine={false} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#12121a', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                  itemStyle={{ fontSize: '12px', fontFamily: 'DM Mono' }}
+                  itemStyle={{ fontSize: '15px', fontFamily: 'DM Mono' }}
                 />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '10px', textTransform: 'uppercase' }} />
+                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '15px', textTransform: 'uppercase' }} />
                 <Bar dataKey="Cobrado" fill="#f5c842" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Real" fill="#00ff88" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -96,7 +96,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
         <div className="glass-card p-8 flex flex-col justify-between">
           <div>
             <h3 className="text-xl font-display font-bold text-white mb-4">Proyección de Ahorro</h3>
-            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+            <p className="text-base text-slate-400 mb-6 leading-relaxed">
               Si ajustas tus tarifas de envío un <span className="text-gold font-bold">15%</span> en las zonas con mayor déficit, podrías recuperar:
             </p>
             
@@ -106,7 +106,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                   <Zap size={20} />
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-slate-500">Ahorro Mensual</p>
+                  <p className="text-[15px] uppercase tracking-widest text-slate-500">Ahorro Mensual</p>
                   <p className="text-xl font-mono font-bold text-white">{formatCurrency(stats.totalShippingLoss * 0.4)}</p>
                 </div>
               </div>
@@ -115,7 +115,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                   <ShieldCheck size={20} />
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-slate-500">Impacto en Margen</p>
+                  <p className="text-[15px] uppercase tracking-widest text-slate-500">Impacto en Margen</p>
                   <p className="text-xl font-mono font-bold text-white">+2.4%</p>
                 </div>
               </div>
@@ -123,8 +123,8 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
           </div>
 
           <div className="mt-8 p-4 bg-background rounded-xl border border-border">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Sugerencia ECOMMIL</p>
-            <p className="text-xs text-slate-300 leading-relaxed italic">
+            <p className="text-[15px] text-slate-500 uppercase tracking-widest mb-2">Sugerencia ECOMMIL</p>
+            <p className="text-base text-slate-300 leading-relaxed italic">
               "Tus envíos a Colombia están perdiendo un promedio de $4.20 por pedido. Considera aumentar el flete cobrado o buscar un proveedor local."
             </p>
           </div>

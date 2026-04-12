@@ -50,6 +50,21 @@
         "timestamp": { "type": "number" }
       },
       "required": ["uid", "productName", "date", "platform", "amount"]
+    },
+    "MarketResearch": {
+      "title": "MarketResearch",
+      "description": "Market research data for a product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "productName": { "type": "string" },
+        "storeUrls": { "type": "array", "items": { "type": "string" }, "description": "Up to 20 store URLs" },
+        "notes": { "type": "string" },
+        "videoUrls": { "type": "array", "items": { "type": "string" }, "description": "Video URLs" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["uid", "productName"]
     }
   },
   "firestore": {
@@ -64,6 +79,10 @@
     "/ad_expenses/{expenseId}": {
       "schema": "AdExpense",
       "description": "Advertising expenses collection"
+    },
+    "/market_research/{researchId}": {
+      "schema": "MarketResearch",
+      "description": "Market research collection"
     }
   }
 }

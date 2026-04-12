@@ -1,5 +1,7 @@
 {
-  "name": "ECOMMIL",
-  "description": "Suite Profesional de Gestión de Rentabilidad para E-commerce y Logística",
-  "requestFramePermissions": []
+  "name": "BudgetTrack Pro",
+  "description": "Plataforma fintech premium para seguimiento financiero e investigación de mercado de ecommerce.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
 }

@@ -78,7 +78,7 @@ export const CURRENCIES = {
   COP: { symbol: '$', rate: 3900, name: 'COP' },
   MXN: { symbol: '$', rate: 17, name: 'MXN' },
   CLP: { symbol: '$', rate: 950, name: 'CLP' },
-  PEN: { symbol: 'S/', rate: 3.7, name: 'PEN' },
+  PEN: { symbol: 'S/', rate: 3.43, name: 'PEN' },
   GTQ: { symbol: 'Q', rate: 7.8, name: 'GTQ' },
   EUR: { symbol: '€', rate: 0.92, name: 'EUR' },
   BRL: { symbol: 'R$', rate: 5, name: 'BRL' },
