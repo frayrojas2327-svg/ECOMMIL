@@ -80,6 +80,8 @@ export default function AdvertisingExpenses({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempEdit, setTempEdit] = useState<Partial<AdvertisingExpense> | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
   
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -227,12 +229,28 @@ export default function AdvertisingExpenses({
     }
   };
 
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(exp => {
+      const productName = exp.productName || '';
+      const accountName = exp.accountName || '';
+      const platform = exp.platform || '';
+
+      const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                           accountName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           platform.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesDate = !dateFilter || exp.date === dateFilter;
+      
+      return matchesSearch && matchesDate;
+    });
+  }, [expenses, searchTerm, dateFilter]);
+
   const stats = useMemo(() => {
-    const total = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+    const total = filteredExpenses.reduce((sum, exp) => sum + exp.amount, 0);
     
     // By Platform (Dynamic)
     const platforms: Record<string, number> = {};
-    expenses.forEach(e => {
+    filteredExpenses.forEach(e => {
       platforms[e.platform] = (platforms[e.platform] || 0) + e.amount;
     });
     const platformData = Object.entries(platforms)
@@ -241,7 +259,7 @@ export default function AdvertisingExpenses({
 
     // By Account
     const accounts: Record<string, number> = {};
-    expenses.forEach(e => {
+    filteredExpenses.forEach(e => {
       accounts[e.accountName] = (accounts[e.accountName] || 0) + e.amount;
     });
     const accountData = Object.entries(accounts)
@@ -256,7 +274,7 @@ export default function AdvertisingExpenses({
     });
 
     const dailyData = last14Days.map(day => {
-      const dayExpenses = expenses.filter(e => isSameDay(new Date(e.date), day));
+      const dayExpenses = filteredExpenses.filter(e => isSameDay(new Date(e.date), day));
       return {
         date: format(day, 'dd MMM', { locale: es }),
         amount: dayExpenses.reduce((sum, e) => sum + e.amount, 0)
@@ -264,7 +282,7 @@ export default function AdvertisingExpenses({
     });
 
     return { total, platformData, accountData, dailyData };
-  }, [expenses]);
+  }, [filteredExpenses]);
 
   if (loading) {
     return (
@@ -367,14 +385,15 @@ export default function AdvertisingExpenses({
             <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Fecha</label>
-                <div className="relative">
-                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                <div className="relative group/date">
+                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover/date:text-primary transition-colors pointer-events-none" size={16} />
                   <input 
                     type="date"
                     required
                     value={formData.date}
+                    onClick={(e) => (e.target as any).showPicker?.()}
                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-[15px] text-white focus:border-primary outline-none transition-all"
+                    className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-[15px] text-white focus:border-primary outline-none transition-all [color-scheme:dark] cursor-pointer"
                   />
                 </div>
               </div>
@@ -483,11 +502,42 @@ export default function AdvertisingExpenses({
         )}
       </AnimatePresence>
 
-      {/* Expenses Table */}
+      {/* Expenses List Section */}
       <div className="fintech-card overflow-hidden">
-        <div className="p-4 border-b border-border flex items-center justify-between bg-white/5">
-          <h3 className="text-[13px] font-display font-bold text-white uppercase tracking-widest">Historial de Gastos</h3>
-          <span className="text-[13px] text-slate-500 font-mono italic">Últimos registros primero</span>
+        <div className="p-4 border-b border-border bg-white/5 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h3 className="text-[13px] font-display font-bold text-white uppercase tracking-widest">Historial de Gastos</h3>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                <input 
+                  type="text"
+                  placeholder="Buscar gasto..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-background border border-border rounded-xl py-1.5 pl-9 pr-4 text-xs text-white focus:border-primary outline-none"
+                />
+              </div>
+              <div className="relative group/date-filter">
+                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover/date-filter:text-primary transition-colors pointer-events-none" size={14} />
+                <input 
+                  type="date"
+                  value={dateFilter}
+                  onClick={(e) => (e.target as any).showPicker?.()}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="bg-background border border-border rounded-xl py-1.5 pl-9 pr-4 text-xs text-white focus:border-primary outline-none [color-scheme:dark] cursor-pointer"
+                />
+                {dateFilter && (
+                  <button 
+                    onClick={() => setDateFilter('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -502,25 +552,35 @@ export default function AdvertisingExpenses({
               </tr>
             </thead>
             <tbody className="text-[15px] font-mono">
-              {expenses.length === 0 ? (
+              {filteredExpenses.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-12 text-center text-slate-500 italic">
-                    No hay gastos registrados aún.
+                    {expenses.length === 0 ? 'No hay gastos registrados aún.' : 'No se encontraron gastos con estos filtros.'}
                   </td>
                 </tr>
               ) : (
-                expenses.map((expense) => (
+                filteredExpenses.map((expense) => (
                   <tr key={expense.id} className="border-b border-border/30 hover:bg-white/5 transition-colors group">
                     <td className="p-4 text-white font-medium">
                       {editingId === expense.id ? (
-                        <input 
-                          type="date"
-                          value={tempEdit?.date || ''}
-                          onChange={(e) => setTempEdit({ ...tempEdit, date: e.target.value })}
-                          className="bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
-                        />
+                        <div className="relative">
+                          <input 
+                            type="date"
+                            value={tempEdit?.date || ''}
+                            onClick={(e) => (e.target as any).showPicker?.()}
+                            onChange={(e) => setTempEdit({ ...tempEdit, date: e.target.value })}
+                            className="bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none [color-scheme:dark] w-full cursor-pointer"
+                          />
+                        </div>
                       ) : (
-                        format(new Date(expense.date), 'dd MMM, yyyy', { locale: es })
+                        (() => {
+                          try {
+                            const d = new Date(expense.date);
+                            return isNaN(d.getTime()) ? 'Fecha Inválida' : format(d, 'dd MMM, yyyy', { locale: es });
+                          } catch (e) {
+                            return 'Fecha Inválida';
+                          }
+                        })()
                       )}
                     </td>
                     <td className="p-4">

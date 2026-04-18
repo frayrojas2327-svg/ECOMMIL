@@ -147,10 +147,19 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const handleAddManualOrder = (e: React.FormEvent) => {
     e.preventDefault();
     if (!onAddOrders) return;
-    onAddOrders([{
+    
+    // Normalize values to USD (Internal Base)
+    const normalizedOrder = {
       ...newOrderForm,
+      price: newOrderForm.price / (exchangeRate || 1),
+      cost: newOrderForm.cost / (exchangeRate || 1),
+      shippingCharged: newOrderForm.shippingCharged / (exchangeRate || 1),
+      shippingReal: (newOrderForm.shippingReal || 0) / (exchangeRate || 1),
+      adsCost: newOrderForm.adsCost / (exchangeRate || 1),
       orderId: newOrderForm.orderId || `MAN-${Date.now().toString().slice(-6)}`
-    }]);
+    };
+
+    onAddOrders([normalizedOrder]);
     setNotification({ message: 'Pedido agregado manualmente con éxito.', type: 'success' });
     setTimeout(() => setNotification(null), 4000);
     setShowAddModal(false);
@@ -253,10 +262,14 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             return key ? row[key] : undefined;
           };
 
+          // If conversion is active, we assume the input data is in the current currency
+          // and we normalize it to USD for storage.
+          const normalize = (amount: number) => isConversionActive ? (amount / exchangeRate) : amount;
+
           if (platform === 'Shopify') {
             const externalId = String(getField(['Name', 'Order ID', 'ID', 'Reference', 'Order']) || '');
-            const price = parseMoney(getField(['Total', 'Price', 'Total Price', 'Subtotal', 'Importe']));
-            const lineItemPrice = parseMoney(getField(['Lineitem price', 'Price', 'Item Price', 'Precio Unitario']));
+            const price = normalize(parseMoney(getField(['Total', 'Price', 'Total Price', 'Subtotal', 'Importe'])));
+            const lineItemPrice = normalize(parseMoney(getField(['Lineitem price', 'Price', 'Item Price', 'Precio Unitario'])));
             const lineItemQuantity = parseMoney(getField(['Lineitem quantity', 'Quantity', 'Qty', 'Cantidad'])) || 1;
             const financialStatus = String(getField(['Financial Status', 'Pagado', 'Estado Pago', 'Pago']) || '').toLowerCase();
             const fulfillmentStatus = String(getField(['Fulfillment Status', 'Estado Envío', 'Estado Despacho', 'Cumplimiento']) || '').toLowerCase();
@@ -279,7 +292,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               product: getField(['Lineitem name', 'Name', 'Nombre', 'Producto', 'Artículo']) || 'Producto Shopify',
               price: price,
               cost: lineItemPrice * 0.4 * lineItemQuantity, 
-              shippingCharged: parseMoney(getField(['Shipping', 'Shipping Price', 'Envío', 'Flete'])),
+              shippingCharged: normalize(parseMoney(getField(['Shipping', 'Shipping Price', 'Envío', 'Flete']))),
               shippingReal: 0,
               adsCost: 0,
               platformFee: 0.02,
@@ -294,13 +307,13 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             const product = getField(['Producto', 'Nombre Producto', 'Item', 'Lineitem name', 'Descripción', 'PRODUCTO', 'NOMBRE_PRODUCTO']) || 'Producto Dropi';
             
             // Prioritize specific fields for price and cost
-            const valorFacturado = parseMoney(getField(['VALOR FACTURADO', 'Precio Venta', 'Total', 'Valor Total', 'Venta', 'Amount', 'Precio', 'PRECIO_VENTA', 'VALOR_VENTA', 'PRECIO_TOTAL', 'TOTAL_A_COBRAR', 'RECAUDO']));
-            const valorCompra = parseMoney(getField(['VALOR DE COMPRA EN PRODUCTOS', 'Costo Producto', 'Costo', 'Provider Cost', 'Unit Price', 'Precio Costo', 'COSTO_PRODUCTO', 'COSTO_PROVEEDOR', 'TOTAL EN PRECIOS DE PROVEEDOR', 'PROVEEDOR', 'COSTO_TOTAL']));
-            const flete = parseMoney(getField(['PRECIO FLETE', 'Flete', 'Valor Flete', 'Costo Envío', 'Shipping', 'Flete Real', 'Envío', 'VALOR_FLETE', 'COSTO_ENVIO', 'COSTO_FLETE']));
-            const ganancia = parseMoney(getField(['GANANCIA', 'Profit', 'Utilidad', 'Net Profit', 'GANANCIA_VENDEDOR', 'LIQUIDACION', 'TOTAL_A_PAGAR', 'UTILIDAD_NETA', 'GANANCIA_NETA', 'UTILIDAD_BRUTA']));
-            const comision = parseMoney(getField(['COMISION', 'Comisión', 'COMMISSION', 'FEE_PLATFORM', 'COMISION_CORTE', 'COMISION_VENTA']));
-            const costoDevolucion = parseMoney(getField(['COSTO DEVOLUCION FLETE', 'Costo Devolución', 'Return Cost', 'FLETE_DEVOLUCION', 'COSTO_RETORNO']));
-            const totalPreciosProveedor = parseMoney(getField(['TOTAL PRECIOS PROVEEDOR', 'Supplier Total', 'Costo Total Proveedor', 'TOTAL EN PRECIOS DE PROVEEDOR', 'TOTAL_PROVEEDOR', 'MONTO_PROVEEDOR']));
+            const valorFacturado = normalize(parseMoney(getField(['VALOR FACTURADO', 'Precio Venta', 'Total', 'Valor Total', 'Venta', 'Amount', 'Precio', 'PRECIO_VENTA', 'VALOR_VENTA', 'PRECIO_TOTAL', 'TOTAL_A_COBRAR', 'RECAUDO'])));
+            const valorCompra = normalize(parseMoney(getField(['VALOR DE COMPRA EN PRODUCTOS', 'Costo Producto', 'Costo', 'Provider Cost', 'Unit Price', 'Precio Costo', 'COSTO_PRODUCTO', 'COSTO_PROVEEDOR', 'TOTAL EN PRECIOS DE PROVEEDOR', 'PROVEEDOR', 'COSTO_TOTAL'])));
+            const flete = normalize(parseMoney(getField(['PRECIO FLETE', 'Flete', 'Valor Flete', 'Costo Envío', 'Shipping', 'Flete Real', 'Envío', 'VALOR_FLETE', 'COSTO_ENVIO', 'COSTO_FLETE'])));
+            const ganancia = normalize(parseMoney(getField(['GANANCIA', 'Profit', 'Utilidad', 'Net Profit', 'GANANCIA_VENDEDOR', 'LIQUIDACION', 'TOTAL_A_PAGAR', 'UTILIDAD_NETA', 'GANANCIA_NETA', 'UTILIDAD_BRUTA'])));
+            const comision = normalize(parseMoney(getField(['COMISION', 'Comisión', 'COMMISSION', 'FEE_PLATFORM', 'COMISION_CORTE', 'COMISION_VENTA'])));
+            const costoDevolucion = normalize(parseMoney(getField(['COSTO DEVOLUCION FLETE', 'Costo Devolución', 'Return Cost', 'FLETE_DEVOLUCION', 'COSTO_RETORNO'])));
+            const totalPreciosProveedor = normalize(parseMoney(getField(['TOTAL PRECIOS PROVEEDOR', 'Supplier Total', 'Costo Total Proveedor', 'TOTAL EN PRECIOS DE PROVEEDOR', 'TOTAL_PROVEEDOR', 'MONTO_PROVEEDOR'])));
 
             const rawStatus = String(getField(['Estado', 'Status', 'Estado Orden', 'Estado de la orden', 'Estado Actual', 'Seguimiento', 'Situación', 'ESTADO', 'ESTATUS']) || '').toUpperCase();
             
@@ -434,10 +447,15 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
-      const matchesSearch = order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           order.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           (order.trackingId && order.trackingId.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                           (order.nombreCliente && order.nombreCliente.toLowerCase().includes(searchTerm.toLowerCase()));
+      const orderId = order.orderId || '';
+      const product = order.product || '';
+      const trackingId = order.trackingId || '';
+      const nombreCliente = order.nombreCliente || '';
+
+      const matchesSearch = orderId.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                           product.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           trackingId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           nombreCliente.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesStatus = statusFilter === 'All' || order.status === statusFilter;
       
@@ -447,26 +465,34 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       // Date Filtering
       let matchesReqDate = true;
       if (reqDate) {
-        const orderTime = startOfDay(order.date).getTime();
-        const filterTime = startOfDay(parseISO(reqDate)).getTime();
-        matchesReqDate = orderTime === filterTime;
+        try {
+          const orderTime = startOfDay(order.date).getTime();
+          const filterTime = startOfDay(parseISO(reqDate)).getTime();
+          matchesReqDate = orderTime === filterTime;
+        } catch (e) {
+          matchesReqDate = false;
+        }
       }
 
       let matchesDelDate = true;
       if (delDate) {
-        // Try to find delivery date from various fields
-        const deliveryStr = order.fechaUltimoMovimiento || order.fechaSolucion || order.fechaReporte;
-        if (deliveryStr && order.status === 'Entregado') {
-          const deliveryDate = parseFlexibleDate(deliveryStr);
-          if (deliveryDate) {
-            const deliveryTime = startOfDay(deliveryDate).getTime();
-            const filterTime = startOfDay(parseISO(delDate)).getTime();
-            matchesDelDate = deliveryTime === filterTime;
+        try {
+          // Try to find delivery date from various fields
+          const deliveryStr = order.fechaUltimoMovimiento || order.fechaSolucion || order.fechaReporte;
+          if (deliveryStr && order.status === 'Entregado') {
+            const deliveryDate = parseFlexibleDate(deliveryStr);
+            if (deliveryDate) {
+              const deliveryTime = startOfDay(deliveryDate).getTime();
+              const filterTime = startOfDay(parseISO(delDate)).getTime();
+              matchesDelDate = deliveryTime === filterTime;
+            } else {
+              matchesDelDate = false;
+            }
           } else {
-            matchesDelDate = false;
+            matchesDelDate = false; 
           }
-        } else {
-          matchesDelDate = false; 
+        } catch (e) {
+          matchesDelDate = false;
         }
       }
 
@@ -479,7 +505,19 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       { id: 'fechaReporte', label: 'FECHA REPORTE', value: (o: Order) => o.fechaReporte },
       { id: 'orderId', label: 'ID ORDEN', value: (o: Order) => o.orderId, className: 'font-bold text-white' },
       { id: 'hora', label: 'HORA', value: (o: Order) => o.hora },
-      { id: 'date', label: 'FECHA', value: (o: Order) => o.date ? format(o.date, 'yyyy-MM-dd') : '', className: 'text-slate-500' },
+      { 
+        id: 'date', 
+        label: 'FECHA', 
+        value: (o: Order) => {
+          if (!o.date) return '';
+          try {
+            return format(o.date, 'yyyy-MM-dd');
+          } catch (e) {
+            return 'Inválida';
+          }
+        }, 
+        className: 'text-slate-500' 
+      },
       { id: 'nombreCliente', label: 'NOMBRE CLIENTE', value: (o: Order) => o.nombreCliente, className: 'text-white font-bold' },
       { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono },
       { id: 'emailCliente', label: 'EMAIL', value: (o: Order) => o.emailCliente },
@@ -839,8 +877,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <input 
                     type="date"
                     value={reqDate}
+                    onClick={(e) => (e.target as any).showPicker?.()}
                     onChange={(e) => setReqDate(e.target.value)}
-                    className="bg-transparent border-none p-0 text-xs text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full"
+                    className="bg-transparent border-none p-0 text-xs text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
                   />
                 </div>
               </div>
@@ -854,8 +893,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <input 
                     type="date"
                     value={delDate}
+                    onClick={(e) => (e.target as any).showPicker?.()}
                     onChange={(e) => setDelDate(e.target.value)}
-                    className="bg-transparent border-none p-0 text-xs text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full"
+                    className="bg-transparent border-none p-0 text-xs text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
                   />
                 </div>
               </div>

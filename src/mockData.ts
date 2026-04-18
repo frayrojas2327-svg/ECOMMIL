@@ -99,18 +99,18 @@ const CANCEL_REASONS = ['Cambio de opinión', 'Error en dirección', 'Precio alt
 export const generateMockData = (): Order[] => {
   const orders: Order[] = [];
   const now = new Date();
-  const baseCurrency: CurrencyCode = 'GTQ';
+  const baseCurrency: CurrencyCode = 'USD';
   const rate = CURRENCIES[baseCurrency].rate;
 
   for (let i = 0; i < 150; i++) {
     const date = subDays(now, Math.floor(Math.random() * 30));
     const product = PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)];
-    // Storing in local GTQ base
-    const cost = (15 + Math.random() * 40) * rate;
+    // Storing in USD base
+    const cost = (15 + Math.random() * 40);
     const price = cost * (1.5 + Math.random() * 1.5);
-    const shippingCharged = Math.random() > 0.5 ? (5 + Math.random() * 10) * rate : 0;
-    const shippingReal = (30 + Math.random() * 10); // Real local flete around 32-40 GTQ
-    const adsCost = (5 + Math.random() * 15) * rate;
+    const shippingCharged = Math.random() > 0.5 ? (5 + Math.random() * 10) : 0;
+    const shippingReal = (4 + Math.random() * 2); // Real shipping around $4-6
+    const adsCost = (5 + Math.random() * 15);
     const platformFee = 0.03; // 3%
     
     // Weighted status

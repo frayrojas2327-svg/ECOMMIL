@@ -260,18 +260,14 @@ function AppContent() {
 
   const formatCurrency = (amount: number) => {
     const info = dynamicCurrencies[currency];
-    const gtqRate = dynamicCurrencies['GTQ']?.rate || 7.73;
     
-    // The user wants GTQ values to be the "Raw" values (32 = 32 Q).
-    // If isConversionActive is ON, we convert from GTQ to the target currency.
-    // If isConversionActive is OFF, we show the raw amount (helpful for checking errors).
+    // Now the internal base is USD.
+    // If isConversionActive is ON, we convert from USD to the target currency.
+    // If isConversionActive is OFF, we show the raw amount (which is USD).
     
     let converted = amount;
-    if (isConversionActive && currency !== 'GTQ') {
-      // Step 1: Normalize to USD (Pivot)
-      const inUSD = amount / gtqRate;
-      // Step 2: Convert to Target
-      converted = inUSD * info.rate;
+    if (isConversionActive) {
+      converted = amount * info.rate;
     }
     
     return new Intl.NumberFormat(undefined, {
