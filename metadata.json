@@ -1,6 +1,6 @@
 {
-  "name": "BudgetTrack Pro",
-  "description": "Plataforma fintech premium para seguimiento financiero e investigación de mercado de ecommerce.",
+  "name": "ECOMMIL Pro",
+  "description": "Plataforma fintech premium para gestión de rentabilidad, logística e investigación de mercado de ecommerce.",
   "requestFramePermissions": [
     "geolocation"
   ]

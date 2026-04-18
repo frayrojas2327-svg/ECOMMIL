@@ -82,8 +82,12 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   }, [variableExpenses]);
 
   const addExpense = () => {
+    const info = currencies[currency];
+    const amountToSave = newFixed.amount / info.rate;
+    
     const newExpense: FixedExpense = {
       ...newFixed,
+      amount: amountToSave,
       id: Math.random().toString(36).substr(2, 9)
     };
     setFixedExpenses([...fixedExpenses, newExpense]);
@@ -99,8 +103,12 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   };
 
   const addVariableExpense = () => {
+    const info = currencies[currency];
+    const amountToSave = newVariable.amount / info.rate;
+
     const newExpense: VariableExpense = {
       ...newVariable,
+      amount: amountToSave,
       id: Math.random().toString(36).substr(2, 9)
     };
     setVariableExpenses([...variableExpenses, newExpense]);
@@ -405,13 +413,24 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                         <span className="text-slate-500 font-mono text-xs">{currencySymbol}</span>
                         <input 
                           type="number"
-                          value={expense.amount || ''}
-                          onChange={(e) => updateExpense(expense.id, 'amount', parseFloat(e.target.value) || 0)}
+                          value={currencies[currency].rate !== 1 ? (expense.amount * currencies[currency].rate).toFixed(2) : expense.amount}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            updateExpense(expense.id, 'amount', val / currencies[currency].rate);
+                          }}
                           className="w-24 bg-background border border-border rounded-lg py-1 px-2 text-sm font-mono text-white focus:outline-none focus:border-neon"
                         />
                       </div>
                     ) : (
-                      <span className="text-[15px] font-mono text-white">{formatCurrency(expense.amount)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[15px] font-mono text-white">{formatCurrency(expense.amount)}</span>
+                        <button 
+                          onClick={() => setEditingId(expense.id)}
+                          className="p-1 text-slate-500 hover:text-neon transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                      </div>
                     )}
                   </td>
                   <td className="p-3">
@@ -507,13 +526,24 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                         <span className="text-slate-500 font-mono text-xs">{currencySymbol}</span>
                         <input 
                           type="number"
-                          value={expense.amount || ''}
-                          onChange={(e) => updateVariableExpense(expense.id, 'amount', parseFloat(e.target.value) || 0)}
+                          value={currencies[currency].rate !== 1 ? (expense.amount * currencies[currency].rate).toFixed(2) : expense.amount}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            updateVariableExpense(expense.id, 'amount', val / currencies[currency].rate);
+                          }}
                           className="w-24 bg-background border border-border rounded-lg py-1 px-2 text-sm font-mono text-white focus:outline-none focus:border-gold"
                         />
                       </div>
                     ) : (
-                      <span className="text-[15px] font-mono text-white">{formatCurrency(expense.amount)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[15px] font-mono text-white">{formatCurrency(expense.amount)}</span>
+                        <button 
+                          onClick={() => setEditingId(expense.id)}
+                          className="p-1 text-slate-500 hover:text-gold transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                      </div>
                     )}
                   </td>
                   <td className="p-3 text-sm text-slate-500 uppercase tracking-tighter">Por Venta</td>

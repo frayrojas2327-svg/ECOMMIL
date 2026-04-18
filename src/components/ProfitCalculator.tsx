@@ -425,6 +425,31 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const parseMoney = (val: any) => {
+      if (val === undefined || val === null || val === '') return 0;
+      if (typeof val === 'number') return val;
+      let str = String(val).trim();
+      if (!str) return 0;
+      // Specialized cleaning for GTQ and common OCR/Formatting errors
+      str = str.replace(/GTQ|TQ|6TQ|Q/gi, '').replace(/[$\s]/g, '');
+      const lastComma = str.lastIndexOf(',');
+      const lastDot = str.lastIndexOf('.');
+      if (lastComma !== -1 && lastDot !== -1) {
+        if (lastComma > lastDot) str = str.replace(/\./g, '').replace(',', '.');
+        else str = str.replace(/,/g, '');
+      } else if (lastComma !== -1) {
+        const parts = str.split(',');
+        if (parts.length > 2 || parts[parts.length - 1].length > 2) str = str.replace(/,/g, '');
+        else str = str.replace(',', '.');
+      } else if (lastDot !== -1) {
+        const parts = str.split('.');
+        if (parts.length > 2 || parts[parts.length - 1].length > 2) str = str.replace(/\./g, '');
+      }
+      const cleaned = str.replace(/[^0-9.-]/g, '');
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       const bstr = evt.target?.result;
@@ -436,15 +461,15 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       const importedProducts: SavedProduct[] = data.map(row => {
         // Dropi mapping or generic mapping
         const name = row['Nombre'] || row['Nombre del producto'] || row['Producto'] || row['Item'] || 'Importado';
-        const price = parseFloat(row['Precio Venta'] || row['Precio de venta'] || row['Precio'] || row['Venta'] || 0);
-        const cost = parseFloat(row['Costo'] || row['Costo del producto'] || row['Costo Unitario'] || row['Compra'] || 0);
-        const shippingCharged = parseFloat(row['Flete Cobrado'] || row['Envío cobrado'] || row['Envío Cliente'] || 0);
-        const shippingReal = parseFloat(row['Flete Real'] || row['Costo de envío'] || row['Flete'] || row['Envío Real'] || 0);
-        const adsCost = parseFloat(row['Costo Ads'] || row['Publicidad'] || row['CPA'] || 0);
-        const platformFee = parseFloat(row['Comisión %'] || row['Comisión'] || row['Fee'] || 3);
-        const confirmationRate = parseFloat(row['Confirmación %'] || row['Confirmación'] || 90);
-        const cancellationRate = parseFloat(row['Cancelación %'] || row['Cancelación'] || 5);
-        const returnRate = parseFloat(row['Devolución %'] || row['Devolución'] || 8);
+        const price = parseMoney(row['Precio Venta'] || row['Precio de venta'] || row['Precio'] || row['Venta']);
+        const cost = parseMoney(row['Costo'] || row['Costo del producto'] || row['Costo Unitario'] || row['Compra']);
+        const shippingCharged = parseMoney(row['Flete Cobrado'] || row['Envío cobrado'] || row['Envío Cliente']);
+        const shippingReal = parseMoney(row['Flete Real'] || row['Costo de envío'] || row['Flete'] || row['Envío Real']);
+        const adsCost = parseMoney(row['Costo Ads'] || row['Publicidad'] || row['CPA']);
+        const platformFee = parseMoney(row['Comisión %'] || row['Comisión'] || row['Fee'] || 3);
+        const confirmationRate = parseMoney(row['Confirmación %'] || row['Confirmación'] || 90);
+        const cancellationRate = parseMoney(row['Cancelación %'] || row['Cancelación'] || 5);
+        const returnRate = parseMoney(row['Devolución %'] || row['Devolución'] || 8);
         const productId = row['ID/SKU'] || row['SKU'] || row['Referencia'] || row['Código'] || 'N/A';
         const notes = row['Notas'] || row['Descripción'] || row['Comentario'] || '';
         const url = row['URL'] || row['Link'] || '';

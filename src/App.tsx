@@ -133,6 +133,7 @@ function AppContent() {
         return { 
           ...data, 
           id: doc.id,
+          orderId: data.orderId || doc.id.substring(0, 8).toUpperCase(),
           date: data.date ? new Date(data.date) : new Date(),
           price: Number(data.price || 0),
           cost: Number(data.cost || 0),
@@ -187,11 +188,12 @@ function AppContent() {
       const batch = writeBatch(db);
       newOrders.forEach(o => {
         const newDoc = doc(collection(db, 'orders'));
+        const orderDate = o.date instanceof Date && !isNaN(o.date.getTime()) ? o.date : new Date();
         batch.set(newDoc, { 
           ...o, 
           id: newDoc.id,
           uid: user.uid,
-          date: o.date.toISOString() 
+          date: orderDate.toISOString() 
         });
       });
       await batch.commit();
@@ -258,7 +260,19 @@ function AppContent() {
 
   const formatCurrency = (amount: number) => {
     const info = dynamicCurrencies[currency];
-    const converted = isConversionActive ? amount * info.rate : amount;
+    const gtqRate = dynamicCurrencies['GTQ']?.rate || 7.73;
+    
+    // The user wants GTQ values to be the "Raw" values (32 = 32 Q).
+    // If isConversionActive is ON, we convert from GTQ to the target currency.
+    // If isConversionActive is OFF, we show the raw amount (helpful for checking errors).
+    
+    let converted = amount;
+    if (isConversionActive && currency !== 'GTQ') {
+      // Step 1: Normalize to USD (Pivot)
+      const inUSD = amount / gtqRate;
+      // Step 2: Convert to Target
+      converted = inUSD * info.rate;
+    }
     
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
@@ -583,7 +597,17 @@ function AppContent() {
               {activeTab === 'dashboard' && <Dashboard orders={orders} stats={stats} formatCurrency={formatCurrency} currencySymbol={currencyInfo.symbol} />}
               {activeTab === 'kpis' && <KPIPanel orders={orders} stats={stats} formatCurrency={formatCurrency} />}
               {activeTab === 'logistics-ai' && <LogisticsAI orders={orders} stats={stats} formatCurrency={formatCurrency} />}
-              {activeTab === 'orders' && <OrderManagement orders={orders} formatCurrency={formatCurrency} onDeleteOrders={deleteOrders} onAddOrders={addOrders} />}
+            {activeTab === 'orders' && (
+              <OrderManagement 
+                orders={orders} 
+                formatCurrency={formatCurrency} 
+                onDeleteOrders={deleteOrders} 
+                onAddOrders={addOrders}
+                currentCurrency={currency}
+                exchangeRate={currencyInfo.rate}
+                isConversionActive={isConversionActive}
+              />
+            )}
               {activeTab === 'calculator' && (
                 <ProfitCalculator 
                   formatCurrency={formatCurrency} 
@@ -596,7 +620,14 @@ function AppContent() {
               )}
               {activeTab === 'research' && <MarketResearch />}
               {activeTab === 'returns' && <ReturnsAnalysis orders={orders} formatCurrency={formatCurrency} />}
-              {activeTab === 'ads' && <AdvertisingExpenses formatCurrency={formatCurrency} />}
+              {activeTab === 'ads' && (
+                <AdvertisingExpenses 
+                  formatCurrency={formatCurrency} 
+                  currency={currency}
+                  currencies={dynamicCurrencies}
+                  isConversionActive={isConversionActive}
+                />
+              )}
               {activeTab === 'platform-expenses' && (
                 <PlatformExpenses 
                   formatCurrency={formatCurrency} 

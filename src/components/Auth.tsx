@@ -151,7 +151,9 @@ export const AuthScreen = () => {
     } catch (err: any) {
       console.error('Auth error:', err);
       let message = 'Ocurrió un error inesperado.';
-      if (err.code === 'auth/user-not-found') message = 'Usuario no encontrado.';
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        message = 'Email o contraseña incorrectos. Si acabas de empezar con este remix, por favor regístrate primero.';
+      }
       if (err.code === 'auth/wrong-password') message = 'Contraseña incorrecta.';
       if (err.code === 'auth/email-already-in-use') message = 'El correo ya está registrado.';
       if (err.code === 'auth/weak-password') message = 'La contraseña es muy débil.';

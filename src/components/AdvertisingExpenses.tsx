@@ -3,6 +3,9 @@ import {
   Megaphone, 
   Plus, 
   Trash2, 
+  Edit2,
+  Check,
+  X as CloseIcon,
   Calendar as CalendarIcon, 
   Target, 
   Layers, 
@@ -17,7 +20,7 @@ import {
   Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from './Auth';
 import { format, startOfDay, eachDayOfInterval, subDays, isSameDay } from 'date-fns';
@@ -26,6 +29,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Cell, PieChart, Pie, AreaChart, Area 
 } from 'recharts';
+import { CurrencyCode } from '../mockData';
 
 interface AdvertisingExpense {
   id: string;
@@ -58,11 +62,24 @@ const PLATFORMS = [
 
 const COLORS = ['#22c55e', '#38bdf8', '#fbbf24', '#f472b6', '#f87171', '#a78bfa', '#fb923c', '#4ade80'];
 
-export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency: (amount: number) => string }) {
+export default function AdvertisingExpenses({ 
+  formatCurrency,
+  currency,
+  currencies,
+  isConversionActive 
+}: { 
+  formatCurrency: (amount: number) => string,
+  currency: CurrencyCode,
+  currencies: any,
+  isConversionActive: boolean
+}) {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<AdvertisingExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [savedProducts, setSavedProducts] = useState<SavedProduct[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [tempEdit, setTempEdit] = useState<Partial<AdvertisingExpense> | null>(null);
   
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -78,7 +95,7 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
   // Load saved products from localStorage (from ProfitCalculator)
   useEffect(() => {
     const loadProducts = () => {
-      const saved = localStorage.getItem('budgettrack_saved_products');
+      const saved = localStorage.getItem('ecommil_saved_products');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -121,13 +138,38 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
     return () => unsubscribe();
   }, [user]);
 
+  const startEditing = (expense: AdvertisingExpense) => {
+    setEditingId(expense.id);
+    setTempEdit({ ...expense });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setTempEdit(null);
+  };
+
+  const saveEditing = async () => {
+    if (!editingId || !tempEdit) return;
+    try {
+      await updateDoc(doc(db, 'ad_expenses', editingId), tempEdit);
+      cancelEditing();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'ad_expenses');
+    }
+  };
+
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || isSubmitting) return;
 
     try {
-      const amount = parseFloat(formData.amount);
-      if (isNaN(amount)) return;
+      setIsSubmitting(true);
+      const rawAmount = parseFloat(formData.amount);
+      if (isNaN(rawAmount)) return;
+
+      // Normalize amount if conversion is active
+      const info = currencies[currency];
+      const normalizedAmount = rawAmount / info.rate;
 
       // Find product name if only ID was selected (though we handle it in onChange)
       let finalProductName = formData.productName;
@@ -145,7 +187,7 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
         date: formData.date,
         accountName: formData.accountName,
         platform: finalPlatform || 'Otro',
-        amount: amount,
+        amount: normalizedAmount,
         timestamp: Date.now()
       };
 
@@ -163,6 +205,17 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'ad_expenses');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateExpense = async (id: string, updates: Partial<AdvertisingExpense>) => {
+    try {
+      await updateDoc(doc(db, 'ad_expenses', id), updates);
+      setEditingId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'ad_expenses');
     }
   };
 
@@ -459,34 +512,139 @@ export default function AdvertisingExpenses({ formatCurrency }: { formatCurrency
                 expenses.map((expense) => (
                   <tr key={expense.id} className="border-b border-border/30 hover:bg-white/5 transition-colors group">
                     <td className="p-4 text-white font-medium">
-                      {format(new Date(expense.date), 'dd MMM, yyyy', { locale: es })}
+                      {editingId === expense.id ? (
+                        <input 
+                          type="date"
+                          value={tempEdit?.date || ''}
+                          onChange={(e) => setTempEdit({ ...tempEdit, date: e.target.value })}
+                          className="bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
+                        />
+                      ) : (
+                        format(new Date(expense.date), 'dd MMM, yyyy', { locale: es })
+                      )}
                     </td>
                     <td className="p-4">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white">{expense.productName}</span>
-                        <span className="text-[13px] text-slate-500 uppercase tracking-widest">ID: {expense.productId || 'N/A'}</span>
-                      </div>
+                      {editingId === expense.id ? (
+                        <div className="flex flex-col gap-2">
+                          <select 
+                            value={tempEdit?.productId === 'manual' || !tempEdit?.productId ? 'manual' : tempEdit.productId}
+                            onChange={(e) => {
+                              const prod = savedProducts.find(p => p.id === e.target.value);
+                              setTempEdit({ 
+                                ...tempEdit, 
+                                productId: e.target.value,
+                                productName: prod ? prod.name : (tempEdit?.productName || '')
+                              });
+                            }}
+                            className="bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
+                          >
+                            {savedProducts.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                            <option value="manual">Manual</option>
+                          </select>
+                          {(!tempEdit?.productId || tempEdit?.productId === 'manual') && (
+                            <input 
+                              type="text"
+                              value={tempEdit?.productName || ''}
+                              onChange={(e) => setTempEdit({ ...tempEdit, productName: e.target.value })}
+                              className="bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
+                              placeholder="Nombre producto"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <span className="font-bold text-white">{expense.productName}</span>
+                          <span className="text-[13px] text-slate-500 uppercase tracking-widest">ID: {expense.productId || 'N/A'}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="p-4">
-                      <span className="px-2 py-1 rounded-lg bg-white/5 border border-border text-[13px] font-bold uppercase tracking-widest text-slate-300">
-                        {expense.platform}
-                      </span>
+                      {editingId === expense.id ? (
+                        <select 
+                          value={tempEdit?.platform || PLATFORMS[0]}
+                          onChange={(e) => setTempEdit({ ...tempEdit, platform: e.target.value })}
+                          className="bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
+                        >
+                          {PLATFORMS.map(p => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="px-2 py-1 rounded-lg bg-white/5 border border-border text-[13px] font-bold uppercase tracking-widest text-slate-300">
+                          {expense.platform}
+                        </span>
+                      )}
                     </td>
                     <td className="p-4 text-slate-300">
-                      {expense.accountName}
+                      {editingId === expense.id ? (
+                        <input 
+                          type="text"
+                          value={tempEdit?.accountName || ''}
+                          onChange={(e) => setTempEdit({ ...tempEdit, accountName: e.target.value })}
+                          className="w-full bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
+                        />
+                      ) : (
+                        expense.accountName
+                      )}
                     </td>
                     <td className="p-4 text-right">
-                      <span className="font-bold text-primary">
-                        {formatCurrency(expense.amount)}
-                      </span>
+                      {editingId === expense.id ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <input 
+                            type="number"
+                            step="0.01"
+                            value={tempEdit?.amount ? (tempEdit.amount * currencies[currency].rate).toFixed(2) : ''}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setTempEdit({ ...tempEdit, amount: val / currencies[currency].rate });
+                            }}
+                            className="w-24 bg-background border border-primary rounded-lg py-1 px-2 text-sm font-mono text-white text-right focus:outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2 group/amount">
+                          <span className="font-bold text-primary">
+                            {formatCurrency(expense.amount)}
+                          </span>
+                          <button 
+                            onClick={() => startEditing(expense)}
+                            className="p-1 text-slate-500 hover:text-primary transition-colors opacity-0 group-hover/amount:opacity-100"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="p-4 text-center">
-                      <button 
-                        onClick={() => handleDeleteExpense(expense.id)}
-                        className="p-2 text-slate-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        {editingId === expense.id ? (
+                          <>
+                            <button 
+                              onClick={saveEditing}
+                              className="p-2 text-primary hover:text-green-400 transition-colors"
+                              title="Guardar"
+                            >
+                              <Check size={16} />
+                            </button>
+                            <button 
+                              onClick={cancelEditing}
+                              className="p-2 text-slate-500 hover:text-white transition-colors"
+                              title="Cancelar"
+                            >
+                              <CloseIcon size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <button 
+                            onClick={() => handleDeleteExpense(expense.id)}
+                            className="p-2 text-slate-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
