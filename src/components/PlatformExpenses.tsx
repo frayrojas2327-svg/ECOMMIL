@@ -6,7 +6,8 @@ import {
   Edit2,
   Save,
   Check,
-  Table as TableIcon
+  Table as TableIcon,
+  Globe
 } from 'lucide-react';
 import { CurrencyCode } from '../mockData';
 
@@ -33,6 +34,7 @@ interface PlatformExpensesProps {
   currencySymbol: string;
   currency: CurrencyCode;
   currencies: any;
+  isConversionActive?: boolean;
 }
 
 const EXPENSE_CATEGORIES = ['Software', 'Publicidad', 'Servicios', 'Personal', 'Suscripciones', 'Otros'];
@@ -41,8 +43,36 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   formatCurrency, 
   currencySymbol,
   currency,
-  currencies
+  currencies,
+  isConversionActive = false
 }) => {
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
+  const localFormatCurrency = (amount: number) => {
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currency;
+    const rate = currencies[currency]?.rate || 1;
+    
+    let converted = amount;
+    if (!isUSD) {
+      converted = amount * rate;
+    }
+    
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: targetCurrency,
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(rounded);
+  };
+
   const [fixedExpenses, setFixedExpenses] = useState<FixedExpense[]>(() => {
     const saved = localStorage.getItem('ecommil_fixed_expenses');
     return saved ? JSON.parse(saved) : [];
@@ -167,15 +197,25 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
+              isLocalConversionActive 
+                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
+                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
+          </button>
           <div className="flex items-center gap-4 bg-card border border-border p-4 rounded-2xl">
             <div className="text-right">
               <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Total Fijo Mensual</p>
-              <p className="text-[15px] font-mono font-bold text-neon">{formatCurrency(totalMonthlyFixed)}</p>
+              <p className="text-[15px] font-mono font-bold text-neon">{localFormatCurrency(totalMonthlyFixed)}</p>
             </div>
             <div className="w-px h-10 bg-border" />
             <div className="text-right">
               <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Total Variable (Unidad)</p>
-              <p className="text-[15px] font-mono font-bold text-gold">{formatCurrency(totalVariable)}</p>
+              <p className="text-[15px] font-mono font-bold text-gold">{localFormatCurrency(totalVariable)}</p>
             </div>
           </div>
         </div>
@@ -425,7 +465,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="text-[15px] font-mono text-white">{formatCurrency(expense.amount)}</span>
+                        <span className="text-[15px] font-mono text-white">{localFormatCurrency(expense.amount)}</span>
                         <button 
                           onClick={() => setEditingId(expense.id)}
                           className="p-1 text-slate-500 hover:text-neon transition-colors opacity-0 group-hover:opacity-100"
@@ -482,7 +522,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                     )}
                   </td>
                   <td className="p-3 text-[15px] font-mono text-neon font-bold">
-                    {formatCurrency(expense.frequency === 'monthly' ? expense.amount : expense.amount / 12)}
+                    {localFormatCurrency(expense.frequency === 'monthly' ? expense.amount : expense.amount / 12)}
                   </td>
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
@@ -540,7 +580,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="text-[15px] font-mono text-white">{formatCurrency(expense.amount)}</span>
+                        <span className="text-[15px] font-mono text-white">{localFormatCurrency(expense.amount)}</span>
                         <button 
                           onClick={() => setEditingId(expense.id)}
                           className="p-1 text-slate-500 hover:text-gold transition-colors opacity-0 group-hover:opacity-100"
@@ -580,7 +620,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                     )}
                   </td>
                   <td className="p-3 text-[15px] font-mono text-gold font-bold">
-                    {formatCurrency(expense.amount)} <span className="text-[10px] text-slate-500 font-normal">(Unitario)</span>
+                    {localFormatCurrency(expense.amount)} <span className="text-[10px] text-slate-500 font-normal">(Unitario)</span>
                   </td>
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
@@ -619,7 +659,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
               <tfoot>
                 <tr className="bg-card/50 border-t border-border font-bold">
                   <td colSpan={6} className="p-3 text-right text-[11px] uppercase tracking-widest text-slate-500">Total Operativo Mensual (Fijos):</td>
-                  <td className="p-3 text-[15px] font-mono text-neon">{formatCurrency(totalMonthlyFixed)}</td>
+                  <td className="p-3 text-[15px] font-mono text-neon">{localFormatCurrency(totalMonthlyFixed)}</td>
                   <td className="p-3"></td>
                 </tr>
               </tfoot>

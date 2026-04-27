@@ -11,15 +11,17 @@ import {
   signInWithPopup
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User as UserIcon, Loader2, AlertCircle, LogOut, Chrome, Globe, Eye, EyeOff } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User as UserIcon, Loader2, AlertCircle, LogOut, Chrome, Globe, Eye, EyeOff, Play } from 'lucide-react';
 
 interface AuthContextType {
-  user: FirebaseUser | null;
+  user: any; // Using any to allow for mock user
   loading: boolean;
   isAdmin: boolean;
   logout: () => Promise<void>;
+  loginAsDemo: () => void;
+  isDemoMode: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,11 +33,31 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(() => {
+    return localStorage.getItem('ecommil_demo_mode') === 'true';
+  });
 
   useEffect(() => {
+    if (isDemoMode) {
+      setUser({
+        uid: 'demo-user-123',
+        email: 'demo@ecommil.pro',
+        displayName: 'Usuario Demo',
+        photoURL: null,
+      });
+      setIsAdmin(true);
+      setLoading(false);
+      return;
+    }
+
+    if (!isFirebaseConfigValid) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -65,20 +87,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isDemoMode]);
 
   const logout = async () => {
-    await signOut(auth);
+    if (isDemoMode) {
+      setIsDemoMode(false);
+      localStorage.removeItem('ecommil_demo_mode');
+      setUser(null);
+    } else if (isFirebaseConfigValid) {
+      await signOut(auth);
+    }
+  };
+
+  const loginAsDemo = () => {
+    setIsDemoMode(true);
+    localStorage.setItem('ecommil_demo_mode', 'true');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, logout }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, logout, loginAsDemo, isDemoMode }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
 export const AuthScreen = () => {
+  const { loginAsDemo } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -107,6 +141,10 @@ export const AuthScreen = () => {
   };
 
   const handleGoogleLogin = async () => {
+    if (!isFirebaseConfigValid) {
+      alert("La configuración de Firebase no es válida. Por favor, use el 'Modo Demo'.");
+      return;
+    }
     setError(null);
     setMessage(null);
     setLoading(true);
@@ -123,6 +161,10 @@ export const AuthScreen = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isFirebaseConfigValid) {
+      alert("La configuración de Firebase no es válida o se ha rechazado. Por favor, use el 'Modo Demo'.");
+      return;
+    }
     setError(null);
     setMessage(null);
     setLoading(true);
@@ -306,6 +348,14 @@ export const AuthScreen = () => {
             <span className="bg-card px-2 text-slate-500">O continúa con</span>
           </div>
         </div>
+
+        <button
+          onClick={loginAsDemo}
+          className="w-full bg-neon/10 border border-neon/30 text-neon font-bold py-3 rounded-xl hover:bg-neon/20 transition-all active:scale-95 flex items-center justify-center gap-3 mb-4"
+        >
+          <Play size={20} fill="currentColor" />
+          ENTRAR EN MODO DEMO
+        </button>
 
         <button
           onClick={handleGoogleLogin}

@@ -1,14 +1,44 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
-import { Truck, TrendingDown, ShieldCheck, Zap } from 'lucide-react';
-import { Order } from '../mockData';
+import { Truck, TrendingDown, ShieldCheck, Zap, Globe } from 'lucide-react';
+import { Order, CurrencyCode } from '../mockData';
 
 interface ShippingAnalysisProps {
   orders: Order[];
   formatCurrency: (amount: number) => string;
+  currency?: CurrencyCode;
+  currencies?: any;
+  isConversionActive?: boolean;
 }
 
-const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurrency }) => {
+const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurrency, currency = 'USD', currencies = {}, isConversionActive = false }) => {
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
+  const localFormatCurrency = (amount: number) => {
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currency;
+    const rate = currencies[currency]?.rate || 1;
+    
+    let converted = amount;
+    if (!isUSD) {
+      converted = amount * rate;
+    }
+    
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: targetCurrency,
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(rounded);
+  };
+
   const stats = useMemo(() => {
     const validOrders = orders.filter(o => o.status !== 'Cancelado');
     
@@ -48,23 +78,35 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-display font-bold text-white">Análisis de Fletes</h2>
-        <p className="text-base text-slate-500">Comparativa de logística y eficiencia en envíos</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-white">Análisis de Fletes</h2>
+          <p className="text-base text-slate-500">Comparativa de logística y eficiencia en envíos</p>
+        </div>
+        <button 
+          onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
+            isLocalConversionActive 
+              ? 'bg-neon text-background shadow-lg shadow-neon/20' 
+              : 'bg-card border border-border text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="glass-card p-6">
           <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-1">Flete Cobrado Total</p>
-          <h3 className="text-2xl font-mono font-bold text-white">{formatCurrency(stats.totalCharged)}</h3>
+          <h3 className="text-2xl font-mono font-bold text-white">{localFormatCurrency(stats.totalCharged)}</h3>
         </div>
         <div className="glass-card p-6">
           <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-1">Flete Real Pagado</p>
-          <h3 className="text-2xl font-mono font-bold text-white">{formatCurrency(stats.totalReal)}</h3>
+          <h3 className="text-2xl font-mono font-bold text-white">{localFormatCurrency(stats.totalReal)}</h3>
         </div>
         <div className="glass-card p-6 border-red-500/20 bg-red-500/5">
           <p className="text-[15px] uppercase tracking-widest text-red-400 mb-1">Pérdida Logística</p>
-          <h3 className="text-2xl font-mono font-bold text-red-400">{formatCurrency(stats.totalShippingLoss)}</h3>
+          <h3 className="text-2xl font-mono font-bold text-red-400">{localFormatCurrency(stats.totalShippingLoss)}</h3>
         </div>
         <div className="glass-card p-6">
           <p className="text-[15px] uppercase tracking-widest text-slate-500 mb-1">% Flete Absorbido</p>
@@ -107,7 +149,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                 </div>
                 <div>
                   <p className="text-[15px] uppercase tracking-widest text-slate-500">Ahorro Mensual</p>
-                  <p className="text-xl font-mono font-bold text-white">{formatCurrency(stats.totalShippingLoss * 0.4)}</p>
+                  <p className="text-xl font-mono font-bold text-white">{localFormatCurrency(stats.totalShippingLoss * 0.4)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">

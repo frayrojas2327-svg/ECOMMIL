@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Sparkles, Send, Loader2, AlertCircle, TrendingDown, TrendingUp, Package, Truck, DollarSign, Settings, Shield, Key, MessageSquare, Eye, EyeOff, Save, Cpu, Brain, Zap } from 'lucide-react';
+import { Bot, Sparkles, Send, Loader2, AlertCircle, TrendingDown, TrendingUp, Package, Truck, DollarSign, Settings, Shield, Key, MessageSquare, Eye, EyeOff, Save, Cpu, Brain, Zap, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { Order } from '../mockData';
+import { Order, CurrencyCode } from '../mockData';
 import Markdown from 'react-markdown';
 import CryptoJS from 'crypto-js';
 
@@ -16,9 +16,46 @@ interface LogisticsAIProps {
   orders: Order[];
   stats: any;
   formatCurrency: (amount: number) => string;
+  currency?: CurrencyCode;
+  currencies?: any;
+  isConversionActive?: boolean;
 }
 
-const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency }) => {
+const LogisticsAI: React.FC<LogisticsAIProps> = ({ 
+  orders, 
+  stats, 
+  formatCurrency,
+  currency = 'USD',
+  currencies = {},
+  isConversionActive = false
+}) => {
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
+  const localFormatCurrency = (amount: number) => {
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currency;
+    const rate = currencies[currency]?.rate || 1;
+    
+    let converted = amount;
+    if (!isUSD) {
+      converted = amount * rate;
+    }
+    
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: targetCurrency,
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(rounded);
+  };
+
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,15 +158,15 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
         countries: Array.from(new Set(orders.map(o => o.country))),
       };
 
-      const baseInstruction = `Eres un Asesor de Logística Pro y experto en E-commerce/Dropshipping. 
-      Tu misión es analizar los números de ECOMMIL y dar soluciones accionables. 
-      Si los números están en negativo o bajos (Margen < 15%, ROI < 50%, Health Score < 60%), sé directo, crítico y ofrece estrategias para revertir la situación.
-      Habla en español, con un tono profesional pero audaz (estilo "Shark Tank").
-      Usa Markdown para dar formato a tus respuestas.
+      const baseInstruction = `Eres un Analista Experto de Nivel Élite en Logística y E-commerce.
+      Tu misión es realizar un análisis crítico y ultra-conciso de los números de ECOMMIL.
+      REGLA DE ORO: Tus respuestas deben ser de MÁXIMO 3 LÍNEAS. Sé directo, brutalmente honesto y puramente basado en datos.
+      Usa un tono profesional, analítico y ejecutivo (estilo "High-Level Consultant").
+      Si la situación es crítica, di exactamente qué está fallando sin rodeos.
       
       Contexto actual del negocio:
-      - Ingresos Totales: ${formatCurrency(context.totalRevenue)}
-      - Ganancia Neta: ${formatCurrency(context.totalNetProfit)}
+      - Ingresos Totales: ${localFormatCurrency(context.totalRevenue)}
+      - Ganancia Neta: ${localFormatCurrency(context.totalNetProfit)}
       - Margen: ${context.margin.toFixed(2)}%
       - ROAS: ${context.roas.toFixed(2)}
       - ROI: ${context.roi.toFixed(2)}%
@@ -144,7 +181,7 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
         ? `${baseInstruction}\n\nInstrucciones Adicionales del Usuario:\n${config.customInstruction}`
         : baseInstruction;
 
-      const prompt = userQuery || "Haz un análisis general de mi situación logística actual y dime por qué mis números están así. Dame 3 acciones inmediatas.";
+      const prompt = userQuery || "Ejecuta un diagnóstico flash de rentabilidad y logística basándote en los datos actuales.";
 
       let text = "";
 
@@ -237,6 +274,16 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
           <p className="text-base text-slate-500">Análisis experto y estrategias de optimización en tiempo real</p>
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
+              isLocalConversionActive 
+                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
+                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
+          </button>
           <button 
             onClick={() => setIsConfigOpen(!isConfigOpen)}
             className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-base font-mono transition-all ${
@@ -480,14 +527,35 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({ orders, stats, formatCurrency
             )}
           </div>
 
-          <div className="p-4 bg-background/50 border-t border-border">
+          <div className="p-4 bg-background/50 border-t border-border space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <button 
+                onClick={() => { setQuery('¿Cómo bajar mi tasa de devoluciones al 5%?'); }}
+                className="px-3 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition-all flex items-center gap-2"
+              >
+                <TrendingDown size={12} /> Optimizar Devolución 5%
+              </button>
+              <button 
+                onClick={() => { setQuery('Analiza mi ROI actual y dime si es sostenible.'); }}
+                className="px-3 py-1.5 bg-neon/10 border border-neon/20 text-neon rounded-lg text-xs font-bold hover:bg-neon/20 transition-all flex items-center gap-2"
+              >
+                <Zap size={12} /> Diagnóstico ROI
+              </button>
+              <button 
+                onClick={() => { setQuery('¿Mi margen neto es saludable para escalar a más países?'); }}
+                className="px-3 py-1.5 bg-gold/10 border border-gold/20 text-gold rounded-lg text-xs font-bold hover:bg-gold/20 transition-all flex items-center gap-2"
+              >
+                <Truck size={12} /> Estrategia de Escala
+              </button>
+            </div>
+
             <div className="relative flex items-center gap-2">
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="Pregunta al asesor sobre tus pérdidas, fletes o rentabilidad..."
+                placeholder="Consultar análisis experto sobre fletes, ROI o salud del negocio..."
                 className="flex-1 bg-card border border-border rounded-xl py-3 pl-4 pr-12 text-base text-white focus:outline-none focus:border-neon transition-all"
               />
               <button

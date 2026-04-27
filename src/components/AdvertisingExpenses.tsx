@@ -12,12 +12,14 @@ import {
   DollarSign,
   Search,
   Filter,
+  AlertCircle,
   TrendingUp,
   BarChart3,
   ArrowUpRight,
   ArrowDownRight,
   PieChart as PieChartIcon,
-  Activity
+  Activity,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -40,7 +42,12 @@ interface AdvertisingExpense {
   accountName: string;
   platform: string;
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
+  conversionRate?: number;
   timestamp: number;
+  notes?: string;
+  color?: string;
 }
 
 interface SavedProduct {
@@ -62,6 +69,17 @@ const PLATFORMS = [
 
 const COLORS = ['#22c55e', '#38bdf8', '#fbbf24', '#f472b6', '#f87171', '#a78bfa', '#fb923c', '#4ade80'];
 
+const TAG_COLORS = [
+  { name: 'Ninguno', value: 'transparent' },
+  { name: 'Verde', value: '#22c55e' },
+  { name: 'Azul', value: '#38bdf8' },
+  { name: 'Amarillo', value: '#fbbf24' },
+  { name: 'Rosa', value: '#f472b6' },
+  { name: 'Rojo', value: '#f87171' },
+  { name: 'Violeta', value: '#a78bfa' },
+  { name: 'Naranja', value: '#fb923c' },
+];
+
 export default function AdvertisingExpenses({ 
   formatCurrency,
   currency,
@@ -74,8 +92,87 @@ export default function AdvertisingExpenses({
   isConversionActive: boolean
 }) {
   const { user } = useAuth();
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+  
+  // Sync with global conversion when prop changes
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
   const [expenses, setExpenses] = useState<AdvertisingExpense[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [notification, setNotification] = useState<{message: string, type: 'info' | 'success'} | null>(null);
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
+  const handleToggleConversion = () => {
+    const newState = !isLocalConversionActive;
+    setIsLocalConversionActive(newState);
+    
+    const info = currencies[currency];
+    if (newState) {
+      setNotification({
+        message: `Conversión Activa: Visualizando todos los gastos en ${currency} (TRM: ${info.rate.toLocaleString('es-CO')}). Los nuevos registros se interpretarán en esta moneda.`,
+        type: 'success'
+      });
+    } else {
+      setNotification({
+        message: `Conversión Desactivada: Visualizando en dólares (USD). Los nuevos registros se interpretarán en USD.`,
+        type: 'info'
+      });
+    }
+  };
+
+  const localFormatCurrency = (amount: number, expense?: AdvertisingExpense) => {
+    const info = currencies[currency];
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currency;
+
+    // Fixed logic: If we are viewing in a currency that matches the original registration currency,
+    // show the EXACT original amount to prevent "numbers changing" due to TRM volatility.
+    if (expense && expense.originalCurrency === targetCurrency && expense.originalAmount !== undefined) {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: targetCurrency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      }).format(expense.originalAmount);
+    }
+
+    let converted = amount;
+    if (!isUSD) {
+      if (expense && expense.conversionRate && expense.originalCurrency === 'USD' && targetCurrency === currency) {
+        converted = amount * info.rate;
+      } else {
+        converted = amount * info.rate;
+      }
+    }
+    
+    // Safety rounding to avoid float precision artifacts
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: targetCurrency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(rounded);
+  };
+
+  const parseDateSafe = (dateStr: string) => {
+    try {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    } catch (e) {
+      return new Date();
+    }
+  };
   const [savedProducts, setSavedProducts] = useState<SavedProduct[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -91,7 +188,9 @@ export default function AdvertisingExpenses({
     accountName: '',
     platform: 'Facebook Ads',
     customPlatform: '',
-    amount: ''
+    amount: '',
+    notes: '',
+    color: 'transparent'
   });
 
   // Load saved products from localStorage (from ProfitCalculator)
@@ -169,13 +268,13 @@ export default function AdvertisingExpenses({
       const rawAmount = parseFloat(formData.amount);
       if (isNaN(rawAmount)) return;
 
-      // Normalize amount if conversion is active
+      // Normalize amount depending on current mode
       const info = currencies[currency];
-      const normalizedAmount = rawAmount / info.rate;
+      const normalizedAmount = isLocalConversionActive ? rawAmount / info.rate : rawAmount;
 
-      // Find product name if only ID was selected (though we handle it in onChange)
+      // Find product name if only ID was selected
       let finalProductName = formData.productName;
-      if (!finalProductName && formData.productId) {
+      if (!finalProductName && formData.productId && formData.productId !== 'manual') {
         const prod = savedProducts.find(p => p.id === formData.productId);
         if (prod) finalProductName = prod.name;
       }
@@ -190,7 +289,12 @@ export default function AdvertisingExpenses({
         accountName: formData.accountName,
         platform: finalPlatform || 'Otro',
         amount: normalizedAmount,
-        timestamp: Date.now()
+        originalAmount: rawAmount,
+        originalCurrency: isLocalConversionActive ? currency : 'USD',
+        conversionRate: info.rate,
+        timestamp: Date.now(),
+        notes: formData.notes,
+        color: formData.color
       };
 
       await addDoc(collection(db, 'ad_expenses'), newExpense);
@@ -203,7 +307,9 @@ export default function AdvertisingExpenses({
         accountName: '',
         platform: 'Facebook Ads',
         customPlatform: '',
-        amount: ''
+        amount: '',
+        notes: '',
+        color: 'transparent'
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'ad_expenses');
@@ -234,10 +340,12 @@ export default function AdvertisingExpenses({
       const productName = exp.productName || '';
       const accountName = exp.accountName || '';
       const platform = exp.platform || '';
+      const notes = exp.notes || '';
 
       const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            accountName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           platform.toLowerCase().includes(searchTerm.toLowerCase());
+                           platform.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           notes.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesDate = !dateFilter || exp.date === dateFilter;
       
@@ -274,7 +382,7 @@ export default function AdvertisingExpenses({
     });
 
     const dailyData = last14Days.map(day => {
-      const dayExpenses = filteredExpenses.filter(e => isSameDay(new Date(e.date), day));
+      const dayExpenses = filteredExpenses.filter(e => isSameDay(parseDateSafe(e.date), day));
       return {
         date: format(day, 'dd MMM', { locale: es }),
         amount: dayExpenses.reduce((sum, e) => sum + e.amount, 0)
@@ -301,12 +409,56 @@ export default function AdvertisingExpenses({
           </h2>
           <p className="text-slate-500 text-[15px]">Control aislado de inversión publicitaria por producto y plataforma</p>
         </div>
-        <button 
-          onClick={() => setShowAddForm(true)}
-          className="bg-primary text-background font-bold px-4 py-2 rounded-xl flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20 text-[15px]"
-        >
-          <Plus size={18} /> Registrar Gasto
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-xl border border-border relative">
+            <span className="text-[12px] font-bold text-slate-400 ml-2 uppercase tracking-widest">Conversión</span>
+            <button 
+              onClick={handleToggleConversion}
+              className={`relative w-12 h-6 rounded-full transition-all duration-300 ${isLocalConversionActive ? 'bg-primary' : 'bg-slate-700'}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300 ${isLocalConversionActive ? 'left-7' : 'left-1'}`} />
+            </button>
+            
+            {/* Notification Float */}
+            <AnimatePresence>
+              {notification && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                  className={`absolute bottom-full mb-4 right-0 min-w-[280px] p-4 rounded-2xl border shadow-2xl z-[100] flex items-start gap-3 ${
+                    notification.type === 'success' 
+                      ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' 
+                      : 'bg-slate-900/90 border-slate-700 text-slate-200'
+                  }`}
+                >
+                  <div className={`p-2 rounded-xl ${notification.type === 'success' ? 'bg-emerald-500/20' : 'bg-slate-800'}`}>
+                    {notification.type === 'success' ? <TrendingUp size={18} className="text-emerald-400" /> : <Globe size={18} className="text-slate-400" />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[14px] font-medium leading-tight">
+                      {notification.message}
+                    </p>
+                    <div className="mt-2 w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: '100%' }}
+                        animate={{ width: '0%' }}
+                        transition={{ duration: 5, ease: 'linear' }}
+                        className={`h-full ${notification.type === 'success' ? 'bg-emerald-400' : 'bg-slate-400'}`}
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          <button 
+            onClick={() => setShowAddForm(true)}
+            className="bg-primary text-background font-bold px-4 py-2 rounded-xl flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20 text-[15px]"
+          >
+            <Plus size={18} /> Registrar Gasto
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -319,7 +471,7 @@ export default function AdvertisingExpenses({
             </div>
           </div>
           <p className="text-3xl font-mono font-bold text-white tracking-tighter">
-            {formatCurrency(stats.total)}
+            {localFormatCurrency(stats.total)}
           </p>
         </div>
         
@@ -338,7 +490,7 @@ export default function AdvertisingExpenses({
                     <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                     <p className="text-[15px] font-bold text-white truncate max-w-[120px]">{plat.name}</p>
                   </div>
-                  <p className="text-[15px] font-mono text-secondary font-bold">{formatCurrency(plat.value)}</p>
+                  <p className="text-[15px] font-mono text-secondary font-bold">{localFormatCurrency(plat.value)}</p>
                 </div>
               ))}
             </div>
@@ -384,7 +536,7 @@ export default function AdvertisingExpenses({
 
             <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Fecha</label>
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Fecha de Gasto</label>
                 <div className="relative group/date">
                   <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover/date:text-primary transition-colors pointer-events-none" size={16} />
                   <input 
@@ -474,27 +626,95 @@ export default function AdvertisingExpenses({
               </div>
 
               <div className="space-y-2">
-                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Monto Invertido</label>
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1 flex justify-between items-center">
+                  Monto Invertido
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={handleToggleConversion}
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all ${isLocalConversionActive ? 'bg-primary text-background' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
+                    >
+                      {isLocalConversionActive ? `En ${currency}` : 'En USD'}
+                    </button>
+                  </div>
+                </label>
+                <div className={`relative rounded-xl border transition-all duration-300 ${isLocalConversionActive ? 'bg-primary/5 border-primary/50 shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'bg-background border-border'}`}>
+                  <div className={`absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[16px] font-bold transition-colors ${isLocalConversionActive ? 'text-primary' : 'text-slate-500'}`}>
+                    {isLocalConversionActive ? currencies[currency].symbol : '$'}
+                  </div>
                   <input 
                     type="number"
                     step="0.01"
                     required
-                    placeholder="0.00"
+                    placeholder="0"
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-[15px] text-white focus:border-primary outline-none transition-all font-mono"
+                    className={`w-full bg-transparent py-3.5 pl-12 pr-16 text-[18px] font-mono text-white outline-none transition-all ${isLocalConversionActive ? 'placeholder:text-primary/30' : 'placeholder:text-slate-700'}`}
                   />
+                  <div className={`absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isLocalConversionActive ? 'bg-primary text-background' : 'bg-slate-800 text-slate-500'}`}>
+                    {isLocalConversionActive ? currency : 'USD'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1 px-1">
+                  {isLocalConversionActive ? (
+                    <TrendingUp size={12} className="text-primary animate-pulse" />
+                  ) : (
+                    <Globe size={12} className="text-slate-500" />
+                  )}
+                  <p className="text-[11px] text-slate-400 leading-tight">
+                    {isLocalConversionActive ? (
+                      <>Digitando en <span className="text-primary font-bold">{currency}</span>. Equivale a <span className="text-white font-bold">{(parseFloat(formData.amount || '0') / currencies[currency].rate).toFixed(2)} USD</span></>
+                    ) : (
+                      <>Digitando en <span className="text-slate-300 font-bold">Dólares (USD)</span>. Desactivado para moneda local.</>
+                    )}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-end">
+              <div className="space-y-2 col-span-full">
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Color de Registro</label>
+                <div className="flex flex-wrap gap-2 p-3 bg-white/5 rounded-xl border border-border">
+                  {TAG_COLORS.map((color) => (
+                    <button
+                      key={color.value}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, color: color.value })}
+                      className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center ${
+                        formData.color === color.value ? 'border-primary scale-110 shadow-lg shadow-white/10' : 'border-transparent hover:border-white/20'
+                      }`}
+                      style={{ backgroundColor: color.value === 'transparent' ? 'transparent' : color.value }}
+                      title={color.name}
+                    >
+                      {color.value === 'transparent' && <div className="w-6 h-0.5 bg-red-500/50 rotate-45" />}
+                      {formData.color === color.value && color.value !== 'transparent' && <Check size={14} className="text-white drop-shadow-md" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2 col-span-full">
+                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Notas / Detalles (Opcional)</label>
+                <textarea 
+                  placeholder="Añade notas adicionales sobre este gasto..."
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={2}
+                  className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all resize-none"
+                />
+              </div>
+
+              <div className="col-span-full pt-4">
                 <button 
                   type="submit"
-                  className="w-full bg-primary text-background font-bold py-3 rounded-xl hover:brightness-110 transition-all shadow-lg shadow-primary/20 text-[15px] uppercase tracking-widest"
+                  disabled={isSubmitting}
+                  className="w-full bg-primary text-background font-bold py-4 rounded-xl hover:brightness-110 transition-all shadow-lg shadow-primary/20 text-[15px] uppercase tracking-widest flex items-center justify-center gap-2"
                 >
-                  Guardar Gasto
+                  {isSubmitting ? (
+                    <div className="w-5 h-5 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                  ) : (
+                    <Plus size={20} />
+                  )}
+                  {isSubmitting ? 'Guardando...' : 'Guardar Gasto'}
                 </button>
               </div>
             </form>
@@ -539,14 +759,14 @@ export default function AdvertisingExpenses({
             </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto p-2">
+          <table className="w-full text-left border-separate border-spacing-y-2">
             <thead>
               <tr className="bg-background/50 text-[13px] uppercase tracking-widest text-slate-500 font-display">
                 <th className="p-4 font-bold border-b border-border">Fecha</th>
                 <th className="p-4 font-bold border-b border-border">Producto</th>
                 <th className="p-4 font-bold border-b border-border">Plataforma</th>
-                <th className="p-4 font-bold border-b border-border">Cuenta</th>
+                <th className="p-4 font-bold border-b border-border">Detalles</th>
                 <th className="p-4 font-bold border-b border-border text-right">Monto</th>
                 <th className="p-4 font-bold border-b border-border text-center">Acción</th>
               </tr>
@@ -560,8 +780,19 @@ export default function AdvertisingExpenses({
                 </tr>
               ) : (
                 filteredExpenses.map((expense) => (
-                  <tr key={expense.id} className="border-b border-border/30 hover:bg-white/5 transition-colors group">
-                    <td className="p-4 text-white font-medium">
+                  <tr 
+                    key={expense.id} 
+                    className="group relative transition-all duration-300"
+                    style={expense.color && expense.color !== 'transparent' ? { 
+                      backgroundColor: `${expense.color}15`,
+                      boxShadow: `0 0 0 2px ${expense.color}, 0 8px 32px -4px rgba(0,0,0,0.4)`,
+                      zIndex: 1
+                    } : { 
+                      backgroundColor: 'rgba(255,255,255,0.03)',
+                      boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.05)'
+                    }}
+                  >
+                    <td className="p-4 text-white font-medium relative rounded-l-xl">
                       {editingId === expense.id ? (
                         <div className="relative">
                           <input 
@@ -575,7 +806,8 @@ export default function AdvertisingExpenses({
                       ) : (
                         (() => {
                           try {
-                            const d = new Date(expense.date);
+                            const [year, month, day] = expense.date.split('-').map(Number);
+                            const d = new Date(year, month - 1, day);
                             return isNaN(d.getTime()) ? 'Fecha Inválida' : format(d, 'dd MMM, yyyy', { locale: es });
                           } catch (e) {
                             return 'Fecha Inválida';
@@ -639,34 +871,74 @@ export default function AdvertisingExpenses({
                     </td>
                     <td className="p-4 text-slate-300">
                       {editingId === expense.id ? (
-                        <input 
-                          type="text"
-                          value={tempEdit?.accountName || ''}
-                          onChange={(e) => setTempEdit({ ...tempEdit, accountName: e.target.value })}
-                          className="w-full bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
-                        />
+                        <div className="space-y-2">
+                          <input 
+                            type="text"
+                            placeholder="Cuenta publicitaria"
+                            value={tempEdit?.accountName || ''}
+                            onChange={(e) => setTempEdit({ ...tempEdit, accountName: e.target.value })}
+                            className="w-full bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
+                          />
+                          <input 
+                            type="text"
+                            placeholder="Notas / Detalles"
+                            value={tempEdit?.notes || ''}
+                            onChange={(e) => setTempEdit({ ...tempEdit, notes: e.target.value })}
+                            className="w-full bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none"
+                          />
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {TAG_COLORS.map(c => (
+                              <button
+                                key={c.value}
+                                onClick={() => setTempEdit({ ...tempEdit, color: c.value })}
+                                className={`w-4 h-4 rounded-full border border-white/10 ${tempEdit?.color === c.value ? 'ring-2 ring-primary' : ''}`}
+                                style={{ backgroundColor: c.value === 'transparent' ? 'transparent' : c.value }}
+                              />
+                            ))}
+                          </div>
+                        </div>
                       ) : (
-                        expense.accountName
+                        <div className="flex flex-col gap-1 min-w-[150px]">
+                          <span className="text-white font-medium">{expense.accountName}</span>
+                          {expense.notes && (
+                            <span className="text-[12px] text-slate-500 italic leading-tight bg-white/5 rounded p-1 border border-border/50">
+                              {expense.notes}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="p-4 text-right">
                       {editingId === expense.id ? (
                         <div className="flex items-center justify-end gap-1">
-                          <input 
-                            type="number"
-                            step="0.01"
-                            value={tempEdit?.amount ? (tempEdit.amount * currencies[currency].rate).toFixed(2) : ''}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setTempEdit({ ...tempEdit, amount: val / currencies[currency].rate });
-                            }}
-                            className="w-24 bg-background border border-primary rounded-lg py-1 px-2 text-sm font-mono text-white text-right focus:outline-none"
-                          />
+                          <div className="relative">
+                            <input 
+                              type="number"
+                              step="0.01"
+                              value={tempEdit?.amount ? Number((tempEdit.amount * (isLocalConversionActive ? currencies[currency].rate : 1)).toFixed(2)).toString() : ''}
+                              onChange={(e) => {
+                                const valString = e.target.value;
+                                const val = parseFloat(valString) || 0;
+                                const rate = currencies[currency].rate;
+                                setTempEdit({ 
+                                  ...tempEdit!, 
+                                  amount: isLocalConversionActive ? val / rate : val,
+                                  originalAmount: val,
+                                  originalCurrency: isLocalConversionActive ? currency : 'USD',
+                                  conversionRate: rate
+                                });
+                              }}
+                              className="w-24 bg-background border border-primary rounded-lg py-1 px-2 text-sm font-mono text-white text-right focus:outline-none pr-8"
+                            />
+                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-500 opacity-50">
+                              {isLocalConversionActive ? currency : 'USD'}
+                            </span>
+                          </div>
                         </div>
                       ) : (
                         <div className="flex items-center justify-end gap-2 group/amount">
                           <span className="font-bold text-primary">
-                            {formatCurrency(expense.amount)}
+                            {localFormatCurrency(expense.amount, expense)}
                           </span>
                           <button 
                             onClick={() => startEditing(expense)}
@@ -677,7 +949,7 @@ export default function AdvertisingExpenses({
                         </div>
                       )}
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="p-4 text-center rounded-r-xl">
                       <div className="flex items-center justify-center gap-2">
                         {editingId === expense.id ? (
                           <>
@@ -745,7 +1017,7 @@ export default function AdvertisingExpenses({
                   fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
-                  tickFormatter={(value) => `$${value}`}
+                  tickFormatter={(value) => localFormatCurrency(value)}
                   dx={-10}
                 />
                 <Tooltip 
@@ -753,6 +1025,7 @@ export default function AdvertisingExpenses({
                   itemStyle={{ color: '#22c55e', fontSize: '15px', fontWeight: 'bold' }}
                   labelStyle={{ color: '#94a3b8', fontSize: '13px', marginBottom: '4px' }}
                   cursor={{ stroke: '#22c55e', strokeWidth: 1, strokeDasharray: '3 3' }}
+                  formatter={(value: number) => localFormatCurrency(value)}
                 />
                 <Area 
                   type="monotone" 
@@ -791,7 +1064,7 @@ export default function AdvertisingExpenses({
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px' }}
                   itemStyle={{ color: '#fff', fontSize: '15px', fontWeight: 'bold' }}
-                  formatter={(value: number) => formatCurrency(value)}
+                  formatter={(value: number) => localFormatCurrency(value)}
                   cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                 />
                 <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={24} activeBar={false}>
@@ -827,13 +1100,13 @@ export default function AdvertisingExpenses({
                   fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
-                  tickFormatter={(value) => `$${value}`}
+                  tickFormatter={(value) => localFormatCurrency(value)}
                   dx={-10}
                 />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px' }}
                   itemStyle={{ color: '#fbbf24', fontSize: '15px', fontWeight: 'bold' }}
-                  formatter={(value: number) => formatCurrency(value)}
+                  formatter={(value: number) => localFormatCurrency(value)}
                   cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                 />
                 <Bar dataKey="value" fill="#fbbf24" radius={[8, 8, 0, 0]} barSize={48} activeBar={false}>

@@ -83,6 +83,7 @@ export interface Order {
   feTipoResponsabilidad?: string;
   feImpuesto?: string;
   sourceCurrency?: CurrencyCode;
+  priorityShipping?: number;
 }
 
 const PRODUCTS = [

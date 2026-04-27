@@ -1,17 +1,46 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 
 // Import the Firebase configuration
 import firebaseConfig from '../firebase-applet-config.json';
 
-// Initialize Firebase SDK
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth();
+// Detect if configuration is placeholder/invalid
+export const isFirebaseConfigValid = 
+  !!firebaseConfig.apiKey && 
+  firebaseConfig.apiKey !== 'remixed-api-key' && 
+  firebaseConfig.apiKey.includes('AIzaSy'); // Google API keys usually start with AIzaSy
+
+let app;
+let db: any;
+let auth: any;
+
+try {
+  if (isFirebaseConfigValid) {
+    app = initializeApp(firebaseConfig);
+    db = initializeFirestore(app, {
+      experimentalForceLongPolling: true
+    }, firebaseConfig.firestoreDatabaseId);
+    auth = getAuth(app);
+  } else {
+    app = null;
+    db = null;
+    auth = { currentUser: null, onAuthStateChanged: (cb: any) => { cb(null); return () => {}; } };
+  }
+} catch (e) {
+  app = null;
+  db = null;
+  auth = { currentUser: null, onAuthStateChanged: (cb: any) => { cb(null); return () => {}; } };
+}
+
+export { db, auth };
+
+// Using initializeFirestore with experimentalForceLongPolling: true 
+// to avoid connection issues in restricted network environments
 
 // Validate Connection to Firestore
 async function testConnection() {
+  if (!isFirebaseConfigValid) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {

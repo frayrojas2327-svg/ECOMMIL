@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc, Timestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { useAuth } from './Auth';
 
 export interface ResearchItem {
@@ -39,7 +39,7 @@ export interface ResearchItem {
 }
 
 export default function Research() {
-  const { user } = useAuth();
+  const { user, isDemoMode } = useAuth();
   const [items, setItems] = useState<ResearchItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -60,8 +60,24 @@ export default function Research() {
     rating: 3
   });
 
+  // Fallback to localStorage if Firebase is not valid or in Demo Mode
   useEffect(() => {
-    if (!user) return;
+    if ((isDemoMode || !isFirebaseConfigValid) && !user) {
+      const saved = localStorage.getItem('ecommil_research_items');
+      if (saved) {
+        setItems(JSON.parse(saved));
+      }
+      setLoading(false);
+    }
+  }, [user, isDemoMode]);
+
+  useEffect(() => {
+    if (!user || !isFirebaseConfigValid || isDemoMode) return;
+
+    if (!db) {
+      setLoading(false);
+      return;
+    }
 
     const q = query(collection(db, 'research'), where('uid', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -76,7 +92,14 @@ export default function Research() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isDemoMode]);
+
+  // Save to localStorage when items change in Demo Mode
+  useEffect(() => {
+    if (isDemoMode || !isFirebaseConfigValid) {
+      localStorage.setItem('ecommil_research_items', JSON.stringify(items));
+    }
+  }, [items, isDemoMode]);
 
   const averagePrice = useMemo(() => {
     if (items.length === 0) return 0;
@@ -92,11 +115,11 @@ export default function Research() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user && !isDemoMode) return;
 
     const priceNum = parseFloat(formData.price);
-    const newItem = {
-      uid: user.uid,
+    const itemData = {
+      uid: user?.uid || 'demo-user',
       product_name: formData.product_name,
       store_name: formData.store_name,
       product_link: formData.product_link,
@@ -106,14 +129,38 @@ export default function Research() {
       notes: formData.notes,
       rating: formData.rating,
       opportunity_score: calculateOpportunity(priceNum),
-      date_added: Timestamp.now()
+      date_added: editingItem ? editingItem.date_added : { toMillis: () => Date.now(), seconds: Math.floor(Date.now() / 1000) }
     };
+
+    if (isDemoMode || !isFirebaseConfigValid) {
+      if (editingItem) {
+        setItems(prev => prev.map(item => item.id === editingItem.id ? { ...itemData, id: item.id } as ResearchItem : item));
+      } else {
+        const newItem = { ...itemData, id: Math.random().toString(36).substr(2, 9) } as ResearchItem;
+        setItems(prev => [newItem, ...prev]);
+      }
+      setIsModalOpen(false);
+      setEditingItem(null);
+      setFormData({
+        product_name: '',
+        store_name: '',
+        product_link: '',
+        price: '',
+        currency: 'USD',
+        angles: '',
+        notes: '',
+        rating: 3
+      });
+      return;
+    }
+
+    if (!db) return;
 
     try {
       if (editingItem) {
-        await setDoc(doc(db, 'research', editingItem.id), newItem);
+        await setDoc(doc(db, 'research', editingItem.id), itemData);
       } else {
-        await addDoc(collection(db, 'research'), newItem);
+        await addDoc(collection(db, 'research'), { ...itemData, date_added: Timestamp.now() });
       }
       setIsModalOpen(false);
       setEditingItem(null);
@@ -134,6 +181,14 @@ export default function Research() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar este análisis?')) return;
+
+    if (isDemoMode || !isFirebaseConfigValid) {
+      setItems(prev => prev.filter(item => item.id !== id));
+      return;
+    }
+
+    if (!db) return;
+
     try {
       await deleteDoc(doc(db, 'research', id));
     } catch (err) {

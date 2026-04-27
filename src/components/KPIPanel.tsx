@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   TrendingUp, 
@@ -14,18 +14,28 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Activity,
-  Zap
+  Zap,
+  Globe,
+  Megaphone
 } from 'lucide-react';
-import { Order, calculateOrderProfit } from '../mockData';
+import { Order, calculateOrderProfit, CurrencyCode } from '../mockData';
 
 interface KPIPanelProps {
   orders: Order[];
   stats: any;
   formatCurrency: (amount: number) => string;
+  currency?: CurrencyCode;
+  currencies?: any;
+  isConversionActive?: boolean;
+  manualAdSpend?: number;
+  setManualAdSpend?: (val: number) => void;
 }
 
-const MetricCard = ({ title, value, subValue, trend, icon: Icon, description, color = 'neon' }: any) => (
-  <div className="border border-border bg-card/50 p-6 relative overflow-hidden group">
+const MetricCard = ({ title, value, subValue, trend, icon: Icon, description, color = 'neon', onClick }: any) => (
+  <div 
+    onClick={onClick}
+    className={`border border-border bg-card/50 p-6 relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-primary transition-all' : ''}`}
+  >
     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
       <Icon size={64} />
     </div>
@@ -57,7 +67,45 @@ const MetricCard = ({ title, value, subValue, trend, icon: Icon, description, co
   </div>
 );
 
-const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) => {
+const KPIPanel: React.FC<KPIPanelProps> = ({ 
+  orders, 
+  stats, 
+  formatCurrency, 
+  currency = 'USD', 
+  currencies = {}, 
+  isConversionActive = false,
+  manualAdSpend = 0,
+  setManualAdSpend
+}) => {
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+
+  const currencySymbol = currencies[currency]?.symbol || '$';
+
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
+  const localFormatCurrency = (amount: number) => {
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currency;
+    const rate = currencies[currency]?.rate || 1;
+    
+    let converted = amount;
+    if (!isUSD) {
+      converted = amount * rate;
+    }
+    
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: targetCurrency,
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(rounded);
+  };
+
   const kpis = useMemo(() => {
     const totalOrders = orders.length;
     const confirmedOrders = orders.filter(o => o.status !== 'Cancelado').length;
@@ -86,10 +134,39 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
           </h2>
           <p className="text-slate-500 text-base mt-1">Métricas clave de rendimiento y eficiencia operativa.</p>
         </div>
-        <div className="flex items-center gap-4 text-[15px] font-mono text-slate-500 uppercase tracking-widest">
-          <span className="flex items-center gap-1"><Zap size={10} className="text-neon" /> Actualizado: Tiempo Real</span>
-          <span className="w-1 h-1 rounded-full bg-slate-700" />
-          <span>Periodo: Últimos 30 Días</span>
+        <div className="flex flex-wrap items-center gap-6 text-[15px] font-mono text-slate-500 uppercase tracking-widest">
+          {/* Advertising Control */}
+          <div className="flex items-center gap-3 pr-6 border-r border-white/5">
+            <div className="flex flex-col items-end gap-1">
+              <div className="text-[9px] uppercase tracking-widest text-slate-500 font-black flex items-center gap-1.5">
+                <Megaphone size={10} className="text-gold" />
+                ADS
+              </div>
+              <input 
+                type="number"
+                value={manualAdSpend || ''}
+                onChange={(e) => setManualAdSpend?.(Number(e.target.value))}
+                placeholder="0.00"
+                className="bg-black/40 border border-white/10 rounded-md py-1 px-2 text-[11px] text-white font-mono w-[80px] focus:border-gold outline-none transition-all text-right h-7"
+              />
+            </div>
+            <div className="text-[9px] text-slate-600 font-bold uppercase leading-none border-l border-white/5 pl-3">
+              AUTO:<br/>
+              {formatCurrency(stats.autoAds || 0)}
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
+              isLocalConversionActive 
+                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
+                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
+          </button>
+          <span className="hidden lg:flex items-center gap-1"><Zap size={10} className="text-neon" /> Actualizado: Real</span>
         </div>
       </div>
 
@@ -97,7 +174,7 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-border border border-border">
         <MetricCard 
           title="Ingresos (Gross)"
-          value={formatCurrency(stats.totalRevenue)}
+          value={localFormatCurrency(stats.totalRevenue)}
           subValue="Facturación bruta total"
           description="Suma de precio + envío cobrado de todos los pedidos."
           trend={14.2}
@@ -105,7 +182,7 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
         />
         <MetricCard 
           title="Ganancia (Net)"
-          value={formatCurrency(stats.totalNetProfit)}
+          value={localFormatCurrency(stats.totalNetProfit)}
           subValue="Utilidad después de gastos"
           description="Ingresos menos costo de producto, fletes, ads y fees."
           trend={9.8}
@@ -136,17 +213,17 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
           <MetricCard 
             title="AOV (Ticket Promedio)"
-            value={formatCurrency(kpis.aov)}
+            value={localFormatCurrency(kpis.aov)}
             subValue="Average Order Value"
             description="Monto promedio facturado por cada pedido realizado."
             trend={5.2}
             icon={ShoppingBag}
           />
           <MetricCard 
-            title="CAC (Adquisición)"
-            value={formatCurrency(kpis.cac)}
-            subValue="Customer Acquisition Cost"
-            description="Costo promedio de marketing para obtener un pedido confirmado."
+            title="CPA (Real)"
+            value={localFormatCurrency(stats.totalAds / (orders.length || 1))}
+            subValue={`Gasto Total: ${localFormatCurrency(stats.totalAds)}`}
+            description="Costo promedio de marketing por cada pedido."
             trend={-3.1}
             icon={Users}
             color="gold"
@@ -205,15 +282,15 @@ const KPIPanel: React.FC<KPIPanelProps> = ({ orders, stats, formatCurrency }) =>
             <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="p-4 bg-white/5 border border-border rounded-lg">
                 <p className="text-[15px] uppercase text-slate-500 mb-1">Costo Flete</p>
-                <p className="text-lg font-mono font-bold text-white">{formatCurrency(orders.reduce((acc, o) => acc + o.shippingReal, 0))}</p>
+                <p className="text-lg font-mono font-bold text-white">{localFormatCurrency(orders.reduce((acc, o) => acc + o.shippingReal, 0))}</p>
               </div>
               <div className="p-4 bg-white/5 border border-border rounded-lg">
                 <p className="text-[15px] uppercase text-slate-500 mb-1">Costo Producto</p>
-                <p className="text-lg font-mono font-bold text-white">{formatCurrency(orders.reduce((acc, o) => acc + o.cost, 0))}</p>
+                <p className="text-lg font-mono font-bold text-white">{localFormatCurrency(orders.reduce((acc, o) => acc + o.cost, 0))}</p>
               </div>
               <div className="p-4 bg-white/5 border border-border rounded-lg">
                 <p className="text-[15px] uppercase text-slate-500 mb-1">Costo Ads</p>
-                <p className="text-lg font-mono font-bold text-white">{formatCurrency(orders.reduce((acc, o) => acc + o.adsCost, 0))}</p>
+                <p className="text-lg font-mono font-bold text-white">{localFormatCurrency(orders.reduce((acc, o) => acc + o.adsCost, 0))}</p>
               </div>
             </div>
           </div>

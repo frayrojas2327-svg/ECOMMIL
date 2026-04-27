@@ -20,11 +20,12 @@ import {
   Megaphone,
   Search,
   CreditCard,
-  Activity
+  Activity,
+  Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from './firebase';
 import { generateMockData, CURRENCIES, CurrencyCode, Order, calculateOrderProfit } from './mockData';
 import { fetchExchangeRates } from './services/currencyService';
 import Dashboard from './components/Dashboard';
@@ -67,7 +68,7 @@ const GlowingAnalysisIcon = ({ size = 20, className = "" }: { size?: number, cla
 );
 
 function AppContent() {
-  const { user, loading: authLoading, logout } = useAuth();
+  const { user, loading: authLoading, logout, isDemoMode } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [dynamicCurrencies, setDynamicCurrencies] = useState(CURRENCIES);
@@ -79,20 +80,31 @@ function AppContent() {
     const saved = localStorage.getItem('profit_os_conversion_active');
     return saved === 'true';
   });
+  const [manualAdSpend, setManualAdSpend] = useState(() => {
+    const saved = localStorage.getItem('profit_os_manual_ad_spend');
+    return saved ? Number(saved) : 0;
+  });
 
   useEffect(() => {
     localStorage.setItem('profit_os_currency', currency);
   }, [currency]);
 
   useEffect(() => {
+    localStorage.setItem('profit_os_manual_ad_spend', String(manualAdSpend));
+  }, [manualAdSpend]);
+
+  useEffect(() => {
     localStorage.setItem('profit_os_conversion_active', String(isConversionActive));
   }, [isConversionActive]);
+
+  const [currencyError, setCurrencyError] = useState(false);
 
   // Fetch live rates on mount
   useEffect(() => {
     const updateRates = async () => {
       const liveRates = await fetchExchangeRates();
       if (liveRates) {
+        setCurrencyError(false);
         console.log('Live rates fetched:', liveRates);
         setDynamicCurrencies(prev => {
           const updated = { ...prev };
@@ -106,6 +118,8 @@ function AppContent() {
           });
           return updated;
         });
+      } else {
+        setCurrencyError(true);
       }
     };
     updateRates();
@@ -120,8 +134,8 @@ function AppContent() {
 
   // Fetch orders from Firestore
   useEffect(() => {
-    if (!user) {
-      setOrders([]);
+    if (!user || isDemoMode || !isFirebaseConfigValid) {
+      setOrders(generateMockData());
       setLoadingOrders(false);
       return;
     }
@@ -171,6 +185,12 @@ function AppContent() {
 
   const deleteOrders = async (ids: string[]) => {
     if (!user) return;
+    
+    if (isDemoMode || !isFirebaseConfigValid) {
+      setOrders(prev => prev.filter(o => !ids.includes(o.id)));
+      return;
+    }
+
     try {
       const batch = writeBatch(db);
       ids.forEach(id => {
@@ -184,6 +204,18 @@ function AppContent() {
 
   const addOrders = async (newOrders: Omit<Order, 'id' | 'uid'>[]) => {
     if (!user) return;
+
+    if (isDemoMode || !isFirebaseConfigValid) {
+      const ordersWithIds = newOrders.map(o => ({
+        ...o,
+        id: Math.random().toString(36).substring(2, 9),
+        uid: user.uid,
+        orderId: o.orderId || Math.random().toString(36).substring(2, 7).toUpperCase()
+      }));
+      setOrders(prev => [...ordersWithIds, ...prev]);
+      return;
+    }
+
     try {
       const batch = writeBatch(db);
       newOrders.forEach(o => {
@@ -204,6 +236,13 @@ function AppContent() {
 
   const resetData = async () => {
     if (!user) return;
+
+    if (isDemoMode || !isFirebaseConfigValid) {
+      setOrders(generateMockData());
+      localStorage.removeItem('ecommil_saved_products');
+      return;
+    }
+
     try {
       // 1. Delete all current orders
       const batch = writeBatch(db);
@@ -235,6 +274,13 @@ function AppContent() {
 
   const clearAllData = async () => {
     if (!user) return;
+
+    if (isDemoMode || !isFirebaseConfigValid) {
+      setOrders([]);
+      localStorage.removeItem('ecommil_saved_products');
+      return;
+    }
+
     try {
       // 1. Delete all current orders
       const batch = writeBatch(db);
@@ -260,29 +306,30 @@ function AppContent() {
 
   const formatCurrency = (amount: number) => {
     const info = dynamicCurrencies[currency];
-    
-    // Now the internal base is USD.
-    // If isConversionActive is ON, we convert from USD to the target currency.
-    // If isConversionActive is OFF, we show the raw amount (which is USD).
+    const isUSD = !isConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currency;
     
     let converted = amount;
-    if (isConversionActive) {
+    if (!isUSD) {
       converted = amount * info.rate;
     }
     
+    // Safety rounding to avoid float precision artifacts
+    const rounded = Math.round(converted * 100) / 100;
+    
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
-      currency: currency,
+      currency: targetCurrency,
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
-    }).format(converted);
+    }).format(rounded);
   };
 
   const stats = useMemo(() => {
     let totalRevenue = 0;
     let totalNetProfit = 0;
-    let totalAds = 0;
+    let sumAds = 0;
     let totalCost = 0;
     let totalShipping = 0;
     
@@ -290,15 +337,27 @@ function AppContent() {
       const { revenue, netProfit } = calculateOrderProfit(order);
       totalRevenue += revenue;
       totalNetProfit += netProfit;
-      totalAds += order.adsCost;
+      sumAds += order.adsCost;
       totalCost += order.cost;
       totalShipping += order.shippingReal;
     });
 
-    const margin = totalRevenue > 0 ? (totalNetProfit / totalRevenue) * 100 : 0;
-    const roas = totalAds > 0 ? totalRevenue / totalAds : 0;
-    const roi = (totalCost + totalShipping + totalAds) > 0 
-      ? (totalNetProfit / (totalCost + totalShipping + totalAds)) * 100 
+    // If manual ad spend is provided, we adjust the total net profit
+    // Total Net Profit currently includes sumAds already subtracted in calculateOrderProfit?
+    // Wait, let's re-examine calculateOrderProfit.
+    // Yes: netProfit = revenue - cost - shippingReal - adsCost - finalFees;
+    // So if we want to use manualAdSpend instead of sumAds:
+    // we need to add back sumAds and subtract manualAdSpend.
+    
+    const usedAds = manualAdSpend > 0 ? manualAdSpend : sumAds;
+    const finalNetProfit = manualAdSpend > 0 
+      ? (totalNetProfit + sumAds - manualAdSpend) 
+      : totalNetProfit;
+
+    const margin = totalRevenue > 0 ? (finalNetProfit / totalRevenue) * 100 : 0;
+    const roas = usedAds > 0 ? totalRevenue / usedAds : 0;
+    const roi = (totalCost + totalShipping + usedAds) > 0 
+      ? (finalNetProfit / (totalCost + totalShipping + usedAds)) * 100 
       : 0;
 
     // Health Score calculation
@@ -307,14 +366,25 @@ function AppContent() {
       (margin * 2) + (roi / 2) + (100 - returnRate * 5)
     )) || 0;
 
-    return { totalRevenue, totalNetProfit, margin, roas, roi, healthScore };
-  }, [orders]);
+    return { 
+      totalRevenue, 
+      totalNetProfit: finalNetProfit, 
+      margin, 
+      roas, 
+      roi, 
+      healthScore,
+      totalAds: usedAds,
+      autoAds: sumAds
+    };
+  }, [orders, manualAdSpend]);
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Panel Control', icon: LayoutDashboard },
     { id: 'kpis', label: 'Análisis Pro', icon: Activity, isGlowing: true },
     { id: 'logistics-ai', label: 'Asesor IA', icon: Bot },
-    { id: 'orders', label: 'Pedidos', icon: ShoppingCart },
+    { id: 'orders', label: 'DROPI', icon: ShoppingCart },
+    { id: 'shopify', label: 'SHOPIFY', icon: Globe },
+    { id: 'consiliador-pro', label: 'TIKTOK PANEL', icon: Zap, isGlowing: true },
     { id: 'calculator', label: 'Calculadora', icon: Calculator },
     { id: 'returns', label: 'Devoluciones', icon: RotateCcw },
     { id: 'shipping', label: 'Fletes', icon: Truck },
@@ -502,39 +572,67 @@ function AppContent() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 px-3 py-1 bg-card border border-border rounded-lg">
-              <div className="flex flex-col">
-                <span className="text-[10px] font-mono text-slate-500 uppercase leading-none">Conversión</span>
-                {isConversionActive && currency !== 'USD' && (
-                  <span className="text-[9px] font-mono text-neon/70 leading-none mt-1">
-                    1 USD = {dynamicCurrencies[currency].rate.toFixed(2)} {currency}
-                  </span>
-                )}
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-mono text-slate-500 uppercase leading-none mb-1">Visualización General</span>
+              <div className="flex items-center gap-2 bg-card border border-border rounded-xl p-1 shadow-inner">
+                {/* Currency Base Switcher */}
+                <div className="flex bg-background rounded-lg p-0.5 border border-border/50">
+                  <button
+                    onClick={() => setIsConversionActive(false)}
+                    className={`px-3 py-1 rounded-md text-[11px] font-black tracking-widest transition-all ${
+                      !isConversionActive ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                    title="Ver valores originales (USD)"
+                  >
+                    USD
+                  </button>
+                  <button
+                    onClick={() => setIsConversionActive(true)}
+                    className={`px-3 py-1 rounded-md text-[11px] font-black tracking-widest transition-all ${
+                      isConversionActive ? 'bg-neon text-background shadow-lg shadow-neon/20' : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                    title={`Ver en moneda local (${currency})`}
+                  >
+                    LOCAL
+                  </button>
+                </div>
+                
+                {/* Local Currency Picker */}
+                <div className="h-4 w-px bg-border/50 mx-1" />
+                <div className="flex gap-1">
+                  {(Object.keys(dynamicCurrencies) as CurrencyCode[]).filter(c => c !== 'USD').map((code) => (
+                    <button
+                      key={code}
+                      onClick={() => {
+                        setCurrency(code);
+                        setIsConversionActive(true);
+                      }}
+                      className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
+                        currency === code && isConversionActive ? 'bg-neon/10 text-neon border border-neon/30' : 'text-slate-500 hover:text-white'
+                      }`}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <button
-                onClick={() => setIsConversionActive(!isConversionActive)}
-                className={`w-8 h-4 rounded-full relative transition-all ${isConversionActive ? 'bg-neon' : 'bg-slate-700'}`}
-                title={isConversionActive ? "Desactivar conversión de moneda" : "Activar conversión en tiempo real"}
-              >
-                <motion.div
-                  animate={{ x: isConversionActive ? 16 : 0 }}
-                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow-sm"
-                />
-              </button>
-            </div>
-
-            <div className="flex p-1 bg-card border border-border rounded-lg">
-              {(Object.keys(dynamicCurrencies) as CurrencyCode[]).map((code) => (
-                <button
-                  key={code}
-                  onClick={() => setCurrency(code)}
-                  className={`px-3 py-1 rounded-md text-xs font-mono transition-all ${
-                    currency === code ? 'bg-neon text-background font-bold' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {code}
-                </button>
-              ))}
+              {isConversionActive && currency !== 'USD' && (
+                <div className="flex flex-col items-end mt-1.5 animate-in fade-in slide-in-from-top-1">
+                   {currencyError ? (
+                     <div className="flex items-center gap-1.5 text-[9px] text-amber-500 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                       <AlertCircle size={10} />
+                       Usando tasas de respaldo (Offline)
+                     </div>
+                   ) : (
+                     <div className="flex items-center gap-1.5">
+                       <Globe size={10} className="text-neon animate-spin-slow" />
+                       <span className="text-[10px] font-mono text-neon/70 font-bold">
+                        1 USD = {dynamicCurrencies[currency].rate.toFixed(2)} {currency}
+                       </span>
+                     </div>
+                   )}
+                </div>
+              )}
             </div>
 
             <div className="relative">
@@ -590,20 +688,80 @@ function AppContent() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'dashboard' && <Dashboard orders={orders} stats={stats} formatCurrency={formatCurrency} currencySymbol={currencyInfo.symbol} />}
-              {activeTab === 'kpis' && <KPIPanel orders={orders} stats={stats} formatCurrency={formatCurrency} />}
-              {activeTab === 'logistics-ai' && <LogisticsAI orders={orders} stats={stats} formatCurrency={formatCurrency} />}
-            {activeTab === 'orders' && (
-              <OrderManagement 
-                orders={orders} 
-                formatCurrency={formatCurrency} 
-                onDeleteOrders={deleteOrders} 
-                onAddOrders={addOrders}
-                currentCurrency={currency}
-                exchangeRate={currencyInfo.rate}
-                isConversionActive={isConversionActive}
-              />
-            )}
+              {activeTab === 'dashboard' && (
+                <Dashboard 
+                  orders={orders} 
+                  stats={stats} 
+                  formatCurrency={formatCurrency} 
+                  currencySymbol={currencyInfo.symbol} 
+                  currency={currency}
+                  currencies={dynamicCurrencies}
+                  isConversionActive={isConversionActive}
+                  manualAdSpend={manualAdSpend}
+                  setManualAdSpend={setManualAdSpend}
+                />
+              )}
+              {activeTab === 'kpis' && (
+                <KPIPanel 
+                  orders={orders} 
+                  stats={stats} 
+                  formatCurrency={formatCurrency} 
+                  currency={currency}
+                  currencies={dynamicCurrencies}
+                  isConversionActive={isConversionActive}
+                  manualAdSpend={manualAdSpend}
+                  setManualAdSpend={setManualAdSpend}
+                />
+              )}
+              {activeTab === 'logistics-ai' && (
+                <LogisticsAI 
+                  orders={orders} 
+                  stats={stats} 
+                  formatCurrency={formatCurrency} 
+                  currency={currency}
+                  currencies={dynamicCurrencies}
+                  isConversionActive={isConversionActive}
+                />
+              )}
+      {activeTab === 'orders' && (
+                <OrderManagement 
+                  orders={orders} 
+                  setOrders={setOrders}
+                  formatCurrency={formatCurrency} 
+                  onDeleteOrders={deleteOrders} 
+                  onAddOrders={addOrders}
+                  currentCurrency={currency}
+                  exchangeRate={currencyInfo.rate}
+                  isConversionActive={isConversionActive}
+                  viewMode="DROPI"
+                />
+              )}
+              {activeTab === 'shopify' && (
+                <OrderManagement 
+                  orders={orders} 
+                  setOrders={setOrders}
+                  formatCurrency={formatCurrency} 
+                  onDeleteOrders={deleteOrders} 
+                  onAddOrders={addOrders}
+                  currentCurrency={currency}
+                  exchangeRate={currencyInfo.rate}
+                  isConversionActive={isConversionActive}
+                  viewMode="SHOPIFY"
+                />
+              )}
+              {activeTab === 'consiliador-pro' && (
+                <OrderManagement 
+                  orders={orders} 
+                  setOrders={setOrders}
+                  formatCurrency={formatCurrency} 
+                  onDeleteOrders={deleteOrders} 
+                  onAddOrders={addOrders}
+                  currentCurrency={currency}
+                  exchangeRate={currencyInfo.rate}
+                  isConversionActive={isConversionActive}
+                  viewMode="TIKTOK"
+                />
+              )}
               {activeTab === 'calculator' && (
                 <ProfitCalculator 
                   formatCurrency={formatCurrency} 
@@ -615,7 +773,15 @@ function AppContent() {
                 />
               )}
               {activeTab === 'research' && <MarketResearch />}
-              {activeTab === 'returns' && <ReturnsAnalysis orders={orders} formatCurrency={formatCurrency} />}
+              {activeTab === 'returns' && (
+                <ReturnsAnalysis 
+                  orders={orders} 
+                  formatCurrency={formatCurrency} 
+                  currency={currency}
+                  currencies={dynamicCurrencies}
+                  isConversionActive={isConversionActive}
+                />
+              )}
               {activeTab === 'ads' && (
                 <AdvertisingExpenses 
                   formatCurrency={formatCurrency} 
@@ -630,14 +796,26 @@ function AppContent() {
                   currencySymbol={currencyInfo.symbol} 
                   currency={currency}
                   currencies={dynamicCurrencies}
+                  isConversionActive={isConversionActive}
                 />
               )}
-              {activeTab === 'shipping' && <ShippingAnalysis orders={orders} formatCurrency={formatCurrency} />}
+              {activeTab === 'shipping' && (
+                <ShippingAnalysis 
+                  orders={orders} 
+                  formatCurrency={formatCurrency} 
+                  currency={currency}
+                  currencies={dynamicCurrencies}
+                  isConversionActive={isConversionActive}
+                />
+              )}
               {activeTab === 'financial' && (
                 <div className="space-y-6">
                   <FinancialSummary 
                     orders={orders} 
                     formatCurrency={formatCurrency} 
+                    currency={currency}
+                    currencies={dynamicCurrencies}
+                    isConversionActive={isConversionActive}
                   />
                 </div>
               )}

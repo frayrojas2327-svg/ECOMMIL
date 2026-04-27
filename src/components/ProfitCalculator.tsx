@@ -26,7 +26,8 @@ import {
   CreditCard,
   Wallet,
   Megaphone,
-  Receipt
+  Receipt,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -65,6 +66,7 @@ interface SavedProduct {
     confirmationRate: number;
     cancellationRate: number;
     returnRate: number;
+    returnShippingCost: number;
     fixedExpenses: FixedExpense[];
     variableExpenses: VariableExpense[];
   };
@@ -99,6 +101,12 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
   isConversionActive,
   currencies
 }) => {
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
   const [viewMode, setViewMode] = useState<'form' | 'excel'>(() => {
     const saved = localStorage.getItem('ecommil_view_mode');
     return (saved === 'form' || saved === 'excel') ? saved : 'form';
@@ -132,11 +140,12 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     productId: '',
     url: '',
     notes: '',
-    price: '99.99',
-    cost: '35.00',
-    shippingCharged: '0',
-    shippingReal: '12.50',
-    adsCost: '15.00',
+    price: '99',
+    cost: '35',
+    shippingCharged: '',
+    shippingReal: '12.5',
+    adsCost: '15',
+    returnShippingCost: '6',
     platformFee: '3',
     confirmationRate: '90',
     cancellationRate: '5',
@@ -173,11 +182,12 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
 
       setInputs(prev => ({
         ...prev,
-        price: (parseFloat(prev.price) * ratio).toFixed(2),
-        cost: (parseFloat(prev.cost) * ratio).toFixed(2),
-        shippingCharged: (parseFloat(prev.shippingCharged) * ratio).toFixed(2),
-        shippingReal: (parseFloat(prev.shippingReal) * ratio).toFixed(2),
-        adsCost: (parseFloat(prev.adsCost) * ratio).toFixed(2),
+        price: Number((parseFloat(prev.price) * ratio).toFixed(2)).toString(),
+        cost: Number((parseFloat(prev.cost) * ratio).toFixed(2)).toString(),
+        shippingCharged: prev.shippingCharged ? Number((parseFloat(prev.shippingCharged) * ratio).toFixed(2)).toString() : '',
+        shippingReal: Number((parseFloat(prev.shippingReal) * ratio).toFixed(2)).toString(),
+        adsCost: Number((parseFloat(prev.adsCost) * ratio).toFixed(2)).toString(),
+        returnShippingCost: prev.returnShippingCost ? Number((parseFloat(prev.returnShippingCost) * ratio).toFixed(2)).toString() : '',
       }));
     }
     prevCurrencyRef.current = currency;
@@ -195,12 +205,25 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
   const currencyInfo = currencies[currency];
 
   const formatLocalCurrency = (amount: number, curr: CurrencyCode = currency) => {
-    return new Intl.NumberFormat('es-ES', {
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : curr;
+    
+    // Internal values are stored in USD
+    let converted = amount;
+    if (!isUSD) {
+      const rate = currencies[curr]?.rate || 1;
+      converted = amount * rate;
+    }
+    
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
       style: 'currency',
-      currency: curr,
+      currency: targetCurrency,
+      currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(rounded);
   };
 
   const calculateResults = (
@@ -209,6 +232,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     shippingCharged: number, 
     shippingReal: number, 
     adsCost: number, 
+    returnShippingCost: number,
     platformFee: number,
     confirmationRate: number = 90,
     cancellationRate: number = 5,
@@ -228,7 +252,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     const totalRevenue = deliveredOrders * (price + shippingCharged);
     const totalProductCost = shippedOrders * cost;
     const totalShippingCost = shippedOrders * shippingReal;
-    const totalReturnCost = returnedOrders * shippingReal; 
+    const totalReturnCost = returnedOrders * returnShippingCost; 
     const totalAdsCost = baseOrders * adsCost;
     const totalPlatformFee = deliveredOrders * price * (platformFee / 100);
     const totalVariableExpenses = shippedOrders * unitVarExpenses;
@@ -264,6 +288,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       parseFloat(inputs.shippingCharged) || 0,
       parseFloat(inputs.shippingReal) || 0,
       parseFloat(inputs.adsCost) || 0,
+      parseFloat(inputs.returnShippingCost) || 0,
       parseFloat(inputs.platformFee) || 0,
       parseFloat(inputs.confirmationRate) || 0,
       parseFloat(inputs.cancellationRate) || 0,
@@ -323,6 +348,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       shippingCharged: parseFloat(inputs.shippingCharged) || 0,
       shippingReal: parseFloat(inputs.shippingReal) || 0,
       adsCost: parseFloat(inputs.adsCost) || 0,
+      returnShippingCost: parseFloat(inputs.returnShippingCost) || 0,
       platformFee: parseFloat(inputs.platformFee) || 0,
       confirmationRate: parseFloat(inputs.confirmationRate) || 0,
       cancellationRate: parseFloat(inputs.cancellationRate) || 0,
@@ -344,7 +370,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     };
     setSavedProducts([newProduct, ...savedProducts]);
     // Reset basic info and expenses
-    setInputs(prev => ({ ...prev, name: '', productId: '', url: '', notes: '' }));
+    setInputs(prev => ({ ...prev, name: '', productId: '', url: '', notes: '', returnShippingCost: prev.returnShippingCost }));
     setFixedExpenses([]);
     setVariableExpenses([]);
   };
@@ -401,6 +427,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       'Costo': p.inputs.cost,
       'Flete Cobrado': p.inputs.shippingCharged,
       'Flete Real': p.inputs.shippingReal,
+      'Flete Devolución': p.inputs.returnShippingCost || (p.inputs.shippingReal * 0.5),
       'Costo Ads': p.inputs.adsCost,
       'Comisión %': p.inputs.platformFee,
       'Confirmación %': p.inputs.confirmationRate,
@@ -466,6 +493,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
         const shippingCharged = parseMoney(row['Flete Cobrado'] || row['Envío cobrado'] || row['Envío Cliente']);
         const shippingReal = parseMoney(row['Flete Real'] || row['Costo de envío'] || row['Flete'] || row['Envío Real']);
         const adsCost = parseMoney(row['Costo Ads'] || row['Publicidad'] || row['CPA']);
+        const returnShippingCost = parseMoney(row['Flete Devolución'] || row['Costo Devolución Flete'] || row['Devolución Flete'] || (shippingReal * 0.5));
         const platformFee = parseMoney(row['Comisión %'] || row['Comisión'] || row['Fee'] || 3);
         const confirmationRate = parseMoney(row['Confirmación %'] || row['Confirmación'] || 90);
         const cancellationRate = parseMoney(row['Cancelación %'] || row['Cancelación'] || 5);
@@ -476,7 +504,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
         const curr = (row['Moneda'] || currency) as CurrencyCode;
 
         // Calculate results for imported row using the new pro model
-        const results = calculateResults(price, cost, shippingCharged, shippingReal, adsCost, platformFee, confirmationRate, cancellationRate, returnRate);
+        const results = calculateResults(price, cost, shippingCharged, shippingReal, adsCost, returnShippingCost, platformFee, confirmationRate, cancellationRate, returnRate);
 
         return {
           id: Math.random().toString(36).substr(2, 9),
@@ -485,7 +513,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
           url,
           notes,
           currency: curr,
-          inputs: { price, cost, shippingCharged, shippingReal, adsCost, platformFee, confirmationRate, cancellationRate, returnRate, fixedExpenses: [], variableExpenses: [] },
+          inputs: { price, cost, shippingCharged, shippingReal, adsCost, returnShippingCost, platformFee, confirmationRate, cancellationRate, returnRate, fixedExpenses: [], variableExpenses: [] },
           results: { ...results, totalFixedExpenses: 0, totalVariableExpenses: 0 },
           timestamp: Date.now()
         };
@@ -511,6 +539,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       shippingCharged: product.inputs.shippingCharged.toString(),
       shippingReal: product.inputs.shippingReal.toString(),
       adsCost: product.inputs.adsCost.toString(),
+      returnShippingCost: (product.inputs.returnShippingCost || (product.inputs.shippingReal * 0.5)).toString(),
       platformFee: product.inputs.platformFee.toString(),
       confirmationRate: product.inputs.confirmationRate.toString(),
       cancellationRate: product.inputs.cancellationRate.toString(),
@@ -551,6 +580,16 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
           <p className="text-[13px] text-slate-500">Simulación avanzada con registro de productos y análisis horizontal</p>
         </div>
         <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
+              isLocalConversionActive 
+                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
+                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
+          </button>
           {selectedProductIds.length > 0 && (
             <button 
               onClick={handleDeleteSelected}
@@ -604,22 +643,46 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
               <span className="hidden sm:inline">Excel</span>
             </button>
           </div>
-          <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-2 py-1">
-            <DollarSign size={14} className="text-neon" />
-            <select 
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-              className="bg-transparent text-[13px] font-mono font-bold text-white focus:outline-none cursor-pointer"
-            >
-              {Object.keys(currencies).map((code) => (
-                <option key={code} value={code} className="bg-card text-white">
-                  {code} ({currencies[code as CurrencyCode].symbol})
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-2 bg-card border border-border rounded-xl p-1 shadow-inner">
+            <div className="flex bg-background rounded-lg p-0.5 border border-border/50">
+              <button 
+                onClick={() => setCurrency('USD')}
+                className={`px-3 py-1 rounded-md text-[11px] font-black tracking-widest transition-all ${
+                  currency === 'USD' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                USD
+              </button>
+              <button 
+                onClick={() => {
+                  if (currency === 'USD') setCurrency('COP'); // Default to COP if current is USD
+                }}
+                className={`px-3 py-1 rounded-md text-[11px] font-black tracking-widest transition-all ${
+                  currency !== 'USD' ? 'bg-neon text-background shadow-lg shadow-neon/20' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                LOCAL
+              </button>
+            </div>
+
+            {currency !== 'USD' && (
+              <div className="flex gap-1 ml-1 pl-1 border-l border-border/50">
+                {(Object.keys(currencies) as CurrencyCode[]).filter(c => c !== 'USD').map((code) => (
+                  <button
+                    key={code}
+                    onClick={() => setCurrency(code)}
+                    className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
+                      currency === code ? 'text-neon bg-neon/10' : 'text-slate-500 hover:text-white'
+                    }`}
+                  >
+                    {code}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <button 
-            onClick={() => setInputs({ name: '', productId: '', url: '', notes: '', price: '', cost: '', shippingCharged: '', shippingReal: '', adsCost: '', platformFee: '', confirmationRate: '90', cancellationRate: '5', returnRate: '8' })}
+            onClick={() => setInputs({ name: '', productId: '', url: '', notes: '', price: '', cost: '', shippingCharged: '', shippingReal: '', adsCost: '', returnShippingCost: '', platformFee: '', confirmationRate: '90', cancellationRate: '5', returnRate: '8' })}
             className="p-2 text-slate-500 hover:text-neon transition-colors"
             title="Limpiar campos"
           >
@@ -733,7 +796,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neon font-mono text-[13px]">{currencyInfo.symbol}</span>
                       <input 
-                        type="number" name="price" value={inputs.price} onChange={handleInputChange}
+                        type="number" name="price" value={inputs.price} onChange={handleInputChange} placeholder="0"
                         className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
                       />
                     </div>
@@ -743,7 +806,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gold font-mono text-[13px]">{currencyInfo.symbol}</span>
                       <input 
-                        type="number" name="cost" value={inputs.cost} onChange={handleInputChange}
+                        type="number" name="cost" value={inputs.cost} onChange={handleInputChange} placeholder="0"
                         className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
                       />
                     </div>
@@ -753,7 +816,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
                       <input 
-                        type="number" name="shippingCharged" value={inputs.shippingCharged} onChange={handleInputChange}
+                        type="number" name="shippingCharged" value={inputs.shippingCharged} onChange={handleInputChange} placeholder="0"
                         className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
                       />
                     </div>
@@ -763,8 +826,18 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
                       <input 
-                        type="number" name="shippingReal" value={inputs.shippingReal} onChange={handleInputChange}
+                        type="number" name="shippingReal" value={inputs.shippingReal} onChange={handleInputChange} placeholder="0"
                         className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[13px] uppercase tracking-widest text-slate-500 font-bold">Flete Devolución</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
+                      <input 
+                        type="number" name="returnShippingCost" value={inputs.returnShippingCost} onChange={handleInputChange} placeholder="0"
+                        className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-gold"
                       />
                     </div>
                   </div>
@@ -791,7 +864,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-[13px]">{currencyInfo.symbol}</span>
                       <input 
-                        type="number" name="adsCost" value={inputs.adsCost} onChange={handleInputChange}
+                        type="number" name="adsCost" value={inputs.adsCost} onChange={handleInputChange} placeholder="0"
                         className="w-full bg-background border border-border rounded-lg py-1.5 pl-8 pr-3 text-white font-mono text-[15px] focus:outline-none focus:border-neon"
                       />
                     </div>
@@ -923,6 +996,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   <th className="p-2 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Costo Prod.</th>
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Flete Cob.</th>
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Flete Real</th>
+                  <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Flete Dev</th>
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Ads (CPA)</th>
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Métricas %</th>
                   <th className="p-1.5 text-[15px] uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Comis. %</th>
@@ -977,6 +1051,12 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   <td className="p-1.5 min-w-[80px]">
                     <input 
                       type="number" name="shippingReal" value={inputs.shippingReal} onChange={handleInputChange}
+                      className="w-full bg-background/50 border border-border rounded-lg py-0.5 px-2 text-white font-mono text-[15px] focus:outline-none"
+                    />
+                  </td>
+                  <td className="p-1.5 min-w-[80px]">
+                    <input 
+                      type="number" name="returnShippingCost" value={inputs.returnShippingCost} onChange={handleInputChange}
                       className="w-full bg-background/50 border border-border rounded-lg py-0.5 px-2 text-white font-mono text-[15px] focus:outline-none"
                     />
                   </td>
@@ -1074,6 +1154,9 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     </td>
                     <td className="p-2 text-[15px] font-mono text-slate-400">
                       {formatLocalCurrency(product.inputs.shippingReal, product.currency)}
+                    </td>
+                    <td className="p-2 text-[15px] font-mono text-slate-400">
+                      {formatLocalCurrency(product.inputs.returnShippingCost || (product.inputs.shippingReal * 0.5), product.currency)}
                     </td>
                     <td className="p-2 text-[15px] font-mono text-slate-400">
                       {formatLocalCurrency(product.inputs.adsCost, product.currency)}

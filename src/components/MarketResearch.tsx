@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, deleteDoc, addDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { useAuth } from './Auth';
 
 interface MarketResearchEntry {
@@ -27,12 +27,12 @@ interface MarketResearchEntry {
 }
 
 export default function MarketResearch() {
-  const { user } = useAuth();
+  const { user, isDemoMode } = useAuth();
   const [researchList, setResearchList] = useState<MarketResearchEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  
+
   const [formData, setFormData] = useState({
     productName: '',
     storeUrls: [''],
@@ -40,9 +40,25 @@ export default function MarketResearch() {
     videoUrls: ['']
   });
 
+  // Fallback to localStorage if Firebase is not valid or in Demo Mode
+  useEffect(() => {
+    if ((isDemoMode || !isFirebaseConfigValid) && !user) {
+      const saved = localStorage.getItem('ecommil_market_research_items');
+      if (saved) {
+        setResearchList(JSON.parse(saved));
+      }
+      setLoading(false);
+    }
+  }, [user, isDemoMode]);
+
   // Fetch research from Firestore
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isFirebaseConfigValid || isDemoMode) return;
+
+    if (!db) {
+      setLoading(false);
+      return;
+    }
 
     const q = query(collection(db, 'market_research'), where('uid', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -59,7 +75,14 @@ export default function MarketResearch() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isDemoMode]);
+
+  // Save to localStorage when items change in Demo Mode
+  useEffect(() => {
+    if (isDemoMode || !isFirebaseConfigValid) {
+      localStorage.setItem('ecommil_market_research_items', JSON.stringify(researchList));
+    }
+  }, [researchList, isDemoMode]);
 
   const handleAddUrl = (type: 'store' | 'video') => {
     if (type === 'store') {
@@ -95,19 +118,34 @@ export default function MarketResearch() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user && !isDemoMode) return;
+
+    const entryData = {
+      uid: user?.uid || 'demo-user',
+      productName: formData.productName,
+      storeUrls: formData.storeUrls.filter(url => url.trim() !== ''),
+      notes: formData.notes,
+      videoUrls: formData.videoUrls.filter(url => url.trim() !== ''),
+      timestamp: Date.now()
+    };
+
+    if (isDemoMode || !isFirebaseConfigValid) {
+      const newEntry = { ...entryData, id: Math.random().toString(36).substr(2, 9) } as MarketResearchEntry;
+      setResearchList(prev => [newEntry, ...prev]);
+      setShowAddForm(false);
+      setFormData({
+        productName: '',
+        storeUrls: [''],
+        notes: '',
+        videoUrls: ['']
+      });
+      return;
+    }
+
+    if (!db) return;
 
     try {
-      const newEntry = {
-        uid: user.uid,
-        productName: formData.productName,
-        storeUrls: formData.storeUrls.filter(url => url.trim() !== ''),
-        notes: formData.notes,
-        videoUrls: formData.videoUrls.filter(url => url.trim() !== ''),
-        timestamp: Date.now()
-      };
-
-      await addDoc(collection(db, 'market_research'), newEntry);
+      await addDoc(collection(db, 'market_research'), entryData);
       
       setShowAddForm(false);
       setFormData({
@@ -122,6 +160,13 @@ export default function MarketResearch() {
   };
 
   const handleDelete = async (id: string) => {
+    if (isDemoMode || !isFirebaseConfigValid) {
+      setResearchList(prev => prev.filter(item => item.id !== id));
+      return;
+    }
+
+    if (!db) return;
+
     try {
       await deleteDoc(doc(db, 'market_research', id));
     } catch (error) {

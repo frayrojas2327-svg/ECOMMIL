@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Search, Filter, Download, ChevronDown, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Search, Filter, Download, ChevronDown, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX } from 'lucide-react';
 import { Order, calculateOrderProfit, OrderStatus } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,24 +7,26 @@ import * as XLSX from 'xlsx';
 
 interface OrderManagementProps {
   orders: Order[];
+  setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   formatCurrency: (amount: number) => string;
   onDeleteOrders?: (ids: string[]) => void;
   onAddOrders?: (newOrders: Omit<Order, 'id' | 'uid'>[]) => void;
   currentCurrency?: string;
   exchangeRate?: number;
   isConversionActive?: boolean;
+  viewMode?: 'SHOPIFY' | 'DROPI' | 'TIKTOK';
 }
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
   const styles = {
-    'Entregado': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    'En tránsito': 'bg-secondary/10 text-secondary border-secondary/20',
-    'Devuelto': 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-    'Cancelado': 'bg-red-500/10 text-red-400 border-red-500/20',
-    'Pendiente': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    'Guía Generada': 'bg-slate-500/10 text-slate-300 border-slate-500/20',
-    'Recolectado': 'bg-slate-600/10 text-slate-300 border-slate-600/20',
-    'Incidencia': 'bg-red-900/10 text-red-300 border-red-900/20',
+    'Entregado': 'text-[#00df9a] border-[#00df9a]/40 bg-[#00df9a]/5',
+    'En tránsito': 'text-blue-400 border-blue-400/40 bg-blue-400/5',
+    'Devuelto': 'text-[#ff9100] border-[#ff9100]/40 bg-[#ff9100]/5',
+    'Cancelado': 'text-[#ff4b4b] border-[#ff4b4b]/40 bg-[#ff4b4b]/5',
+    'Pendiente': 'text-amber-400 border-amber-400/40 bg-amber-400/5',
+    'Guía Generada': 'text-slate-300 border-slate-500/40 bg-slate-500/5',
+    'Recolectado': 'text-slate-300 border-slate-600/40 bg-slate-600/5',
+    'Incidencia': 'text-red-400 border-red-900/40 bg-red-900/5',
   };
 
   const icons = {
@@ -39,7 +41,7 @@ const StatusBadge = ({ status }: { status: OrderStatus }) => {
   };
 
   return (
-    <span className={`px-2 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 w-fit whitespace-nowrap ${styles[status] || styles['Pendiente']}`}>
+    <span className={`px-2.5 py-1 rounded-md text-[10px] font-black border flex items-center gap-1.5 w-fit whitespace-nowrap transition-all tracking-wider ${styles[status] || styles['Pendiente']}`}>
       {icons[status] || <Clock size={12} />}
       {status.toUpperCase()}
     </span>
@@ -74,9 +76,9 @@ const PlatformBadge = ({ platform }: { platform: string }) => {
 };
 
 const DetailRow = ({ label, value }: { label: string, value: any }) => (
-  <div className="flex flex-col gap-1">
-    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
-    <span className="text-sm text-white font-medium">{value || '---'}</span>
+  <div className="flex flex-col gap-1 border-b border-white/[0.03] pb-2 last:border-0">
+    <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em]">{label}</span>
+    <span className="text-[13px] text-white font-bold tracking-tight">{value || '---'}</span>
   </div>
 );
 
@@ -108,17 +110,116 @@ const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
 
 const OrderManagement: React.FC<OrderManagementProps> = ({ 
   orders, 
+  setOrders,
   formatCurrency, 
   onDeleteOrders, 
   onAddOrders,
   currentCurrency = 'USD',
   exchangeRate = 1,
-  isConversionActive = false
+  isConversionActive = false,
+  viewMode = 'DROPI'
 }) => {
+  const isReconciliationMode = viewMode === 'TIKTOK';
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+  const [activeSource, setActiveSource] = useState<'all' | 'shopify' | 'dropi' | 'tiktok' | 'reconciliation'>('all');
+  const [shopifyOrders, setShopifyOrders] = useState<Order[]>([]);
+  const [dropiOrders, setDropiOrders] = useState<Order[]>([]);
+
+  // Sync with global conversion when prop changes
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
+  const localFormatCurrency = (amount: number) => {
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currentCurrency;
+    
+    let converted = amount;
+    if (!isUSD) {
+      converted = amount * exchangeRate;
+    }
+    
+    // Safety rounding to avoid float precision artifacts
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: targetCurrency,
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(rounded);
+  };
+
+  const reconcile = () => {
+    if (shopifyOrders.length === 0 || dropiOrders.length === 0) return;
+
+    // Normalizar teléfono (solo números)
+    const normalizePhone = (num: any) => {
+      if (!num) return '';
+      return String(num).replace(/\D/g, '');
+    };
+
+    // 1. Get all unique phones from Shopify
+    const shopifyPhones = new Set();
+    shopifyOrders.forEach(s => {
+      const p = normalizePhone(s.telefono);
+      if (p) shopifyPhones.add(p);
+    });
+
+    // 2. Prepare Shopify orders (they all stay)
+    const reconciledShopify = shopifyOrders.map(s => {
+      const sPhone = normalizePhone(s.telefono);
+      const inDropi = dropiOrders.find(d => normalizePhone(d.telefono) === sPhone);
+      
+      if (inDropi) {
+        return { 
+          ...s, 
+          // Merge data from Dropi into Shopify order where helpful
+          trackingId: inDropi.trackingId || s.trackingId,
+          status: inDropi.status,
+          notas: 'CONCILIADO OK | Shopify + Dropi',
+          precioFlete: inDropi.precioFlete,
+          gananciaManual: inDropi.gananciaManual,
+          // Add other Dropi fields if needed
+          ciudadDestino: inDropi.ciudadDestino || s.ciudadDestino,
+          departamentoDestino: inDropi.departamentoDestino || s.departamentoDestino
+        };
+      } else {
+        return { 
+          ...s, 
+          notas: 'ERROR | No encontrado en Dropi',
+          status: 'Incidencia' as OrderStatus
+        };
+      }
+    });
+
+    // 3. Get Dropi orders that are NOT in Shopify (TikTok / Organic)
+    const tiktokOrders = dropiOrders.filter(d => {
+      const dPhone = normalizePhone(d.telefono);
+      return !shopifyPhones.has(dPhone);
+    }).map(o => ({ 
+      ...o, 
+      notas: 'TIKTOK | Venta Orgánica',
+      provider: 'Dropi' as const 
+    }));
+
+    // 4. Update the global orders list with the combined result
+    setOrders([...reconciledShopify, ...tiktokOrders]);
+    setActiveSource('all'); // Show global view
+    setNotification({ 
+      message: `ANÁLISIS COMPLETADO: ${reconciledShopify.length} pedidos Shopify procesados y ${tiktokOrders.length} ventas TikTok detectadas.`, 
+      type: 'success' 
+    });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'All'>('All');
   const [deptFilter, setDeptFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'All' | 'Shopify' | 'Dropi' | 'TikTok'>('All');
   const [reqDate, setReqDate] = useState('');
   const [delDate, setDelDate] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -151,11 +252,12 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     // Normalize values to USD (Internal Base)
     const normalizedOrder = {
       ...newOrderForm,
-      price: newOrderForm.price / (exchangeRate || 1),
-      cost: newOrderForm.cost / (exchangeRate || 1),
-      shippingCharged: newOrderForm.shippingCharged / (exchangeRate || 1),
-      shippingReal: (newOrderForm.shippingReal || 0) / (exchangeRate || 1),
-      adsCost: newOrderForm.adsCost / (exchangeRate || 1),
+      id: `temp-${Math.random().toString(36).substring(2, 11)}`,
+      price: isLocalConversionActive ? newOrderForm.price / (exchangeRate || 1) : newOrderForm.price,
+      cost: isLocalConversionActive ? newOrderForm.cost / (exchangeRate || 1) : newOrderForm.cost,
+      shippingCharged: isLocalConversionActive ? newOrderForm.shippingCharged / (exchangeRate || 1) : newOrderForm.shippingCharged,
+      shippingReal: (newOrderForm.shippingReal || 0) / (isLocalConversionActive ? (exchangeRate || 1) : 1),
+      adsCost: isLocalConversionActive ? newOrderForm.adsCost / (exchangeRate || 1) : newOrderForm.adsCost,
       orderId: newOrderForm.orderId || `MAN-${Date.now().toString().slice(-6)}`
     };
 
@@ -194,119 +296,243 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws) as any[];
-
+        
         const parseMoney = (val: any) => {
           if (val === undefined || val === null || val === '') return 0;
           if (typeof val === 'number') return val;
-          
           let str = String(val).trim();
           if (!str) return 0;
-
-          // Check if it already has GTQ or Q to normalize back to USD if needed
-          const hasLocalCurrencyIndicator = /GTQ|TQ|6TQ|Q/i.test(str);
-
-          // Specialized cleaning for GTQ and common OCR errors
-          str = str.replace(/GTQ|TQ|6TQ|Q/gi, '').trim();
-          
-          // Remove currency symbols and spaces
-          str = str.replace(/[$\s]/g, '');
-
+          str = str.replace(/GTQ|TQ|6TQ|Q/gi, '').trim().replace(/[$\s]/g, '');
           const lastComma = str.lastIndexOf(',');
           const lastDot = str.lastIndexOf('.');
-
-          // Determine which one is the decimal separator
           if (lastComma !== -1 && lastDot !== -1) {
-            if (lastComma > lastDot) {
-              str = str.replace(/\./g, '').replace(',', '.');
-            } else {
-              str = str.replace(/,/g, '');
-            }
+            if (lastComma > lastDot) str = str.replace(/\./g, '').replace(',', '.');
+            else str = str.replace(/,/g, '');
           } else if (lastComma !== -1) {
             const parts = str.split(',');
-            if (parts.length > 2 || parts[parts.length - 1].length > 2) {
-              str = str.replace(/,/g, '');
-            } else {
-              str = str.replace(',', '.');
-            }
+            if (parts.length > 2 || parts[parts.length - 1].length > 2) str = str.replace(/,/g, '');
+            else str = str.replace(',', '.');
           } else if (lastDot !== -1) {
             const parts = str.split('.');
-            // If it's one dot and last part is 3 digits, it's thousands (1.000)
-            // If it's more than one dot, it's thousands (1.000.000)
-            if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
-              str = str.replace(/\./g, '');
-            }
-            // If it's one dot and 1 or 2 digits, it's decimal (7.9 or 7.90)
+            if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) str = str.replace(/\./g, '');
           }
-          
-          // Keep only numbers, dot and minus sign
           const cleaned = str.replace(/[^0-9.-]/g, '');
           const parsed = parseFloat(cleaned);
-
           return isNaN(parsed) ? 0 : parsed;
         };
 
-        const newOrders: Omit<Order, 'id' | 'uid'>[] = data.map(row => {
+        const getField = (row: any, possibleNames: string[]) => {
+          if (!row) return undefined;
           const keys = Object.keys(row);
-          const getField = (possibleNames: string[]) => {
-            let key = keys.find(k => 
-              possibleNames.some(p => k.toLowerCase() === p.toLowerCase()) && 
-              row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== ''
-            );
-            if (!key) {
-              key = keys.find(k => 
-                possibleNames.some(p => k.toLowerCase().includes(p.toLowerCase())) && 
+          let key = keys.find(k => k && possibleNames.some(p => String(k).trim().toLowerCase() === String(p).trim().toLowerCase()) && row[k] !== undefined);
+          if (!key) {
+            key = keys.find(k => k && possibleNames.some(p => String(k).toLowerCase().includes(String(p).toLowerCase())) && row[k] !== undefined);
+          }
+          return key ? row[key] : undefined;
+        };
+
+        const getFirstNonEmptyField = (row: any, possibleNames: string[]) => {
+          for (const name of possibleNames) {
+            const val = getField(row, [name]);
+            if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+          }
+          return undefined;
+        };
+
+        const extractFromNotes = (notesStr: string, labels: string[]) => {
+          if (!notesStr || typeof notesStr !== 'string') return '';
+          // Normalize line endings and split
+          const lines = notesStr.split(/\r?\n/);
+          for (const line of lines) {
+            const cleanLine = line.trim();
+            if (!cleanLine) continue;
+            const lowerLine = cleanLine.toLowerCase();
+            for (const label of labels) {
+              const labelLower = label.toLowerCase();
+              if (lowerLine.includes(labelLower)) {
+                if (cleanLine.includes(':')) {
+                  return cleanLine.split(':').slice(1).join(':').trim();
+                }
+                return cleanLine.replace(new RegExp(label, 'i'), '').trim();
+              }
+            }
+          }
+          return '';
+        };
+
+        const normalize = (amount: number) => isLocalConversionActive ? (amount / exchangeRate) : amount;
+
+        let newOrders: Omit<Order, 'id' | 'uid'>[] = [];
+
+        if (platform === 'Shopify') {
+          // Detect format by reading sheet rows
+          const rowsRaw = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+          
+          const isBlockFormat = rowsRaw.some(r => {
+            const c0 = String(r[0] || '').toLowerCase();
+            return c0.includes('nombre y apellido:') || c0.includes('dirección completa:');
+          });
+
+          if (isBlockFormat) {
+            let currentOrder: any = null;
+            const blockOrders: Omit<Order, 'id' | 'uid'>[] = [];
+
+            for (let i = 0; i < rowsRaw.length; i++) {
+              const row = rowsRaw[i];
+              if (!row || row.length === 0) continue;
+              
+              const firstCell = String(row[0] || '').trim();
+
+              if (firstCell.startsWith('#')) {
+                if (currentOrder) blockOrders.push(currentOrder);
+                
+                const id = firstCell.includes(',') ? firstCell.split(',')[0].replace('#', '') : firstCell.replace('#', '');
+                
+                currentOrder = {
+                  date: shopifyDate(row[15] || row[16] || row[14]),
+                  orderId: id,
+                  product: String(row[17] || row[18] || row[15] || 'Producto Shopify'),
+                  price: normalize(parseMoney(row[11] || row[8] || 0)),
+                  cost: normalize(parseMoney(row[11] || row[8] || 0)) * 0.4,
+                  status: 'Pendiente',
+                  provider: 'Shopify',
+                  notas: 'Importado como Bloque',
+                  nombreCliente: '',
+                  telefono: '',
+                  ciudadDestino: '',
+                  departamentoDestino: '',
+                  direccion: '',
+                  shippingCharged: 0,
+                  shippingReal: 0,
+                  adsCost: 0,
+                  platformFee: 0,
+                  country: 'Colombia',
+                  priorityShipping: 0
+                };
+              } else if (currentOrder) {
+                const line = String(row[0] || '');
+                const lowerLine = line.toLowerCase();
+                const val = line.includes(':') ? line.split(':').slice(1).join(':').trim() : String(row[1] || '').trim();
+                
+                if (lowerLine.includes('nombre') || lowerLine.includes('apellido')) currentOrder.nombreCliente = val;
+                else if (lowerLine.includes('tel') || lowerLine.includes('celular')) currentOrder.telefono = val.replace(/\D/g, '');
+                else if (lowerLine.includes('departamento') || lowerLine.includes('provincia')) { 
+                  currentOrder.departamentoDestino = val; 
+                  currentOrder.country = val; 
+                }
+                else if (lowerLine.includes('ciudad') || lowerLine.includes('municipio')) currentOrder.ciudadDestino = val;
+                else if (lowerLine.includes('direcci') || lowerLine.includes('calle')) currentOrder.direccion = val;
+              }
+            }
+            if (currentOrder) blockOrders.push(currentOrder);
+            newOrders = blockOrders;
+          } else {
+            // Standard Horizontal CSV Parsing - Process line by line then group
+            const jsonData = XLSX.utils.sheet_to_json(ws) as any[];
+            const groupedMap = new Map<string, Omit<Order, 'id' | 'uid'>>();
+
+            jsonData.forEach(row => {
+              const orderId = String(getField(row, ['Name', 'Order ID', 'ID', 'Order', 'Número']) || '').replace('#', '').trim();
+              if (!orderId || orderId.toLowerCase() === 'name') return;
+
+              const notes = String(getFirstNonEmptyField(row, ['Notes', 'Note', 'Notas', 'Note Attributes', 'Comentarios']) || '');
+              
+              const subtotal = normalize(parseMoney(getField(row, ['Subtotal', 'Sub-total', 'Sub Total', 'Valor sin envío'])));
+              const shipping = normalize(parseMoney(getField(row, ['Shipping', 'Envío', 'Coste de envío', 'Envío prioritario'])));
+              const total = normalize(parseMoney(getField(row, ['Total', 'Price', 'Importe', 'Total Price', 'Valor Total'])));
+
+              const rawProduct = String(getField(row, ['Lineitem name', 'Name', 'Producto', 'Item', 'Product Title']) || '');
+              const isShippingRow = rawProduct.toLowerCase().includes('envio') || rawProduct.toLowerCase().includes('shipping');
+
+              if (!groupedMap.has(orderId)) {
+                const shippingName = extractFromNotes(notes, ['Nombre y Apellido', 'Nombre', 'Cliente', 'Name', 'FullName']) || 
+                                   getField(row, ['Shipping Name', 'Billing Name', 'Customer Name', 'Nombre', 'Cliente']);
+                                   
+                const shippingPhone = extractFromNotes(notes, ['Teléfono', 'TelÃ©fono', 'Telefono', 'Celular', 'WhatsApp', 'WhatsApp:', 'Phone', 'NÃºmero de WhatsApp']) || 
+                                    getField(row, ['Shipping Phone', 'Phone', 'Teléfono', 'Celular', 'Billing Phone', 'Tel:', 'WhatsApp']);
+                                    
+                const shippingCity = extractFromNotes(notes, ['Ciudad', 'Municipio', 'City', 'Mpio', 'Shipping City']) || 
+                                   getField(row, ['Shipping City', 'City', 'Ciudad', 'Billing City', 'Municipio']);
+                                   
+                const shippingProvince = extractFromNotes(notes, ['Departamento', 'Depto', 'Estado', 'RegiÃ³n', 'Province', 'State']) || 
+                                       getField(row, ['Shipping Province', 'Shipping Province Name', 'Province', 'State', 'Departamento', 'Billing Province Name', 'Provincia']);
+                                       
+                const shippingAddress1 = getField(row, ['Shipping Address1', 'Address1', 'Address', 'Dirección', 'Billing Address1', 'Calle', 'Direccion']);
+                const shippingAddress2 = getField(row, ['Shipping Address2', 'Address2', 'Referencia', 'Indicaciones']);
+                
+                const fullAddress = extractFromNotes(notes, ['Dirección completa', 'Direccion completa', 'DirecciÃ³n completa', 'Dirección']) || 
+                                   `${String(shippingAddress1 || '').trim()} ${String(shippingAddress2 || '').trim()}`.trim();
+
+                const dateVal = getField(row, ['Created at', 'Fecha', 'Date', 'Created']) || '';
+
+                const shippingVal = normalize(parseMoney(getField(row, ['Lineitem price', 'Price', 'Net Price'])));
+                const isPriorityShipping = shippingVal === 198 || shippingVal === 7 || shippingVal === 7.5;
+                
+                groupedMap.set(orderId, {
+                  date: shopifyDate(dateVal),
+                  orderId,
+                  product: isShippingRow ? 'Producto Shopify' : rawProduct,
+                  nombreCliente: String(shippingName || 'Desconocido').trim(),
+                  telefono: String(shippingPhone || '').replace(/\D/g, ''),
+                  ciudadDestino: String(shippingCity || '').trim(),
+                  departamentoDestino: String(shippingProvince || '').trim(),
+                  direccion: fullAddress || String(shippingAddress1 || '').trim(),
+                  price: total || (subtotal + shipping) || 0,
+                  cost: (subtotal || total || 0) * 0.4,
+                  shippingCharged: 0,
+                  shippingReal: 0,
+                  platformFee: 0,
+                  adsCost: 0,
+                  country: String(shippingProvince || '').trim(),
+                  status: 'Pendiente',
+                  provider: 'Shopify',
+                  priorityShipping: isPriorityShipping ? shippingVal : 0,
+                  notas: notes || 'Importado de Shopify'
+                });
+              } else {
+                const existing = groupedMap.get(orderId)!;
+                if (isShippingRow) {
+                  const shippingVal = normalize(parseMoney(getField(row, ['Lineitem price', 'Price', 'Net Price'])));
+                  const isPriorityShipping = shippingVal === 198 || shippingVal === 7 || shippingVal === 7.5;
+                  if (isPriorityShipping) {
+                    existing.priorityShipping = (existing.priorityShipping || 0) + shippingVal;
+                  }
+                }
+                if (!isShippingRow && existing.product === 'Producto Shopify') {
+                   existing.product = rawProduct;
+                }
+                // Ensure name/phone is filled if first row missed it
+                if (existing.nombreCliente === 'Desconocido') {
+                  const retryName = getField(row, ['Shipping Name', 'Billing Name', 'Customer Name', 'Nombre', 'Cliente']);
+                  if (retryName) existing.nombreCliente = String(retryName).trim();
+                }
+                if (!existing.telefono) {
+                  const retryPhone = getField(row, ['Shipping Phone', 'Phone', 'Teléfono', 'Celular', 'Billing Phone']);
+                  if (retryPhone) existing.telefono = String(retryPhone).replace(/\D/g, '');
+                }
+              }
+            });
+            newOrders = Array.from(groupedMap.values()).filter(o => o.nombreCliente !== 'Desconocido' || o.telefono);
+          }
+        } else {
+          // Dropi Mapping
+          const jsonData = XLSX.utils.sheet_to_json(ws) as any[];
+          newOrders = jsonData.map(row => {
+            const keys = Object.keys(row);
+            const getField = (possibleNames: string[]) => {
+              let key = keys.find(k => 
+                possibleNames.some(p => k.toLowerCase() === p.toLowerCase()) && 
                 row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== ''
               );
-            }
-            return key ? row[key] : undefined;
-          };
-
-          // If conversion is active, we assume the input data is in the current currency
-          // and we normalize it to USD for storage.
-          const normalize = (amount: number) => isConversionActive ? (amount / exchangeRate) : amount;
-
-          if (platform === 'Shopify') {
-            const externalId = String(getField(['Name', 'Order ID', 'ID', 'Reference', 'Order']) || '');
-            const price = normalize(parseMoney(getField(['Total', 'Price', 'Total Price', 'Subtotal', 'Importe'])));
-            const lineItemPrice = normalize(parseMoney(getField(['Lineitem price', 'Price', 'Item Price', 'Precio Unitario'])));
-            const lineItemQuantity = parseMoney(getField(['Lineitem quantity', 'Quantity', 'Qty', 'Cantidad'])) || 1;
-            const financialStatus = String(getField(['Financial Status', 'Pagado', 'Estado Pago', 'Pago']) || '').toLowerCase();
-            const fulfillmentStatus = String(getField(['Fulfillment Status', 'Estado Envío', 'Estado Despacho', 'Cumplimiento']) || '').toLowerCase();
-            
-            let status: OrderStatus = 'Pendiente';
-            if (financialStatus.includes('paid') || financialStatus.includes('pagado')) {
-              status = 'Entregado';
-            }
-            if (fulfillmentStatus.includes('fulfilled') || fulfillmentStatus.includes('enviado') || fulfillmentStatus.includes('entregado')) {
-              status = 'Entregado';
-            } else if (fulfillmentStatus.includes('transit') || fulfillmentStatus.includes('ruta')) {
-              if (status !== 'Entregado') status = 'En tránsito';
-            }
-
-            const trackingId = String(getField(['Guía', 'Guia', 'Tracking', 'Seguimiento', 'Tracking number', 'Number']) || '');
-            
-            return {
-              date: getField(['Created at', 'Fecha', 'Date', 'Creado']) ? new Date(getField(['Created at', 'Fecha', 'Date', 'Creado'])) : new Date(),
-              orderId: externalId || `SHP-${Math.random().toString(36).substring(7).toUpperCase()}`,
-              product: getField(['Lineitem name', 'Name', 'Nombre', 'Producto', 'Artículo']) || 'Producto Shopify',
-              price: price,
-              cost: lineItemPrice * 0.4 * lineItemQuantity, 
-              shippingCharged: normalize(parseMoney(getField(['Shipping', 'Shipping Price', 'Envío', 'Flete']))),
-              shippingReal: 0,
-              adsCost: 0,
-              platformFee: 0.02,
-              status: status,
-              provider: 'Shopify',
-              country: getField(['Billing Country', 'Country', 'Pais', 'País']) || 'Colombia',
-              trackingId: trackingId
+              if (!key) {
+                key = keys.find(k => 
+                  possibleNames.some(p => k.toLowerCase().includes(p.toLowerCase())) && 
+                  row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== ''
+                );
+              }
+              return key ? row[key] : undefined;
             };
-          } else {
-            // Dropi Professional Mapping
-            const externalId = String(getField(['ID Pedido', 'ID', 'Referencia', 'Order ID', 'Factura', 'N° Orden', 'Consecutivo', 'ID_PEDIDO']) || '');
-            const product = getField(['Producto', 'Nombre Producto', 'Item', 'Lineitem name', 'Descripción', 'PRODUCTO', 'NOMBRE_PRODUCTO']) || 'Producto Dropi';
-            
-            // Prioritize specific fields for price and cost
+
             const valorFacturado = normalize(parseMoney(getField(['VALOR FACTURADO', 'Precio Venta', 'Total', 'Valor Total', 'Venta', 'Amount', 'Precio', 'PRECIO_VENTA', 'VALOR_VENTA', 'PRECIO_TOTAL', 'TOTAL_A_COBRAR', 'RECAUDO'])));
             const valorCompra = normalize(parseMoney(getField(['VALOR DE COMPRA EN PRODUCTOS', 'Costo Producto', 'Costo', 'Provider Cost', 'Unit Price', 'Precio Costo', 'COSTO_PRODUCTO', 'COSTO_PROVEEDOR', 'TOTAL EN PRECIOS DE PROVEEDOR', 'PROVEEDOR', 'COSTO_TOTAL'])));
             const flete = normalize(parseMoney(getField(['PRECIO FLETE', 'Flete', 'Valor Flete', 'Costo Envío', 'Shipping', 'Flete Real', 'Envío', 'VALOR_FLETE', 'COSTO_ENVIO', 'COSTO_FLETE'])));
@@ -316,38 +542,23 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             const totalPreciosProveedor = normalize(parseMoney(getField(['TOTAL PRECIOS PROVEEDOR', 'Supplier Total', 'Costo Total Proveedor', 'TOTAL EN PRECIOS DE PROVEEDOR', 'TOTAL_PROVEEDOR', 'MONTO_PROVEEDOR'])));
 
             const rawStatus = String(getField(['Estado', 'Status', 'Estado Orden', 'Estado de la orden', 'Estado Actual', 'Seguimiento', 'Situación', 'ESTADO', 'ESTATUS']) || '').toUpperCase();
-            
-            // Map Dropi status with more variations
             let status: OrderStatus = 'Pendiente';
-            
-            if (rawStatus.includes('ENTREGADO') || rawStatus.includes('EXITOSO') || rawStatus.includes('FINALIZADO') || rawStatus === 'DELIVERED') {
-              status = 'Entregado';
-            } else if (rawStatus.includes('DEVOLUCION') || rawStatus.includes('DEVUELTO') || rawStatus.includes('RETORNO') || rawStatus.includes('RECHAZADO')) {
-              status = 'Devuelto';
-            } else if (rawStatus.includes('CANCELADO') || rawStatus === 'CANCELLED' || rawStatus.includes('ANULADO')) {
-              status = 'Cancelado';
-            } else if (rawStatus.includes('TRANSITO') || rawStatus.includes('DESPACHADO') || rawStatus.includes('EN RUTA') || rawStatus.includes('VIAJE') || rawStatus.includes('DESPACHO') || rawStatus.includes('BODEGA')) {
-              status = 'En tránsito';
-            } else if (rawStatus.includes('GUIA_GENERADA') || rawStatus.includes('GUIA GENERADA') || rawStatus.includes('GENERADA') || rawStatus.includes('GUÍA')) {
-              status = 'Guía Generada';
-            } else if (rawStatus.includes('RECOLECTADO') || rawStatus.includes('RECOGIDO') || rawStatus.includes('RECOLECCION')) {
-              status = 'Recolectado';
-            } else if (rawStatus.includes('INCIDENCIA') || rawStatus.includes('NOVEDAD') || rawStatus.includes('REPROGRAMADO') || rawStatus.includes('PROBLEMA')) {
-              status = 'Incidencia';
-            } else if (rawStatus.includes('PENDIENTE') || rawStatus === 'PENDING' || rawStatus.includes('ESPERA')) {
-              status = 'Pendiente';
-            } else if (rawStatus.length > 0) {
-              const matchedOrderStatuses: OrderStatus[] = ['Entregado', 'En tránsito', 'Devuelto', 'Cancelado', 'Pendiente', 'Guía Generada', 'Recolectado', 'Incidencia'];
-              const matched = matchedOrderStatuses.find(s => s.toUpperCase() === rawStatus);
-              if (matched) status = matched;
-            }
+            if (rawStatus.includes('ENTREGADO') || rawStatus.includes('EXITOSO') || rawStatus.includes('FINALIZADO')) status = 'Entregado';
+            else if (rawStatus.includes('DEVOLUCION') || rawStatus.includes('DEVUELTO') || rawStatus.includes('RETORNO')) status = 'Devuelto';
+            else if (rawStatus.includes('CANCELADO') || rawStatus.includes('ANULADO')) status = 'Cancelado';
+            else if (rawStatus.includes('TRANSITO') || rawStatus.includes('DESPACHADO') || rawStatus.includes('BODEGA')) status = 'En tránsito';
+            else if (rawStatus.includes('GUIA_GENERADA') || rawStatus.includes('GUIA GENERADA')) status = 'Guía Generada';
+            else if (rawStatus.includes('RECOLECTADO')) status = 'Recolectado';
+            else if (rawStatus.includes('INCIDENCIA') || rawStatus.includes('NOVEDAD')) status = 'Incidencia';
 
-            const trackingId = String(getField(['Guía', 'Guia', 'Tracking', 'Seguimiento', 'Tracking number', 'Código Seguimiento', 'Guía de la transportadora', 'GUIA_SEGUIMIENTO', 'NÚMERO GUIA']) || '');
+            const trackingId = String(getField(['Guía', 'Guia', 'Tracking', 'Seguimiento', 'NÚMERO GUIA']) || '');
+            const rawDropiDate = getField(['Fecha', 'Date', 'Creado', 'FECHA']);
 
             return {
-              date: getField(['Fecha', 'Date', 'Creado', 'Fecha Orden', 'FECHA', 'FECHA_ORDEN']) ? new Date(getField(['Fecha', 'Date', 'Creado', 'Fecha Orden', 'FECHA', 'FECHA_ORDEN'])) : new Date(),
-              orderId: externalId || `DRP-${Math.random().toString(36).substring(7).toUpperCase()}`,
-              product: product,
+              id: `temp-${Math.random().toString(36).substring(2, 11)}`,
+              date: (rawDropiDate ? parseFlexibleDate(String(rawDropiDate)) : null) || new Date(),
+              orderId: String(getField(['ID Pedido', 'ID', 'Referencia']) || '').replace('#', '') || `DRP-${Math.random().toString(36).substring(7).toUpperCase()}`,
+              product: getField(['Producto', 'Nombre Producto', 'Item', 'PRODUCTO']) || 'Producto Dropi',
               price: valorFacturado,
               cost: valorCompra,
               shippingCharged: 0,
@@ -363,65 +574,32 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               precioFlete: flete,
               costoDevolucionFlete: costoDevolucion,
               totalPreciosProveedor: totalPreciosProveedor,
-              
-              // New fields mapping with source prioritization
               fechaReporte: String(getField(['FECHA DE REPORTE']) || ''),
               hora: String(getField(['HORA']) || ''),
               nombreCliente: String(getField(['NOMBRE CLIENTE']) || ''),
               telefono: String(getField(['TELÉFONO']) || ''),
               emailCliente: String(getField(['EMAIL']) || ''),
-              tipoIdentificacion: String(getField(['TIPO DE IDENTIFICACION']) || ''),
-              nroIdentificacion: String(getField(['NRO DE IDENTIFICACION']) || ''),
-              tipoEnvio: String(getField(['TIPO DE ENVIO']) || ''),
               departamentoDestino: String(getField(['DEPARTAMENTO DESTINO']) || ''),
               ciudadDestino: String(getField(['CIUDAD DESTINO']) || ''),
               direccion: String(getField(['DIRECCION']) || ''),
-              notas: String(getField(['NOTAS']) || ''),
+              notas: String(getField(['NOTAS']) || '') || 'Dropi Import',
               transportadora: String(getField(['TRANSPORTADORA']) || ''),
               numeroFactura: String(getField(['NUMERO DE FACTURA']) || ''),
-              valorFacturado: valorFacturado,
-              valorCompraProductos: valorCompra,
               novedad: String(getField(['NOVEDAD']) || ''),
-              fueSolucionadaNovedad: String(getField(['FUE SOLUCIONADA LA NOVEDAD']) || ''),
-              horaNovedad: String(getField(['HORA DE NOVEDAD']) || ''),
-              fechaNovedad: String(getField(['FECHA DE NOVEDAD']) || ''),
               solucion: String(getField(['SOLUCIÓN']) || ''),
-              horaSolucion: String(getField(['HORA DE SOLUCIÓN']) || ''),
-              fechaSolucion: String(getField(['FECHA DE SOLUCIÓN']) || ''),
               observacion: String(getField(['OBSERVACIÓN']) || ''),
-              usuarioSolucionaNovedad: String(getField(['USUARIO QUE SOLUCIONA LA NOVEDAD']) || ''),
-              horaUltimoMovimiento: String(getField(['HORA DE ÚLTIMO MOVIMIENTO']) || ''),
-              fechaUltimoMovimiento: String(getField(['FECHA DE ÚLTIMO MOVIMIENTO']) || ''),
               ultimoMovimiento: String(getField(['ÚLTIMO MOVIMIENTO']) || ''),
-              conceptoUltimoMovimiento: String(getField(['CONCEPTO ÚLTIMO MOVIMIENTO']) || ''),
-              ubicacionUltimoMovimiento: String(getField(['UBICACIÓN DE ÚLTIMO MOVIMIENTO']) || ''),
               vendedor: String(getField(['VENDEDOR']) || ''),
-              tipoTienda: String(getField(['TIPO DE TIENDA']) || ''),
               tienda: String(getField(['TIENDA']) || ''),
-              idOrdenTienda: String(getField(['ID DE ORDEN DE TIENDA']) || ''),
-              numeroPedidoTienda: String(getField(['NUMERO DE PEDIDO DE TIENDA']) || ''),
-              tags: String(getField(['TAGS']) || ''),
-              fechaGeneracionGuia: String(getField(['FECHA GENERACION DE GUIA']) || ''),
-              usuarioGeneracionGuia: String(getField(['USUARIO GENERACION DE GUIA']) || ''),
-              codigoPostal: String(getField(['CODIGO POSTAL']) || ''),
-              contadorIndemnizaciones: parseMoney(getField(['CONTADOR DE INDEMNIZACIONES'])),
-              conceptoUltimaIndemnizacion: String(getField(['CONCEPTO ÚLTIMA INDENMIZACIÓN']) || ''),
-              categorias: String(getField(['CATEGORÍAS']) || ''),
-              razonSocialFacturacion: String(getField(['RAZON SOCIAL PARA FACTURACION']) || ''),
-              emailFacturacion: String(getField(['EMAIL PARA FACTURACION']) || ''),
-              fePais: String(getField(['FE PAIS']) || ''),
-              feTipoPersona: String(getField(['FE TIPO DE PERSONA']) || ''),
-              feTipoDocumento: String(getField(['FE TIPO DOCUMENTO']) || ''),
-              feDocumento: String(getField(['FE DOCUMENTO']) || ''),
-              feMunicipio: String(getField(['FE MUNICIPIO']) || ''),
-              feDireccion: String(getField(['FE DIRECCION']) || ''),
-              feNumeroTelefono: String(getField(['FE NUMERO TELEFONO']) || ''),
-              feTipoRegimen: String(getField(['FE TIPO DE REGIMEN']) || ''),
-              feTipoResponsabilidad: String(getField(['FE TIPO DE  RESPONSABILIDAD']) || ''),
-              feImpuesto: String(getField(['FE IMPUESTO']) || '')
+              tags: String(getField(['TAGS']) || '')
             };
-          }
-        });
+          });
+        }
+        
+        function shopifyDate(raw: any) {
+          const d = raw ? parseFlexibleDate(String(raw)) : null;
+          return d && !isNaN(d.getTime()) ? d : new Date();
+        }
 
         onAddOrders(newOrders);
         setNotification({ 
@@ -430,204 +608,198 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         });
         setTimeout(() => setNotification(null), 5000);
       } catch (error) {
-        console.error(`Error importing ${platform} Excel:`, error);
-        setNotification({ 
-          message: `Error al procesar el archivo de ${platform}. Verifica el formato.`, 
-          type: 'error' 
-        });
+        console.error(`Error importing Excel:`, error);
+        setNotification({ message: `Error al procesar el archivo.`, type: 'error' });
         setTimeout(() => setNotification(null), 5000);
       } finally {
         setIsImporting(false);
-        if (dropiInputRef.current) dropiInputRef.current.value = '';
-        if (shopifyInputRef.current) shopifyInputRef.current.value = '';
       }
     };
     reader.readAsBinaryString(file);
   };
 
   const filteredOrders = useMemo(() => {
+    const normalizePhone = (num: any) => {
+      if (!num) return '';
+      return String(num).replace(/\D/g, '').slice(-10);
+    };
+
+    const shopifyCustomers = new Set();
+    orders.forEach(o => {
+      const isShopify = o.provider?.toLowerCase().includes('shopify') || (!o.provider && !o.transportadora);
+      if (isShopify) {
+        const name = (o.nombreCliente || '').toLowerCase().trim();
+        const phone = normalizePhone(o.telefono);
+        if (name && phone) shopifyCustomers.add(`${name}|${phone}`);
+      }
+    });
+
     return orders.filter(order => {
-      const orderId = order.orderId || '';
-      const product = order.product || '';
-      const trackingId = order.trackingId || '';
-      const nombreCliente = order.nombreCliente || '';
+      const isDropi = order.provider?.toLowerCase().includes('dropi') || !!order.transportadora;
+      const isShopify = order.provider?.toLowerCase().includes('shopify') || (!order.provider && !order.transportadora);
+
+      if (viewMode === 'SHOPIFY') {
+        if (!isShopify) return false;
+      } else if (viewMode === 'DROPI') {
+        if (!isDropi) return false;
+      } else if (viewMode === 'TIKTOK') {
+        if (!isDropi) return false;
+        const name = (order.nombreCliente || '').toLowerCase().trim();
+        const phone = normalizePhone(order.telefono);
+        if (shopifyCustomers.has(`${name}|${phone}`)) return false;
+      }
+      
+      const orderId = (order.orderId || '').toString();
+      const product = (order.product || '').toString();
+      const customerName = (order.nombreCliente || '').toString();
+      const trackingId = (order.trackingId || '').toString();
+      const phone = (order.telefono || '').toString();
 
       const matchesSearch = orderId.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            product.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            trackingId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           nombreCliente.toLowerCase().includes(searchTerm.toLowerCase());
+                           customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           phone.includes(searchTerm);
       
       const matchesStatus = statusFilter === 'All' || order.status === statusFilter;
-      
-      const matchesDept = !deptFilter || (order.departamentoDestino && order.departamentoDestino.toLowerCase().includes(deptFilter.toLowerCase()));
+      const matchesDept = !deptFilter || (order.departamentoDestino && order.departamentoDestino.toLowerCase().includes(deptFilter.toLowerCase())) || (order.country && order.country.toLowerCase().includes(deptFilter.toLowerCase()));
       const matchesCity = !cityFilter || (order.ciudadDestino && order.ciudadDestino.toLowerCase().includes(cityFilter.toLowerCase()));
+      const matchesTag = !tagFilter 
+        ? true 
+        : tagFilter === 'SIN ETIQUETA' 
+          ? (!order.tags || order.tags.trim() === '') 
+          : (order.tags && order.tags.toLowerCase().includes(tagFilter.toLowerCase()));
 
-      // Date Filtering
       let matchesReqDate = true;
       if (reqDate) {
         try {
-          const orderTime = startOfDay(order.date).getTime();
-          const filterTime = startOfDay(parseISO(reqDate)).getTime();
-          matchesReqDate = orderTime === filterTime;
+          if (order.date && !isNaN(order.date.getTime())) {
+            const orderTime = startOfDay(order.date).getTime();
+            const filterTime = startOfDay(parseISO(reqDate)).getTime();
+            matchesReqDate = orderTime === filterTime;
+          } else {
+            matchesReqDate = false;
+          }
         } catch (e) {
           matchesReqDate = false;
         }
       }
 
-      let matchesDelDate = true;
-      if (delDate) {
-        try {
-          // Try to find delivery date from various fields
-          const deliveryStr = order.fechaUltimoMovimiento || order.fechaSolucion || order.fechaReporte;
-          if (deliveryStr && order.status === 'Entregado') {
-            const deliveryDate = parseFlexibleDate(deliveryStr);
-            if (deliveryDate) {
-              const deliveryTime = startOfDay(deliveryDate).getTime();
-              const filterTime = startOfDay(parseISO(delDate)).getTime();
-              matchesDelDate = deliveryTime === filterTime;
-            } else {
-              matchesDelDate = false;
-            }
-          } else {
-            matchesDelDate = false; 
-          }
-        } catch (e) {
-          matchesDelDate = false;
-        }
-      }
-
-      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesReqDate && matchesDelDate;
+      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesTag && matchesReqDate;
     });
-  }, [orders, searchTerm, statusFilter, deptFilter, cityFilter, reqDate, delDate]);
+  }, [orders, searchTerm, statusFilter, deptFilter, cityFilter, tagFilter, reqDate, viewMode]);
+
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const saved = localStorage.getItem('order-column-widths');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const resizingRef = useRef<{ colId: string; startX: number; startWidth: number } | null>(null);
+
+  const startResizing = (colId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const header = (e.target as HTMLElement).parentElement;
+    if (!header) return;
+    
+    resizingRef.current = {
+      colId,
+      startX: e.pageX,
+      startWidth: header.offsetWidth
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', stopResizing);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!resizingRef.current) return;
+    const { colId, startX, startWidth } = resizingRef.current;
+    const delta = e.pageX - startX;
+    const newWidth = Math.max(50, startWidth + delta);
+    
+    setColumnWidths(prev => {
+      const next = { ...prev, [colId]: newWidth };
+      localStorage.setItem('order-column-widths', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const stopResizing = () => {
+    resizingRef.current = null;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', stopResizing);
+  };
 
   const activeColumns = useMemo(() => {
+    if (viewMode === 'SHOPIFY') {
+      return [
+        { id: 'orderId', label: 'ID ORDEN', value: (o: Order) => o.orderId, className: 'font-black text-white text-[15px]' },
+        { id: 'nombreCliente', label: 'NOMBRE COMPLETO', value: (o: Order) => o.nombreCliente, className: 'text-white font-black text-[15px]' },
+        { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono, className: 'text-slate-300' },
+        { id: 'ciudadDestino', label: 'CIUDAD', value: (o: Order) => o.ciudadDestino || '---' },
+        { id: 'product', label: 'PRODUCTO', value: (o: Order) => o.product },
+        { id: 'departamentoDestino', label: 'DEPARTAMENTO', value: (o: Order) => o.departamentoDestino || o.country || '---' },
+        { id: 'direccion', label: 'DIRECCIÓN', value: (o: Order) => o.direccion, className: 'text-xs text-slate-400 truncate max-w-[150px]' },
+        { id: 'price', label: 'VALOR PRODUCTO', value: (o: Order) => (o.price || 0) - (o.priorityShipping || 0), isMoney: true, className: 'text-emerald-400 font-bold' },
+        { id: 'priorityShipping', label: 'ENVÍO PRIORITARIO', value: (o: Order) => o.priorityShipping || 0, isMoney: true, className: 'text-amber-400 font-bold' },
+        { id: 'status', label: 'ESTATUS', value: (o: Order) => o.status, render: (o: Order) => <StatusBadge status={o.status} /> },
+      ];
+    }
+
     const allCols = [
-      { id: 'fechaReporte', label: 'FECHA REPORTE', value: (o: Order) => o.fechaReporte },
-      { id: 'orderId', label: 'ID ORDEN', value: (o: Order) => o.orderId, className: 'font-bold text-white' },
-      { id: 'hora', label: 'HORA', value: (o: Order) => o.hora },
-      { 
-        id: 'date', 
-        label: 'FECHA', 
-        value: (o: Order) => {
-          if (!o.date) return '';
-          try {
-            return format(o.date, 'yyyy-MM-dd');
-          } catch (e) {
-            return 'Inválida';
-          }
-        }, 
-        className: 'text-slate-500' 
-      },
-      { id: 'nombreCliente', label: 'NOMBRE CLIENTE', value: (o: Order) => o.nombreCliente, className: 'text-white font-bold' },
-      { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono },
-      { id: 'emailCliente', label: 'EMAIL', value: (o: Order) => o.emailCliente },
-      { id: 'tipoIdentificacion', label: 'TIPO ID', value: (o: Order) => o.tipoIdentificacion, className: 'text-xs text-slate-500' },
-      { id: 'nroIdentificacion', label: 'NRO ID', value: (o: Order) => o.nroIdentificacion },
-      { id: 'trackingId', label: 'NÚMERO GUIA', value: (o: Order) => o.trackingId || 'SIN GUÍA', className: 'font-mono text-xs text-slate-300 uppercase' },
+      { id: 'fechaReporte', label: 'FECHA REPORTE', value: (o: Order) => o.fechaReporte, className: 'text-slate-300' },
+      { id: 'orderId', label: 'ID ORDEN', value: (o: Order) => o.orderId, className: 'font-black text-white text-[15px]' },
+      { id: 'hora', label: 'HORA', value: (o: Order) => o.hora, className: 'text-slate-300' },
+      { id: 'date', label: 'FECHA', value: (o: Order) => (o.date && !isNaN(o.date.getTime())) ? format(o.date, 'yyyy-MM-dd') : '---', className: 'text-blue-400/80' },
+      { id: 'nombreCliente', label: 'NOMBRE CLIENTE', value: (o: Order) => o.nombreCliente, className: 'text-white font-black text-[15px]' },
+      { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono, className: 'text-slate-300' },
+      { id: 'trackingId', label: 'NÚMERO GUIA', value: (o: Order) => o.trackingId || 'SIN GUÍA', className: 'text-slate-400 font-medium' },
       { id: 'status', label: 'ESTATUS', value: (o: Order) => o.status, render: (o: Order) => <StatusBadge status={o.status} /> },
-      { id: 'tipoEnvio', label: 'TIPO ENVIO', value: (o: Order) => o.tipoEnvio },
-      { id: 'departamentoDestino', label: 'DEPARTAMENTO', value: (o: Order) => o.departamentoDestino },
-      { id: 'ciudadDestino', label: 'CIUDAD', value: (o: Order) => o.ciudadDestino, className: 'text-slate-300' },
-      { id: 'direccion', label: 'DIRECCION', value: (o: Order) => o.direccion, className: 'text-xs text-slate-500 truncate max-w-[150px]' },
-      { id: 'notas', label: 'NOTAS', value: (o: Order) => o.notas, className: 'text-xs text-slate-500 truncate max-w-[150px]' },
-      { id: 'transportadora', label: 'TRANSPORTADORA', value: (o: Order) => o.transportadora },
-      { id: 'numeroFactura', label: 'NRO FACTURA', value: (o: Order) => o.numeroFactura },
+      { id: 'product', label: 'PRODUCTO', value: (o: Order) => o.product },
       { 
         id: 'valorFacturado', 
-        label: 'VALOR FACTURADO', 
+        label: 'VALOR VENTA', 
         value: (o: Order) => calculateOrderProfit(o).revenue, 
         isMoney: true, 
         className: 'text-emerald-400 font-bold text-right' 
       },
       { 
-        id: 'valorCompraProductos', 
-        label: 'VALOR COMPRA', 
-        value: (o: Order) => {
-          const { revenue } = calculateOrderProfit(o);
-          return revenue > 0 ? Math.abs(o.valorCompraProductos || 0) : 0;
-        }, 
+        id: 'precioFlete', 
+        label: 'FLETE (DROPI)', 
+        value: (o: Order) => o.precioFlete || 0, 
         isMoney: true, 
-        className: 'text-slate-400 text-right' 
+        className: 'text-amber-400 text-right' 
       },
       { 
         id: 'netProfit', 
-        label: 'GANANCIA', 
+        label: 'UTILIDAD NETA', 
         value: (o: Order) => calculateOrderProfit(o).netProfit, 
         isMoney: true, 
         isProfit: true,
-        className: 'text-right'
+        className: 'text-right font-black'
       },
-      { 
-        id: 'precioFlete', 
-        label: 'PRECIO FLETE', 
-        value: (o: Order) => (o.status === 'Entregado' || o.status === 'Devuelto' ? Math.abs(o.precioFlete || 0) : 0), 
-        isMoney: true, 
-        className: 'text-slate-400 text-right' 
-      },
-      { 
-        id: 'costoDevolucionFlete', 
-        label: 'COSTO DEV. FLETE', 
-        value: (o: Order) => (o.status === 'Devuelto' ? Math.abs(o.costoDevolucionFlete || 0) : 0), 
-        isMoney: true, 
-        className: 'text-red-400 text-right' 
-      },
-      { 
-        id: 'comision', 
-        label: 'COMISION', 
-        value: (o: Order) => (o.status === 'Entregado' ? Math.abs(o.comision || 0) : 0), 
-        isMoney: true, 
-        className: 'text-slate-400 text-right' 
-      },
-      { 
-        id: 'totalPreciosProveedor', 
-        label: 'TOTAL PROVEEDOR', 
-        value: (o: Order) => (o.status === 'Entregado' ? Math.abs(o.totalPreciosProveedor || 0) : 0), 
-        isMoney: true, 
-        className: 'text-slate-400 text-right' 
-      },
-      { id: 'novedad', label: 'NOVEDAD', value: (o: Order) => o.novedad, className: 'text-xs text-slate-400 truncate max-w-[150px]' },
-      { id: 'fueSolucionadaNovedad', label: 'SOLUCIONADO?', value: (o: Order) => o.fueSolucionadaNovedad },
-      { id: 'horaNovedad', label: 'HORA NOVEDAD', value: (o: Order) => o.horaNovedad },
-      { id: 'fechaNovedad', label: 'FECHA NOVEDAD', value: (o: Order) => o.fechaNovedad },
-      { id: 'solucion', label: 'SOLUCIÓN', value: (o: Order) => o.solucion, className: 'text-xs text-slate-400 truncate max-w-[150px]' },
-      { id: 'horaSolucion', label: 'HORA SOLUCIÓN', value: (o: Order) => o.horaSolucion },
-      { id: 'fechaSolucion', label: 'FECHA SOLUCIÓN', value: (o: Order) => o.fechaSolucion },
-      { id: 'observacion', label: 'OBSERVACIÓN', value: (o: Order) => o.observacion, className: 'text-xs text-slate-500 truncate max-w-[150px]' },
-      { id: 'horaUltimoMovimiento', label: 'HORA ULT. MOV.', value: (o: Order) => o.horaUltimoMovimiento },
-      { id: 'fechaUltimoMovimiento', label: 'FECHA ULT. MOV.', value: (o: Order) => o.fechaUltimoMovimiento },
-      { id: 'ultimoMovimiento', label: 'ULT. MOVIMIENTO', value: (o: Order) => o.ultimoMovimiento },
-      { id: 'conceptoUltimoMovimiento', label: 'CONCEPTO ULT. MOV.', value: (o: Order) => o.conceptoUltimoMovimiento, className: 'whitespace-normal min-w-[200px] text-xs leading-tight' },
-      { id: 'ubicacionUltimoMovimiento', label: 'UBICACIÓN ULT. MOV.', value: (o: Order) => o.ubicacionUltimoMovimiento },
+      { id: 'ciudadDestino', label: 'CIUDAD', value: (o: Order) => o.ciudadDestino },
+      { id: 'departamentoDestino', label: 'DEPTO', value: (o: Order) => o.departamentoDestino },
+      { id: 'direccion', label: 'DIRECCIÓN', value: (o: Order) => o.direccion, className: 'text-xs text-slate-500 truncate max-w-[150px]' },
+      { id: 'transportadora', label: 'LOGÍSTICA', value: (o: Order) => o.transportadora },
+      { id: 'notas', label: 'RECONCILIACIÓN / NOTAS', value: (o: Order) => o.notas, className: 'text-xs text-slate-400 truncate max-w-[200px]', hide: !isReconciliationMode },
+      { id: 'emailCliente', label: 'EMAIL', value: (o: Order) => o.emailCliente },
       { id: 'vendedor', label: 'VENDEDOR', value: (o: Order) => o.vendedor },
-      { id: 'tipoTienda', label: 'TIPO TIENDA', value: (o: Order) => o.tipoTienda },
       { id: 'tienda', label: 'TIENDA', value: (o: Order) => o.tienda },
-      { id: 'idOrdenTienda', label: 'ID ORDEN TIENDA', value: (o: Order) => o.idOrdenTienda },
-      { id: 'numeroPedidoTienda', label: 'NRO PEDIDO TIENDA', value: (o: Order) => o.numeroPedidoTienda },
+      { id: 'numeroFactura', label: 'NRO FACTURA', value: (o: Order) => o.numeroFactura },
+      { id: 'novedad', label: 'NOVEDAD', value: (o: Order) => o.novedad, className: 'text-xs text-slate-400' },
+      { id: 'fueSolucionadaNovedad', label: 'SOLUCIONADO?', value: (o: Order) => o.fueSolucionadaNovedad },
+      { id: 'solucion', label: 'SOLUCIÓN', value: (o: Order) => o.solucion, className: 'text-xs' },
+      { id: 'observacion', label: 'OBSERVACIÓN', value: (o: Order) => o.observacion, className: 'text-xs' },
+      { id: 'ultimoMovimiento', label: 'ULT. MOVIMIENTO', value: (o: Order) => o.ultimoMovimiento },
+      { id: 'conceptoUltimoMovimiento', label: 'CONCEPTO MOV.', value: (o: Order) => o.conceptoUltimoMovimiento, className: 'text-xs' },
       { id: 'tags', label: 'TAGS', value: (o: Order) => o.tags },
-      { id: 'fechaGeneracionGuia', label: 'FECHA GEN. GUIA', value: (o: Order) => o.fechaGeneracionGuia },
-      { id: 'usuarioGeneracionGuia', label: 'USUARIO GEN. GUIA', value: (o: Order) => o.usuarioGeneracionGuia },
-      { id: 'usuarioSolucionaNovedad', label: 'USUARIO SOL. NOVEDAD', value: (o: Order) => o.usuarioSolucionaNovedad },
-      { id: 'codigoPostal', label: 'CODIGO POSTAL', value: (o: Order) => o.codigoPostal, className: 'font-mono' },
-      { id: 'contadorIndemnizaciones', label: 'CONTADOR INDEM.', value: (o: Order) => o.contadorIndemnizaciones },
-      { id: 'conceptoUltimaIndemnizacion', label: 'CONCEPTO ULT. INDEM.', value: (o: Order) => o.conceptoUltimaIndemnizacion, className: 'text-xs' },
-      { id: 'categorias', label: 'CATEGORÍAS', value: (o: Order) => o.categorias },
-      { id: 'razonSocialFacturacion', label: 'RAZON SOCIAL FAC.', value: (o: Order) => o.razonSocialFacturacion },
-      { id: 'emailFacturacion', label: 'EMAIL FAC.', value: (o: Order) => o.emailFacturacion },
-      { id: 'fePais', label: 'FE PAIS', value: (o: Order) => o.fePais },
-      { id: 'feTipoPersona', label: 'FE TIPO PERSONA', value: (o: Order) => o.feTipoPersona, className: 'text-xs' },
-      { id: 'feTipoDocumento', label: 'FE TIPO DOC', value: (o: Order) => o.feTipoDocumento, className: 'text-xs' },
-      { id: 'feDocumento', label: 'FE DOCUMENTO', value: (o: Order) => o.feDocumento },
-      { id: 'feMunicipio', label: 'FE MUNICIPIO', value: (o: Order) => o.feMunicipio },
-      { id: 'feDireccion', label: 'FE DIRECCION', value: (o: Order) => o.feDireccion, className: 'text-xs truncate max-w-[150px]' },
-      { id: 'feNumeroTelefono', label: 'FE TELEFONO', value: (o: Order) => o.feNumeroTelefono },
-      { id: 'feTipoRegimen', label: 'FE TIPO REGIMEN', value: (o: Order) => o.feTipoRegimen, className: 'text-xs' },
-      { id: 'feTipoResponsabilidad', label: 'FE TIPO RESP.', value: (o: Order) => o.feTipoResponsabilidad, className: 'text-xs' },
-      { id: 'feImpuesto', label: 'FE IMPUESTO', value: (o: Order) => o.feImpuesto },
     ];
 
-    if (filteredOrders.length === 0) return allCols.slice(0, 15);
+    if (filteredOrders.length === 0) return allCols.filter(col => !(col as any).hide).slice(0, 15);
 
     return allCols.filter(col => {
+      if ((col as any).hide) return false;
       return filteredOrders.some(order => {
         const val = col.value(order);
         if (val === undefined || val === null || val === '') return false;
@@ -636,7 +808,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         return true;
       });
     });
-  }, [filteredOrders]);
+  }, [filteredOrders, viewMode, isReconciliationMode]);
 
   const toggleSelectOrder = (id: string) => {
     setSelectedOrderIds(prev => 
@@ -689,8 +861,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     ];
 
     const rows = filteredOrders.map(o => {
+      const formattedDate = (o.date && !isNaN(o.date.getTime())) ? format(o.date, 'yyyy-MM-dd') : '---';
       return [
-        o.fechaReporte || '', o.orderId, o.hora || '', format(o.date, 'yyyy-MM-dd'),
+        o.fechaReporte || '', o.orderId, o.hora || '', formattedDate,
         o.nombreCliente || '', o.telefono || '', o.emailCliente || '',
         o.tipoIdentificacion || '', o.nroIdentificacion || '', o.trackingId || '', o.status,
         o.tipoEnvio || '', o.departamentoDestino || '', o.ciudadDestino || '', o.direccion || '',
@@ -746,156 +919,509 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         )}
       </AnimatePresence>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-display font-bold text-white">Gestión de Ingresos</h2>
-          <p className="text-[15px] text-slate-500">Visualiza y filtra cada transacción en detalle</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <input 
-            type="file" 
-            ref={dropiInputRef} 
-            onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Dropi')} 
-            accept=".xlsx, .xls, .csv" 
-            className="hidden" 
-          />
-          <input 
-            type="file" 
-            ref={shopifyInputRef} 
-            onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Shopify')} 
-            accept=".xlsx, .xls, .csv" 
-            className="hidden" 
-          />
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12">
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-[#00df9a] flex items-center justify-center text-black shadow-lg">
+              <Zap size={26} fill="currentColor" />
+            </div>
+            <div>
+              <h2 className="text-4xl font-display font-black text-white tracking-tighter uppercase leading-none">
+                {viewMode === 'SHOPIFY' ? 'Panel Shopify' : viewMode === 'TIKTOK' ? <>TIKTOK <span className="text-[#00df9a]">PANEL</span></> : 'Gestión Dropi'}
+              </h2>
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-[10px] font-black text-slate-500 tracking-[0.2em] uppercase">
+                  {viewMode === 'SHOPIFY' ? 'Ventas e Ingresos' : viewMode === 'TIKTOK' ? 'Pedidos Dropi fuera de Shopify' : 'Logística y Despachos'}
+                </span>
+                <div className="w-1.5 h-1.5 rounded-full bg-[#00df9a] animate-pulse" />
+              </div>
+            </div>
+          </div>
           
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-neon/10 text-neon rounded-xl font-bold text-[15px] border border-neon/30 hover:bg-neon/20 transition-all shadow-[0_0_15px_rgba(34,197,94,0.1)]"
-          >
-            <Plus size={18} /> Nuevo Pedido
-          </button>
+          {isReconciliationMode && (
+            <div className="flex gap-2 p-1 bg-[#111] border border-white/5 rounded-xl w-fit">
+              {(['all', 'shopify', 'dropi', 'tiktok', 'reconciliation'] as const).map(tab => (
+                <button 
+                  key={tab}
+                  onClick={() => setActiveSource(tab)}
+                  className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-[0.1em] transition-all duration-300 whitespace-nowrap ${
+                    activeSource === tab 
+                      ? 'bg-white text-black shadow-md' 
+                      : 'text-slate-500 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {tab === 'all' ? 'VISTA GLOBAL' : tab === 'shopify' ? 'SHOPIFY' : tab === 'dropi' ? 'DROPI' : tab === 'tiktok' ? 'TIKTOK' : 'ALERTAS'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-          <div className="flex bg-card border border-border p-1 rounded-xl">
-            <button 
-              onClick={() => dropiInputRef.current?.click()}
-              disabled={!!isImporting}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${isImporting === 'Dropi' ? 'bg-orange-600 text-white' : 'text-orange-400/70 hover:text-orange-400 hover:bg-orange-500/5'}`}
-            >
-              <FileSpreadsheet size={16} /> {isImporting === 'Dropi' ? 'Importando Dropi...' : 'Importar Dropi'}
-            </button>
-            <div className="w-px h-8 bg-border self-center mx-1" />
-            <button 
-              onClick={() => shopifyInputRef.current?.click()}
-              disabled={!!isImporting}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all ${isImporting === 'Shopify' ? 'bg-emerald-600 text-white' : 'text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/5'}`}
-            >
-              <FileSpreadsheet size={16} /> {isImporting === 'Shopify' ? 'Importando Shopify...' : 'Importar Shopify'}
-            </button>
+          <div className="flex flex-wrap items-center gap-4 bg-[#111] p-2 rounded-2xl border border-white/5 shadow-2xl">
+          <div className="flex items-center gap-4 px-4 py-1 border-r border-white/5">
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">Importar</span>
+            <div className="flex gap-2">
+              {viewMode === 'SHOPIFY' && (
+                <>
+                  <input 
+                    type="file" 
+                    onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Shopify')}
+                    className="hidden" id="shopify-upload-clean"
+                  />
+                  <label 
+                    htmlFor="shopify-upload-clean"
+                    className="px-6 py-2.5 bg-[#00df9a]/5 border-2 border-[#00df9a]/60 rounded-xl font-black text-[11px] text-[#00df9a] cursor-pointer hover:bg-[#00df9a]/20 hover:border-[#00df9a] transition-all tracking-[0.15em] uppercase shadow-lg shadow-[#00df9a]/10 active:scale-95"
+                  >
+                    Importar Shopify
+                  </label>
+                </>
+              )}
+
+              {(viewMode === 'DROPI' || viewMode === 'TIKTOK') && (
+                <>
+                  <input 
+                    type="file" 
+                    onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Dropi')}
+                    className="hidden" id="dropi-upload-clean"
+                  />
+                  <label 
+                    htmlFor="dropi-upload-clean"
+                    className="px-6 py-2.5 bg-[#ff9100]/5 border-2 border-[#ff9100]/60 rounded-xl font-black text-[11px] text-[#ff9100] cursor-pointer hover:bg-[#ff9100]/20 hover:border-[#ff9100] transition-all tracking-[0.15em] uppercase shadow-lg shadow-orange-500/10 active:scale-95"
+                  >
+                    Importar Dropi
+                  </label>
+                </>
+              )}
+            </div>
           </div>
 
-          {selectedOrderIds.length > 0 && (
+          {isReconciliationMode && (
             <button 
-              onClick={handleDeleteSelected}
-              className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl font-bold text-[15px] hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+              onClick={reconcile}
+              disabled={shopifyOrders.length === 0 || dropiOrders.length === 0}
+              className={`flex items-center gap-3 px-8 py-3 rounded-lg font-black text-[11px] tracking-[0.1em] transition-all uppercase shadow-lg active:scale-95 ${
+                shopifyOrders.length > 0 && dropiOrders.length > 0
+                  ? 'bg-[#00df9a] text-black hover:bg-[#00c589] shadow-[#00df9a]/20'
+                  : 'bg-slate-900 border border-white/5 text-slate-700 cursor-not-allowed'
+              }`}
             >
-              <Trash2 size={18} /> Borrar ({selectedOrderIds.length})
+              <Zap size={16} fill="currentColor" /> 
+              PROCESAR INTELIGENCIA
             </button>
           )}
+
           <button 
-            onClick={exportToCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-background rounded-xl font-bold text-[15px] hover:bg-primary/90 transition-all"
+            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
+            className={`flex items-center gap-2 px-5 py-4 rounded-xl font-black text-[9px] tracking-[0.3em] transition-all border shadow-lg active:scale-95 ${
+              isLocalConversionActive 
+                ? 'bg-[#00df9a]/10 border-[#00df9a]/30 text-[#00df9a]' 
+                : 'bg-slate-900 border-white/5 text-slate-600 hover:text-slate-400'
+            }`}
           >
-            <Download size={18} /> Exportar CSV
+            <Globe size={14} /> {isLocalConversionActive ? 'COP MODE' : 'USD MODE'}
           </button>
         </div>
       </div>
 
-      <div className="fintech-card overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
+        {activeSource === 'reconciliation' ? (
+          <>
+            <div className="bg-gradient-to-br from-card/50 to-card/20 border border-white/5 rounded-3xl p-6 group hover:border-red-500/50 transition-all duration-500 shadow-xl overflow-hidden relative">
+              <div className="absolute -right-4 -top-4 w-24 h-24 bg-red-500/10 rounded-full blur-3xl group-hover:bg-red-500/20 transition-all"></div>
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-red-500/10 text-red-500 rounded-2xl group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
+                <span className="text-[10px] font-black text-red-500/50 tracking-widest px-2.5 py-1.5 bg-red-500/5 rounded-lg border border-red-500/10 uppercase">Faltante Dropi</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2">
+                {orders.filter(o => o.notas?.includes('ERROR')).length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Shopify sin respaldo en Dropi</p>
+            </div>
+
+            <div className="bg-gradient-to-br from-card/50 to-card/20 border border-white/5 rounded-3xl p-6 group hover:border-emerald-500/50 transition-all duration-500 shadow-xl overflow-hidden relative">
+              <div className="absolute -right-4 -top-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-all"></div>
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl group-hover:scale-110 transition-transform"><CheckCircle2 size={24} /></div>
+                <span className="text-[10px] font-black text-emerald-400/50 tracking-widest px-2.5 py-1.5 bg-emerald-500/5 rounded-lg border border-emerald-500/10 uppercase">Sincronizados</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2">
+                {orders.filter(o => o.notas === 'CONCILIADO OK').length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Cruce de teléfono exitoso</p>
+            </div>
+
+            <div className="bg-gradient-to-br from-card/50 to-card/20 border border-white/5 rounded-3xl p-6 group hover:border-blue-500/50 transition-all duration-500 shadow-xl overflow-hidden relative">
+              <div className="absolute -right-4 -top-4 w-24 h-24 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all"></div>
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-2xl group-hover:scale-110 transition-transform"><Globe size={24} /></div>
+                <span className="text-[10px] font-black text-blue-400/50 tracking-widest px-2.5 py-1.5 bg-blue-500/5 rounded-lg border border-blue-500/10 uppercase">TikTok Orgánico</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2">
+                {orders.filter(o => o.notas?.includes('TIKTOK')).length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Dropi sin registro en Shopify</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl overflow-hidden relative">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl group-hover:scale-110 transition-transform"><Zap size={24} /></div>
+                <span className="text-[9px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Total Registros</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {orders.length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Base de datos procesada</p>
+            </div>
+          </>
+        ) : activeSource === 'shopify' ? (
+          <>
+            <div className="bg-card/30 border border-border rounded-2xl p-6 group hover:border-[#00df9a] transition-all">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><Package size={24} /></div>
+                <span className="text-[10px] font-bold text-[#00df9a]/50 tracking-widest px-2 py-1 bg-card rounded-md border border-[#00df9a]/10 uppercase">Ventas Shopify</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none">
+                {shopifyOrders.length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest mt-2 italic">Órdenes importadas</p>
+            </div>
+            <div className="bg-card/30 border border-border rounded-2xl p-6 group hover:border-[#00df9a] transition-all">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><FileSpreadsheet size={24} /></div>
+                <span className="text-[10px] font-bold text-[#00df9a]/50 tracking-widest px-2 py-1 bg-card rounded-md border border-[#00df9a]/10 uppercase">Monto Productos</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none">
+                {localFormatCurrency(shopifyOrders.reduce((sum, o) => sum + ((o.price || 0) - (o.priorityShipping || 0)), 0))}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest mt-2 italic">Valor bruto de venta</p>
+            </div>
+            <div className="bg-card/30 border border-border rounded-2xl p-6 group hover:border-amber-500 transition-all">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl"><Truck size={24} /></div>
+                <span className="text-[10px] font-bold text-amber-500/50 tracking-widest px-2 py-1 bg-card rounded-md border border-amber-500/10 uppercase">Envío Prioritario</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none">
+                {localFormatCurrency(shopifyOrders.reduce((sum, o) => sum + (o.priorityShipping || 0), 0))}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest mt-2 italic">Total fletes prioritarios (7.00/198.00)</p>
+            </div>
+            <div className="bg-card/30 border border-border rounded-2xl p-6 group hover:border-red-500 transition-all">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-red-500/10 text-red-400 rounded-xl"><AlertTriangle size={24} /></div>
+                <span className="text-[10px] font-bold text-red-500/50 tracking-widest px-2 py-1 bg-card rounded-md border border-red-500/10 uppercase">Pendientes Logística</span>
+              </div>
+              <p className="text-2xl font-display font-black text-red-400 leading-none">
+                {shopifyOrders.length > 0 ? Math.max(0, shopifyOrders.length - dropiOrders.length) : 0}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest mt-2 italic">Diferencia Shopify vs Dropi</p>
+            </div>
+          </>
+        ) : activeSource === 'tiktok' ? (
+          <>
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><Globe size={24} /></div>
+                <span className="text-[10px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Ventas TikTok</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {orders.filter(o => o.notas?.includes('TIKTOK')).length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Diferencia Dropi vs Shopify (Celular)</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><FileSpreadsheet size={24} /></div>
+                <span className="text-[10px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Facturación TT</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {localFormatCurrency(orders.filter(o => o.notas?.includes('TIKTOK')).reduce((sum, o) => sum + (o.price || 0), 0))}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Ventas detectadas en TikTok</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><Truck size={24} /></div>
+                <span className="text-[10px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Costos Logística</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {localFormatCurrency(orders.filter(o => o.notas?.includes('TIKTOK')).reduce((sum, o) => sum + (o.precioFlete || 0), 0))}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Fletes reales de estas ventas</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><Zap size={24} /></div>
+                <span className="text-[10px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Utilidad Pro</span>
+              </div>
+              <p className="text-2xl font-display font-black text-[#00df9a] leading-none mb-2 tabular-nums">
+                {localFormatCurrency(orders.filter(o => o.notas?.includes('TIKTOK')).reduce((sum, o) => sum + (o.gananciaManual || 0), 0))}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Utilidad libre sin gasto en Ads</p>
+            </div>
+          </>
+        ) : activeSource === 'dropi' ? (
+          <>
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><Package size={24} /></div>
+                <span className="text-[10px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Ingresos Dropi</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {dropiOrders.length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Gestión logística total</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><CheckCircle2 size={24} /></div>
+                <span className="text-[10px] font-black text-blue-400/50 tracking-widest px-2.5 py-1.5 bg-blue-400/5 rounded-lg border border-blue-400/10 uppercase">Efectividad</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {dropiOrders.filter(o => o.status === 'Entregado').length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Pedidos entregados con éxito</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><FileSpreadsheet size={24} /></div>
+                <span className="text-[10px] font-black text-amber-400/50 tracking-widest px-2.5 py-1.5 bg-amber-400/5 rounded-lg border border-amber-400/10 uppercase">Gasto Logístico</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {localFormatCurrency(dropiOrders.reduce((sum, o) => sum + (o.precioFlete || 0), 0))}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Costo total de transportadoras</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-orange-500/10 text-orange-400 rounded-xl"><RotateCcw size={24} /></div>
+                <span className="text-[10px] font-black text-orange-400/50 tracking-widest px-2.5 py-1.5 bg-orange-400/5 rounded-lg border border-orange-400/10 uppercase">Devoluciones</span>
+              </div>
+              <p className="text-2xl font-display font-black text-[#ff9100] leading-none mb-2 tabular-nums">
+                {dropiOrders.filter(o => o.status === 'Devuelto').length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Logística inversa detectada</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><Package size={24} /></div>
+                <span className="text-[10px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Total Registros</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {filteredOrders.length}
+              </p>
+              <div className="flex items-center gap-4 mt-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Shopify: {shopifyOrders.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#00df9a] animate-pulse"></div>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Dropi: {dropiOrders.length}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><Download size={24} /></div>
+                <span className="text-[9px] font-black text-blue-400/50 tracking-widest px-2.5 py-1.5 bg-blue-400/5 rounded-lg border border-blue-400/10 uppercase">Facturación Bruta</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {localFormatCurrency(filteredOrders.reduce((sum, o) => sum + (o.valorFacturado || 0), 0))}
+              </p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Ventas brutas calculadas</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><Zap size={24} /></div>
+                <span className="text-[9px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase">Utilidad Total</span>
+              </div>
+              <p className="text-2xl font-display font-black text-[#00df9a] leading-none mb-2 tabular-nums">
+                {localFormatCurrency(filteredOrders.reduce((sum, o) => sum + (o.gananciaManual || 0), 0))}
+              </p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Margen de ganancia calculado</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#ff4b4b]/50 transition-all duration-300 shadow-xl">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#ff4b4b]/10 text-[#ff4b4b] rounded-xl"><AlertTriangle size={24} /></div>
+                <span className="text-[9px] font-black text-[#ff4b4b]/50 tracking-widest px-2.5 py-1.5 bg-[#ff4b4b]/5 rounded-lg border border-[#ff4b4b]/10 uppercase">Alertas Activas</span>
+              </div>
+              <p className="text-2xl font-display font-black text-[#ff4b4b] leading-none mb-2 tabular-nums">
+                {filteredOrders.filter(o => o.notas?.includes('ERROR') || o.status === 'Incidencia').length}
+              </p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Detección de errores críticos</p>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 mb-8">
+        {selectedOrderIds.length > 0 && (
+          <button 
+            onClick={handleDeleteSelected}
+            className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+          >
+            <Trash2 size={16} /> Borrar Registros ({selectedOrderIds.length})
+          </button>
+        )}
+        <button 
+          onClick={exportToCSV}
+          className="flex items-center gap-2 px-6 py-3 bg-white text-black rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-slate-200 transition-all shadow-xl"
+        >
+          <Download size={16} /> Exportar Reporte
+        </button>
+      </div>
+
+      <div className="bg-slate-900/60 backdrop-blur-2xl border border-white/5 rounded-3xl overflow-hidden shadow-2xl relative">
+        <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent pointer-events-none"></div>
         {/* Filters Bar */}
-        <div className="flex flex-col bg-white/5">
-          <div className="p-4 border-b border-border flex flex-wrap items-center gap-4">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+        <div className="flex flex-col relative z-10">
+          <div className="p-6 border-b border-white/5 flex flex-wrap items-center gap-6 bg-white/[0.01]">
+            <div className="relative flex-1 min-w-[280px] group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-white transition-colors" size={18} />
               <input 
                 type="text" 
                 placeholder="Buscar por ID, Cliente o Producto..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl py-2 pl-10 pr-4 text-[15px] text-white focus:outline-none focus:border-primary"
+                className="w-full bg-[#111] border border-white/5 rounded-2xl py-3 pl-12 pr-4 text-[14px] text-white focus:outline-none focus:border-white/20 focus:bg-[#111] transition-all placeholder:text-slate-600 font-medium"
               />
             </div>
             
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-display text-slate-500 uppercase tracking-widest whitespace-nowrap">Estado:</span>
-              <select 
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="bg-background border border-border rounded-xl py-2 px-3 text-[15px] text-white focus:outline-none focus:border-primary"
-              >
-                <option value="All">Todos</option>
-                <option value="Entregado">Entregado</option>
-                <option value="En tránsito">En tránsito</option>
-                <option value="Guía Generada">Guía Generada</option>
-                <option value="Recolectado">Recolectado</option>
-                <option value="Incidencia">Incidencia</option>
-                <option value="Pendiente">Pendiente</option>
-                <option value="Devuelto">Devuelto</option>
-                <option value="Cancelado">Cancelado</option>
-              </select>
-            </div>
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Estado</span>
+                <select 
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222]"
+                >
+                  <option value="All">Todos</option>
+                  <option value="Entregado">Entregado</option>
+                  <option value="En tránsito">En tránsito</option>
+                  <option value="Guía Generada">Guía Generada</option>
+                  <option value="Recolectado">Recolectado</option>
+                  <option value="Incidencia">Incidencia</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Devuelto">Devuelto</option>
+                  <option value="Cancelado">Cancelado</option>
+                </select>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-display text-slate-500 uppercase tracking-widest whitespace-nowrap">Departamento:</span>
-              <input 
-                type="text" 
-                placeholder="Filtrar..."
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
-                className="bg-background border border-border rounded-xl py-2 px-3 text-[15px] text-white focus:outline-none focus:border-primary w-32"
-              />
-            </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Tags</span>
+                <select 
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                  className="bg-[#111] border border-white/5 rounded-xl py-2 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold h-[38px]"
+                >
+                  <option value="">TODOS</option>
+                  <option value="SIN ETIQUETA">SIN ETIQUETA</option>
+                  <option value="TIK TOK ORGANICO">TIK TOK ORGANICO</option>
+                </select>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-display text-slate-500 uppercase tracking-widest whitespace-nowrap">Ciudad:</span>
-              <input 
-                type="text" 
-                placeholder="Filtrar..."
-                value={cityFilter}
-                onChange={(e) => setCityFilter(e.target.value)}
-                className="bg-background border border-border rounded-xl py-2 px-3 text-[15px] text-white focus:outline-none focus:border-primary w-32"
-              />
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Ciudad</span>
+                <select 
+                  value={cityFilter}
+                  onChange={(e) => setCityFilter(e.target.value)}
+                  className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222] max-w-[150px]"
+                >
+                  <option value="">Todas</option>
+                  {Array.from(new Set(orders.map(o => o.ciudadDestino).filter(Boolean))).sort().map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Depto</span>
+                <select 
+                  value={deptFilter}
+                  onChange={(e) => setDeptFilter(e.target.value)}
+                  className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222] max-w-[150px]"
+                >
+                  <option value="">Todos</option>
+                  {Array.from(new Set(orders.map(o => o.departamentoDestino).filter(Boolean))).sort().map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Origen</span>
+                <select 
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value as any)}
+                  className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222]"
+                >
+                  <option value="All">Todas</option>
+                  <option value="Shopify">Shopify</option>
+                  <option value="Dropi">Dropi</option>
+                  <option value="TikTok">TikTok / Externo</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          <div className="p-4 border-b border-border flex flex-wrap items-center gap-6 bg-slate-500/5">
+          <div className="p-4 border-b border-white/5 flex flex-wrap items-center gap-6 bg-white/[0.005]">
             <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-3 bg-background/40 p-2 rounded-xl border border-border/50 min-w-[200px]">
-                <div className="p-2 bg-primary/10 rounded-lg text-primary">
+              <div className="flex items-center gap-3 bg-slate-800/40 p-2.5 rounded-2xl border border-white/5 min-w-[200px] hover:bg-slate-800/60 transition-colors">
+                <div className="p-2 bg-white/5 rounded-xl text-slate-400">
                   <Clock size={16} />
                 </div>
                 <div className="flex flex-col flex-1">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">F. Solicitado</span>
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1.5">F. Solicitado</span>
                   <input 
                     type="date"
                     value={reqDate}
                     onClick={(e) => (e.target as any).showPicker?.()}
                     onChange={(e) => setReqDate(e.target.value)}
-                    className="bg-transparent border-none p-0 text-xs text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
+                    className="bg-transparent border-none p-0 text-[11px] font-bold text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 bg-background/40 p-2 rounded-xl border border-border/50 min-w-[200px]">
-                <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
+              <div className="flex items-center gap-3 bg-slate-800/40 p-2.5 rounded-2xl border border-white/5 min-w-[200px] hover:bg-slate-800/60 transition-colors">
+                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400 shadow-sm">
                   <CheckCircle2 size={16} />
                 </div>
                 <div className="flex flex-col flex-1">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">F. Entregado</span>
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1.5">F. Entregado</span>
                   <input 
                     type="date"
                     value={delDate}
                     onClick={(e) => (e.target as any).showPicker?.()}
                     onChange={(e) => setDelDate(e.target.value)}
-                    className="bg-transparent border-none p-0 text-xs text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
+                    className="bg-transparent border-none p-0 text-[11px] font-bold text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-slate-800/40 p-2.5 rounded-2xl border border-white/5 min-w-[160px] hover:bg-slate-800/60 transition-colors">
+                <div className="p-2 bg-blue-500/10 rounded-xl text-blue-400">
+                  <MapPin size={16} />
+                </div>
+                <div className="flex flex-col flex-1">
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1.5">Ubicación</span>
+                  <input 
+                    type="text" 
+                    placeholder="Ciudad/Depto"
+                    value={cityFilter}
+                    onChange={(e) => setCityFilter(e.target.value)}
+                    className="bg-transparent border-none p-0 text-[11px] font-bold text-white focus:outline-none placeholder:text-slate-700 w-full"
                   />
                 </div>
               </div>
@@ -909,102 +1435,153 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 setDelDate('');
                 setStatusFilter('All');
                 setSearchTerm('');
+                setSourceFilter('All');
               }}
-              className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all uppercase tracking-wider ml-auto"
+              className="flex items-center gap-2 px-5 py-2.5 text-[10px] font-black text-slate-500 hover:text-white hover:bg-white/5 rounded-xl transition-all uppercase tracking-[0.15em] ml-auto border border-transparent hover:border-white/5"
             >
-              <X size={14} /> Limpiar filtros
+              <RotateCcw size={14} /> Resetear Filtros
             </button>
           </div>
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse whitespace-nowrap min-w-[5000px]">
+        <div className="overflow-x-auto custom-scrollbar relative border border-white/5 rounded-2xl bg-black">
+          <table className="w-full text-left border-collapse whitespace-nowrap min-w-[3000px]">
             <thead>
-              <tr className="bg-background/50 text-[15px] uppercase tracking-widest text-slate-500 font-display">
-                <th className="p-4 font-bold border-b border-border sticky left-0 z-10 bg-background/50 backdrop-blur-md w-12 text-center">
+              <tr className="bg-[#111] border-b border-white/5">
+                <th className="p-5 font-black border-b border-white/5 sticky left-0 z-20 bg-[#111] w-14 text-center">
                   <button 
                     onClick={toggleSelectAll}
-                    className="p-1 hover:text-primary transition-colors"
+                    className="p-1 hover:text-white transition-colors"
                   >
-                    {selectedOrderIds.length === filteredOrders.length && filteredOrders.length > 0 ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
+                    {selectedOrderIds.length === filteredOrders.length && filteredOrders.length > 0 ? <CheckSquare size={16} className="text-white" /> : <Square size={16} className="text-slate-600" />}
                   </button>
                 </th>
                 {activeColumns.map(col => (
-                  <th key={col.id} className={`p-4 font-bold border-b border-border ${col.className?.includes('text-right') ? 'text-right' : 'text-left'}`}>
-                    {col.label}
+                  <th 
+                    key={col.id} 
+                    className={`p-5 text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 border-b border-white/5 relative group ${col.className?.includes('text-right') ? 'text-right' : 'text-left'}`}
+                    style={{ width: columnWidths[col.id] || 'auto', minWidth: columnWidths[col.id] || 'auto' }}
+                  >
+                    <div className="truncate pr-4">{col.label}</div>
+                    <div 
+                      onMouseDown={(e) => startResizing(col.id, e)}
+                      className="absolute right-0 top-0 bottom-0 w-1 bg-transparent group-hover:bg-[#00df9a]/20 cursor-col-resize transition-all z-10 hover:w-2 hover:bg-[#00df9a]/40"
+                    />
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="text-[15px] font-mono">
-              {filteredOrders.map((order) => {
-                const isSelected = selectedOrderIds.includes(order.id);
-                return (
-                  <React.Fragment key={order.id}>
-                    <tr 
-                      onClick={() => setShowDetailModal(order)}
-                      className={`hover:bg-white/5 transition-colors cursor-pointer group ${isSelected ? 'bg-primary/5' : ''}`}
+            <tbody className="divide-y divide-white/5">
+              {filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={activeColumns.length + 1} className="py-32 text-center">
+                    <div className="flex flex-col items-center gap-6 opacity-30">
+                      <div className="p-8 bg-slate-800/20 rounded-full text-slate-600 border border-white/5"><FileX size={64} strokeWidth={1} /></div>
+                      <p className="text-slate-500 font-black tracking-[0.3em] uppercase text-[10px]">No se encontraron registros</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredOrders.map((order, idx) => {
+                  const isSelected = selectedOrderIds.includes(order.id);
+                  return (
+                    <motion.tr 
+                      key={order.id || `order-${idx}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className={`group hover:bg-white/[0.03] transition-all cursor-default ${isSelected ? 'bg-white/[0.05]' : ''}`}
                     >
-                      <td className="p-4 border-b border-border sticky left-0 z-10 bg-background group-hover:bg-white/5 transition-colors" onClick={(e) => e.stopPropagation()}>
-                        <button 
-                          onClick={() => toggleSelectOrder(order.id)}
-                          className="p-1 hover:text-primary transition-colors"
-                        >
-                          {isSelected ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
+                      <td className={`p-5 border-b border-white/5 sticky left-0 z-10 transition-colors ${isSelected ? 'bg-slate-900' : 'bg-[#0a0a0a] group-hover:bg-slate-900'}`} onClick={(e) => { e.stopPropagation(); toggleSelectOrder(order.id); }}>
+                        <button className="p-1 text-slate-700 hover:text-white transition-colors transform active:scale-90">
+                          {isSelected ? <CheckSquare size={18} className="text-white" /> : <Square size={18} />}
                         </button>
                       </td>
                       {activeColumns.map(col => {
                         const val = col.value(order);
-                        const display = col.render ? col.render(order) : (col.isMoney ? formatCurrency(val as number) : String(val || '---'));
+                        const display = col.render ? col.render(order) : (col.isMoney ? localFormatCurrency(val as number) : String(val || '---'));
                         
-                        let cellClassName = `p-4 border-b border-border ${col.className || ''}`;
+                        let cellClassName = `p-5 border-b border-white/5 tracking-tight ${col.className || 'text-slate-300'}`;
                         if (col.isProfit) {
-                          cellClassName += ` ${val as number > 0 ? 'text-primary' : val as number < 0 ? 'text-red-400' : 'text-slate-500'}`;
+                          cellClassName += ` ${val as number > 0 ? 'text-[#00df9a] font-black' : val as number < 0 ? 'text-[#ff4b4b] font-black' : 'text-slate-500'}`;
+                        } else if (col.id === 'orderId') {
+                          cellClassName += ' font-black text-white tabular-nums';
+                        } else if (col.id === 'trackingId') {
+                          cellClassName += ' text-slate-400 font-medium tabular-nums';
                         }
 
                         return (
-                          <td key={col.id} className={cellClassName}>
-                            {display}
+                          <td 
+                            key={col.id} 
+                            className={cellClassName} 
+                            onClick={() => setShowDetailModal(order)}
+                            style={{ 
+                              width: columnWidths[col.id] || 'auto', 
+                              maxWidth: columnWidths[col.id] || 'none' 
+                            }}
+                          >
+                            <div className="truncate">
+                              {display}
+                            </div>
                           </td>
                         );
                       })}
-                    </tr>
-                  </React.Fragment>
-                );
-              })}
+                    </motion.tr>
+                  );
+                })
+              )}
             </tbody>
-            <tfoot className="border-t-2 border-primary/20 bg-primary/5 font-bold text-[15px]">
-              <tr>
-                <td className="p-4 sticky left-0 z-10 bg-background/80 backdrop-blur-md"></td>
-                {activeColumns.map(col => {
-                  if (col.isMoney) {
-                    const total = filteredOrders.reduce((sum, order) => sum + Number(col.value(order) || 0), 0);
+            {filteredOrders.length > 0 && (
+              <tfoot className="border-t border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky bottom-0 z-20">
+                <tr className="font-black text-[13px]">
+                  <td className="p-6 sticky left-0 z-30 bg-slate-950/80 border-t border-white/10"></td>
+                  {activeColumns.map(col => {
+                    const total = filteredOrders.reduce((sum, o) => {
+                      const v = col.value(o);
+                      return sum + (typeof v === 'number' ? v : 0);
+                    }, 0);
+
+                    if (col.isMoney) {
+                      return (
+                        <td 
+                          key={col.id} 
+                          className={`p-6 text-white border-t border-white/10 ${col.className?.includes('text-right') ? 'text-right' : ''}`}
+                          style={{ width: columnWidths[col.id] || 'auto', minWidth: columnWidths[col.id] || 'auto' }}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-slate-500 uppercase tracking-widest leading-none mb-1">Total {col.label}</span>
+                            <span className={col.isProfit ? (total >= 0 ? 'text-[#00df9a] text-lg' : 'text-red-400 text-lg') : 'text-white'}>
+                              {localFormatCurrency(total)}
+                            </span>
+                          </div>
+                        </td>
+                      );
+                    }
+                    if (col.id === 'orderId') {
+                      return (
+                        <td 
+                          key={col.id} 
+                          className="p-6 border-t border-white/10"
+                          style={{ width: columnWidths[col.id] || 'auto', minWidth: columnWidths[col.id] || 'auto' }}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-slate-500 uppercase tracking-widest leading-none mb-1">Total Registros</span>
+                            <span className="text-white text-lg">{filteredOrders.length}</span>
+                          </div>
+                        </td>
+                      );
+                    }
                     return (
-                      <td key={`total-${col.id}`} className={`p-4 text-right ${col.className || ''}`}>
-                        <div className="flex flex-col">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">TOTAL</span>
-                          <span className={col.isProfit ? (total > 0 ? 'text-primary' : total < 0 ? 'text-red-400' : 'text-slate-500') : 'text-white'}>
-                            {formatCurrency(total)}
-                          </span>
-                        </div>
-                      </td>
+                      <td 
+                        key={col.id} 
+                        className="p-6 border-t border-white/10"
+                        style={{ width: columnWidths[col.id] || 'auto', minWidth: columnWidths[col.id] || 'auto' }}
+                      ></td>
                     );
-                  }
-                  if (col.id === 'orderId') {
-                    return (
-                      <td key={`total-${col.id}`} className="p-4">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">PEDIDOS</span>
-                          <span className="text-white">{filteredOrders.length}</span>
-                        </div>
-                      </td>
-                    );
-                  }
-                  return <td key={`total-${col.id}`} className="p-4"></td>;
-                })}
-              </tr>
-            </tfoot>
+                  })}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
@@ -1047,7 +1624,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     <h4 className="text-xs font-bold text-primary uppercase tracking-[0.2em] mb-4 border-b border-primary/20 pb-2">Información Básica</h4>
                     <div className="space-y-4">
                       <DetailRow label="ID de Orden" value={showDetailModal.orderId} />
-                      <DetailRow label="Fecha" value={format(showDetailModal.date, 'yyyy-MM-dd')} />
+                      <DetailRow label="Fecha" value={(showDetailModal.date && !isNaN(showDetailModal.date.getTime())) ? format(showDetailModal.date, 'yyyy-MM-dd') : '---'} />
                       <DetailRow label="Hora" value={showDetailModal.hora} />
                       <DetailRow label="Cliente" value={showDetailModal.nombreCliente} />
                       <DetailRow label="Teléfono" value={showDetailModal.telefono} />
@@ -1059,7 +1636,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
                   {/* Logistics Info */}
                   <div className="space-y-6">
-                    <h4 className="text-xs font-bold text-gold uppercase tracking-[0.2em] mb-4 border-b border-gold/20 pb-2">Logística y Envío</h4>
+                    <h4 className="text-[10px] font-black text-[#00df9a] uppercase tracking-[0.2em] mb-4 border-b border-[#00df9a]/20 pb-2">Logística y Envío</h4>
                     <div className="space-y-4">
                       <DetailRow label="Guía" value={showDetailModal.trackingId} />
                       <DetailRow label="Estado" value={showDetailModal.status} />
@@ -1075,22 +1652,22 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
                   {/* Financial Info */}
                   <div className="space-y-6">
-                    <h4 className="text-xs font-bold text-secondary uppercase tracking-[0.2em] mb-4 border-b border-secondary/20 pb-2">Finanzas</h4>
+                    <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-4 border-b border-blue-400/20 pb-2">Finanzas</h4>
                     <div className="space-y-4">
-                      <DetailRow label="Valor Facturado" value={formatCurrency(showDetailModal.valorFacturado || 0)} />
-                      <DetailRow label="Compra Productos" value={formatCurrency(showDetailModal.valorCompraProductos || 0)} />
-                      <DetailRow label="Ganancia" value={formatCurrency(showDetailModal.gananciaManual || 0)} />
-                      <DetailRow label="Flete" value={formatCurrency(showDetailModal.precioFlete || 0)} />
-                      <DetailRow label="Comisión" value={formatCurrency(showDetailModal.comision || 0)} />
-                      <DetailRow label="Gasto Publicidad" value={formatCurrency(showDetailModal.adsCost || 0)} />
+                      <DetailRow label="Valor Facturado" value={localFormatCurrency(showDetailModal.valorFacturado || 0)} />
+                      <DetailRow label="Compra Productos" value={localFormatCurrency(showDetailModal.valorCompraProductos || 0)} />
+                      <DetailRow label="Ganancia" value={localFormatCurrency(showDetailModal.gananciaManual || 0)} />
+                      <DetailRow label="Flete" value={localFormatCurrency(showDetailModal.precioFlete || 0)} />
+                      <DetailRow label="Comisión" value={localFormatCurrency(showDetailModal.comision || 0)} />
+                      <DetailRow label="Gasto Publicidad" value={localFormatCurrency(showDetailModal.adsCost || 0)} />
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-border pt-8">
+                <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-white/5 pt-8">
                    {/* Novedades Info */}
                    <div className="space-y-6">
-                    <h4 className="text-xs font-bold text-red-400 uppercase tracking-[0.2em] mb-4 border-b border-red-400/20 pb-2">Novedades e Incidencias</h4>
+                    <h4 className="text-[10px] font-black text-red-400 uppercase tracking-[0.2em] mb-4 border-b border-red-400/20 pb-2">Novedades e Incidencias</h4>
                     <div className="space-y-4">
                       <DetailRow label="Novedad" value={showDetailModal.novedad} />
                       <DetailRow label="Solucionada" value={showDetailModal.fueSolucionadaNovedad} />
@@ -1103,7 +1680,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
                   {/* Billing Info (FE) */}
                   <div className="space-y-6">
-                    <h4 className="text-xs font-bold text-blue-400 uppercase tracking-[0.2em] mb-4 border-b border-blue-400/20 pb-2">Facturación Electrónica</h4>
+                    <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-4 border-b border-blue-400/20 pb-2">Facturación Electrónica</h4>
                     <div className="space-y-4">
                       <DetailRow label="Razón Social" value={showDetailModal.razonSocialFacturacion} />
                       <DetailRow label="Email Fact." value={showDetailModal.emailFacturacion} />

@@ -1,11 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell
 } from 'recharts';
 import { motion } from 'motion/react';
-import { TrendingUp, TrendingDown, DollarSign, Percent, Target, ShoppingBag } from 'lucide-react';
-import { Order, calculateOrderProfit } from '../mockData';
+import { TrendingUp, TrendingDown, DollarSign, Percent, Target, ShoppingBag, Globe, Megaphone, Users } from 'lucide-react';
+import { Order, calculateOrderProfit, CurrencyCode } from '../mockData';
 import { format, startOfDay, eachDayOfInterval, subDays, isSameDay } from 'date-fns';
 
 interface DashboardProps {
@@ -13,12 +13,18 @@ interface DashboardProps {
   stats: any;
   formatCurrency: (amount: number) => string;
   currencySymbol: string;
+  currency?: CurrencyCode;
+  currencies?: any;
+  isConversionActive?: boolean;
+  manualAdSpend?: number;
+  setManualAdSpend?: (val: number) => void;
 }
 
-const KPICard = ({ title, value, subValue, icon: Icon, trend, color = 'primary' }: any) => (
+const KPICard = ({ title, value, subValue, icon: Icon, trend, color = 'primary', onClick }: any) => (
   <motion.div 
     whileHover={{ y: -5 }}
-    className="fintech-card p-6 relative group"
+    onClick={onClick}
+    className={`fintech-card p-6 relative group ${onClick ? 'cursor-pointer' : ''}`}
   >
     <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${color}`}>
       <Icon size={48} />
@@ -37,7 +43,50 @@ const KPICard = ({ title, value, subValue, icon: Icon, trend, color = 'primary' 
   </motion.div>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ orders, stats, formatCurrency, currencySymbol }) => {
+const Dashboard: React.FC<DashboardProps> = ({ 
+  orders, 
+  stats, 
+  formatCurrency, 
+  currencySymbol,
+  currency = 'USD',
+  currencies = {},
+  isConversionActive = false,
+  manualAdSpend = 0,
+  setManualAdSpend
+}) => {
+  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
+
+  const deliveredOrders = orders.filter(o => o.status === 'Entregado').length;
+  const totalOrders = orders.length;
+  
+  const cpa = totalOrders > 0 ? (stats.totalAds / totalOrders) : 0;
+  const cpaDelivered = deliveredOrders > 0 ? (stats.totalAds / deliveredOrders) : 0;
+
+  useEffect(() => {
+    setIsLocalConversionActive(isConversionActive);
+  }, [isConversionActive]);
+
+  const localFormatCurrency = (amount: number) => {
+    const isUSD = !isLocalConversionActive;
+    const targetCurrency = isUSD ? 'USD' : currency;
+    const rate = currencies[currency]?.rate || 1;
+    
+    let converted = amount;
+    if (!isUSD) {
+      converted = amount * rate;
+    }
+    
+    const rounded = Math.round(converted * 100) / 100;
+    
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: targetCurrency,
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(rounded);
+  };
+
   // Chart Data: Profit by Day
   const chartData = useMemo(() => {
     const last30Days = eachDayOfInterval({
@@ -84,23 +133,88 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, stats, formatCurrency, cu
 
   return (
     <div className="space-y-8 pb-24">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-white">Tablero de Control</h2>
+          <p className="text-[15px] text-slate-500">Visualización de métricas críticas y rendimiento diario</p>
+        </div>
+        
+        <div className="flex items-center gap-6">
+          {/* Advertising Control */}
+          <div className="flex flex-col items-end gap-1 px-4 border-r border-white/5">
+            <div className="text-[9px] uppercase tracking-widest text-slate-500 font-black flex items-center gap-2">
+              <Megaphone size={10} className="text-gold" />
+              ADS MANUAL
+            </div>
+            <div className="flex items-center gap-2">
+              <input 
+                type="number"
+                value={manualAdSpend || ''}
+                onChange={(e) => setManualAdSpend?.(Number(e.target.value))}
+                placeholder="0.00"
+                className="bg-black/40 border border-white/10 rounded-md py-1 px-2 text-[11px] text-white font-mono w-[80px] focus:border-gold outline-none transition-all text-right"
+              />
+              <div className="text-[9px] text-slate-600 font-bold uppercase leading-none">
+                AUTO:<br/>
+                {formatCurrency(stats.autoAds || 0)}
+              </div>
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
+              isLocalConversionActive 
+                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
+                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
+          </button>
+        </div>
+      </div>
+
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <KPICard 
-          title="Ingresos Brutos" 
-          value={formatCurrency(stats.totalRevenue)} 
-          subValue="Total facturado 30D"
+          title="Venta Bruta" 
+          value={localFormatCurrency(stats.totalRevenue)} 
+          subValue={`${totalOrders} Pedidos`}
           icon={DollarSign}
-          trend={12.5}
           color="primary"
         />
         <KPICard 
-          title="Ganancia Neta" 
-          value={formatCurrency(stats.totalNetProfit)} 
-          subValue="Después de costos y ads"
+          title="Utilidad Neta" 
+          value={localFormatCurrency(stats.totalNetProfit)} 
+          subValue={`${deliveredOrders} Entregados`}
           icon={Target}
-          trend={8.2}
           color="gold"
+        />
+        <KPICard 
+          title="Costo Publicidad" 
+          value={localFormatCurrency(stats.totalAds)} 
+          subValue={manualAdSpend > 0 ? "Gasto Manual" : "Suma Automática"}
+          icon={Megaphone}
+          color="gold"
+        />
+        <KPICard 
+          title="ROAS Global" 
+          value={`${(stats.roas || 0).toFixed(2)}x`} 
+          subValue="Eficiencia publicitaria"
+          icon={ShoppingBag}
+          trend={15.0}
+          color="primary"
+        />
+      </div>
+
+      {/* CPA Analytics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <KPICard 
+          title="CPA Real" 
+          value={localFormatCurrency(cpa)} 
+          subValue={`Ticket: ${formatCurrency(stats.totalRevenue / (orders.length || 1))}`}
+          icon={Users}
+          color="secondary"
         />
         <KPICard 
           title="ROI Promedio" 
@@ -117,14 +231,6 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, stats, formatCurrency, cu
           icon={Percent}
           trend={4.3}
           color="neon"
-        />
-        <KPICard 
-          title="ROAS Global" 
-          value={`${(stats.roas || 0).toFixed(2)}x`} 
-          subValue="Efectividad de anuncios"
-          icon={ShoppingBag}
-          trend={15.0}
-          color="primary"
         />
       </div>
 
@@ -173,8 +279,9 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, stats, formatCurrency, cu
                 />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#000000', border: '1px solid #1a1a1a', borderRadius: '12px' }}
-                  itemStyle={{ color: '#22c55e', fontSize: '15px', fontFamily: 'JetBrains Mono' }}
+                  itemStyle={{ color: '#22c55e', fontSize: '15px', fontFamily: 'DM Mono' }}
                   labelStyle={{ color: '#94a3b8', marginBottom: '4px', fontSize: '15px' }}
+                  formatter={(value: number) => localFormatCurrency(value)}
                 />
                 <Area 
                   type="monotone" 
@@ -211,7 +318,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, stats, formatCurrency, cu
                       <span className="text-[15px] font-mono text-slate-600">0{i+1}</span>
                       <span className="text-[15px] text-slate-300 group-hover:text-white transition-colors truncate max-w-[150px]">{p.name}</span>
                     </div>
-                    <span className="text-[15px] font-mono font-bold text-primary">{formatCurrency(p.profit)}</span>
+                    <span className="text-[15px] font-mono font-bold text-primary">{localFormatCurrency(p.profit)}</span>
                   </div>
                 ))}
               </div>
@@ -226,7 +333,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, stats, formatCurrency, cu
                       <span className="text-[15px] font-mono text-slate-600">0{i+1}</span>
                       <span className="text-[15px] text-slate-300 group-hover:text-white transition-colors truncate max-w-[150px]">{p.name}</span>
                     </div>
-                    <span className="text-[15px] font-mono font-bold text-red-400">{formatCurrency(p.profit)}</span>
+                    <span className="text-[15px] font-mono font-bold text-red-400">{localFormatCurrency(p.profit)}</span>
                   </div>
                 ))}
               </div>
@@ -259,7 +366,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, stats, formatCurrency, cu
                     backgroundColor: intensity > 0.8 ? '#22c55e' : intensity > 0.5 ? '#16a34a' : intensity > 0.2 ? '#15803d' : '#0a0a0a',
                     opacity: intensity + 0.2
                   }}
-                  title={`${format(day, 'MMM dd')}: ${formatCurrency(dayProfit)}`}
+                  title={`${format(day, 'MMM dd')}: ${localFormatCurrency(dayProfit)}`}
                 />
               );
             })}
