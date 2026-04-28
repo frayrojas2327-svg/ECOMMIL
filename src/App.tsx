@@ -42,23 +42,7 @@ import KPIPanel from './components/KPIPanel';
 import Settings from './components/Settings';
 import { AuthProvider, AuthScreen, useAuth } from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
-
-const Logo = ({ size = 32, className = "" }: { size?: number, className?: string }) => (
-  <div className={`relative flex items-center justify-center shrink-0 ${className}`} style={{ width: size, height: size }}>
-    <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_0_12px_rgba(34,197,94,0.6)]">
-      {/* Magnifying Glass Handle */}
-      <rect x="68" y="68" width="22" height="8" rx="4" transform="rotate(45 68 68)" fill="#475569" />
-      {/* Magnifying Glass Circle */}
-      <circle cx="45" cy="45" r="38" fill="none" stroke="#22C55E" strokeWidth="7" />
-      {/* Bars */}
-      <rect x="25" y="55" width="10" height="15" rx="2" fill="#22C55E" />
-      <rect x="40" y="40" width="10" height="30" rx="2" fill="#00FF88" />
-      <rect x="55" y="25" width="10" height="45" rx="2" fill="#22C55E" />
-      {/* Arrow */}
-      <path d="M20 70 L85 15 M85 15 L70 15 M85 15 L85 30" stroke="#00FF88" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </svg>
-  </div>
-);
+import { Logo } from './components/Logo';
 
 const GlowingAnalysisIcon = ({ size = 20, className = "" }: { size?: number, className?: string }) => (
   <div className={`relative flex items-center justify-center ${className}`} style={{ width: size + 10, height: size + 10 }}>
@@ -574,32 +558,39 @@ function AppContent() {
           <div className="flex items-center gap-4">
             <div className="flex flex-col items-end">
               <span className="text-[10px] font-mono text-slate-500 uppercase leading-none mb-1">Visualización General</span>
-              <div className="flex items-center gap-2 bg-card border border-border rounded-xl p-1 shadow-inner">
+              <div className="flex items-center gap-2 bg-card/50 border border-border rounded-xl p-1 shadow-inner backdrop-blur-sm">
                 {/* Currency Base Switcher */}
                 <div className="flex bg-background rounded-lg p-0.5 border border-border/50">
                   <button
                     onClick={() => setIsConversionActive(false)}
-                    className={`px-3 py-1 rounded-md text-[11px] font-black tracking-widest transition-all ${
-                      !isConversionActive ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                    className={`px-3 py-1 rounded-md text-[10px] font-black tracking-widest transition-all ${
+                      !isConversionActive 
+                        ? 'bg-red-500/20 text-red-500 border border-red-500/30' 
+                        : 'text-slate-500 hover:text-slate-300'
                     }`}
                     title="Ver valores originales (USD)"
                   >
-                    USD
+                    DESACTIVAR
                   </button>
                   <button
-                    onClick={() => setIsConversionActive(true)}
-                    className={`px-3 py-1 rounded-md text-[11px] font-black tracking-widest transition-all ${
-                      isConversionActive ? 'bg-neon text-background shadow-lg shadow-neon/20' : 'text-slate-500 hover:text-slate-300'
+                    onClick={() => {
+                      setIsConversionActive(true);
+                      if (currency === 'USD') setCurrency('COP' as CurrencyCode); // Default to something else if activating
+                    }}
+                    className={`px-3 py-1 rounded-md text-[10px] font-black tracking-widest transition-all ${
+                      isConversionActive 
+                        ? 'bg-neon/20 text-neon border border-neon/30 shadow-[0_0_15px_rgba(34,197,94,0.2)]' 
+                        : 'text-slate-500 hover:text-slate-300'
                     }`}
                     title={`Ver en moneda local (${currency})`}
                   >
-                    LOCAL
+                    ACTIVAR
                   </button>
                 </div>
                 
                 {/* Local Currency Picker */}
                 <div className="h-4 w-px bg-border/50 mx-1" />
-                <div className="flex gap-1">
+                <div className={`flex gap-1 transition-all duration-300 ${!isConversionActive ? 'opacity-30 grayscale pointer-events-none' : 'opacity-100'}`}>
                   {(Object.keys(dynamicCurrencies) as CurrencyCode[]).filter(c => c !== 'USD').map((code) => (
                     <button
                       key={code}
@@ -608,7 +599,7 @@ function AppContent() {
                         setIsConversionActive(true);
                       }}
                       className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
-                        currency === code && isConversionActive ? 'bg-neon/10 text-neon border border-neon/30' : 'text-slate-500 hover:text-white'
+                        currency === code ? 'bg-neon/10 text-neon border border-neon/30' : 'text-slate-500 hover:text-white'
                       }`}
                     >
                       {code}

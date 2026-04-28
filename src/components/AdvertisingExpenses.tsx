@@ -92,12 +92,6 @@ export default function AdvertisingExpenses({
   isConversionActive: boolean
 }) {
   const { user } = useAuth();
-  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
-  
-  // Sync with global conversion when prop changes
-  useEffect(() => {
-    setIsLocalConversionActive(isConversionActive);
-  }, [isConversionActive]);
 
   const [expenses, setExpenses] = useState<AdvertisingExpense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,27 +105,9 @@ export default function AdvertisingExpenses({
     }
   }, [notification]);
 
-  const handleToggleConversion = () => {
-    const newState = !isLocalConversionActive;
-    setIsLocalConversionActive(newState);
-    
-    const info = currencies[currency];
-    if (newState) {
-      setNotification({
-        message: `Conversión Activa: Visualizando todos los gastos en ${currency} (TRM: ${info.rate.toLocaleString('es-CO')}). Los nuevos registros se interpretarán en esta moneda.`,
-        type: 'success'
-      });
-    } else {
-      setNotification({
-        message: `Conversión Desactivada: Visualizando en dólares (USD). Los nuevos registros se interpretarán en USD.`,
-        type: 'info'
-      });
-    }
-  };
-
   const localFormatCurrency = (amount: number, expense?: AdvertisingExpense) => {
     const info = currencies[currency];
-    const isUSD = !isLocalConversionActive;
+    const isUSD = !isConversionActive;
     const targetCurrency = isUSD ? 'USD' : currency;
 
     // Fixed logic: If we are viewing in a currency that matches the original registration currency,
@@ -270,7 +246,7 @@ export default function AdvertisingExpenses({
 
       // Normalize amount depending on current mode
       const info = currencies[currency];
-      const normalizedAmount = isLocalConversionActive ? rawAmount / info.rate : rawAmount;
+      const normalizedAmount = isConversionActive ? rawAmount / info.rate : rawAmount;
 
       // Find product name if only ID was selected
       let finalProductName = formData.productName;
@@ -290,7 +266,7 @@ export default function AdvertisingExpenses({
         platform: finalPlatform || 'Otro',
         amount: normalizedAmount,
         originalAmount: rawAmount,
-        originalCurrency: isLocalConversionActive ? currency : 'USD',
+        originalCurrency: isConversionActive ? currency : 'USD',
         conversionRate: info.rate,
         timestamp: Date.now(),
         notes: formData.notes,
@@ -410,54 +386,18 @@ export default function AdvertisingExpenses({
           <p className="text-slate-500 text-[15px]">Control aislado de inversión publicitaria por producto y plataforma</p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-xl border border-border relative">
-            <span className="text-[12px] font-bold text-slate-400 ml-2 uppercase tracking-widest">Conversión</span>
-            <button 
-              onClick={handleToggleConversion}
-              className={`relative w-12 h-6 rounded-full transition-all duration-300 ${isLocalConversionActive ? 'bg-primary' : 'bg-slate-700'}`}
-            >
-              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300 ${isLocalConversionActive ? 'left-7' : 'left-1'}`} />
-            </button>
-            
-            {/* Notification Float */}
-            <AnimatePresence>
-              {notification && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                  className={`absolute bottom-full mb-4 right-0 min-w-[280px] p-4 rounded-2xl border shadow-2xl z-[100] flex items-start gap-3 ${
-                    notification.type === 'success' 
-                      ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' 
-                      : 'bg-slate-900/90 border-slate-700 text-slate-200'
-                  }`}
-                >
-                  <div className={`p-2 rounded-xl ${notification.type === 'success' ? 'bg-emerald-500/20' : 'bg-slate-800'}`}>
-                    {notification.type === 'success' ? <TrendingUp size={18} className="text-emerald-400" /> : <Globe size={18} className="text-slate-400" />}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[14px] font-medium leading-tight">
-                      {notification.message}
-                    </p>
-                    <div className="mt-2 w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: '100%' }}
-                        animate={{ width: '0%' }}
-                        transition={{ duration: 5, ease: 'linear' }}
-                        className={`h-full ${notification.type === 'success' ? 'bg-emerald-400' : 'bg-slate-400'}`}
-                      />
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+        <div className="flex bg-background/50 rounded-lg p-0.5 border border-border">
+          <div className={`px-3 py-1.5 flex items-center gap-2 text-[10px] font-black tracking-widest ${isConversionActive ? 'text-primary' : 'text-slate-500'}`}>
+            <Globe size={14} />
+            {isConversionActive ? `MONEDA: ${currency}` : 'MODO USD'}
           </div>
-          <button 
-            onClick={() => setShowAddForm(true)}
-            className="bg-primary text-background font-bold px-4 py-2 rounded-xl flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20 text-[15px]"
-          >
-            <Plus size={18} /> Registrar Gasto
-          </button>
+        </div>
+        <button 
+          onClick={() => setShowAddForm(true)}
+          className="bg-primary text-background font-bold px-4 py-2 rounded-xl flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20 text-[15px]"
+        >
+          <Plus size={18} /> Registrar Gasto
+        </button>
         </div>
       </div>
 
@@ -629,18 +569,14 @@ export default function AdvertisingExpenses({
                 <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1 flex justify-between items-center">
                   Monto Invertido
                   <div className="flex items-center gap-2">
-                    <button 
-                      type="button"
-                      onClick={handleToggleConversion}
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all ${isLocalConversionActive ? 'bg-primary text-background' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
-                    >
-                      {isLocalConversionActive ? `En ${currency}` : 'En USD'}
-                    </button>
+                    <div className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all ${isConversionActive ? 'bg-primary text-background' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
+                      {isConversionActive ? `En ${currency}` : 'En USD'}
+                    </div>
                   </div>
                 </label>
-                <div className={`relative rounded-xl border transition-all duration-300 ${isLocalConversionActive ? 'bg-primary/5 border-primary/50 shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'bg-background border-border'}`}>
-                  <div className={`absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[16px] font-bold transition-colors ${isLocalConversionActive ? 'text-primary' : 'text-slate-500'}`}>
-                    {isLocalConversionActive ? currencies[currency].symbol : '$'}
+                <div className={`relative rounded-xl border transition-all duration-300 ${isConversionActive ? 'bg-primary/5 border-primary/50 shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'bg-background border-border'}`}>
+                  <div className={`absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[16px] font-bold transition-colors ${isConversionActive ? 'text-primary' : 'text-slate-500'}`}>
+                    {isConversionActive ? currencies[currency].symbol : '$'}
                   </div>
                   <input 
                     type="number"
@@ -649,20 +585,20 @@ export default function AdvertisingExpenses({
                     placeholder="0"
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className={`w-full bg-transparent py-3.5 pl-12 pr-16 text-[18px] font-mono text-white outline-none transition-all ${isLocalConversionActive ? 'placeholder:text-primary/30' : 'placeholder:text-slate-700'}`}
+                    className={`w-full bg-transparent py-3.5 pl-12 pr-16 text-[18px] font-mono text-white outline-none transition-all ${isConversionActive ? 'placeholder:text-primary/30' : 'placeholder:text-slate-700'}`}
                   />
-                  <div className={`absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isLocalConversionActive ? 'bg-primary text-background' : 'bg-slate-800 text-slate-500'}`}>
-                    {isLocalConversionActive ? currency : 'USD'}
+                  <div className={`absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isConversionActive ? 'bg-primary text-background' : 'bg-slate-800 text-slate-500'}`}>
+                    {isConversionActive ? currency : 'USD'}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-1 px-1">
-                  {isLocalConversionActive ? (
+                  {isConversionActive ? (
                     <TrendingUp size={12} className="text-primary animate-pulse" />
                   ) : (
                     <Globe size={12} className="text-slate-500" />
                   )}
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    {isLocalConversionActive ? (
+                    {isConversionActive ? (
                       <>Digitando en <span className="text-primary font-bold">{currency}</span>. Equivale a <span className="text-white font-bold">{(parseFloat(formData.amount || '0') / currencies[currency].rate).toFixed(2)} USD</span></>
                     ) : (
                       <>Digitando en <span className="text-slate-300 font-bold">Dólares (USD)</span>. Desactivado para moneda local.</>
@@ -915,23 +851,23 @@ export default function AdvertisingExpenses({
                             <input 
                               type="number"
                               step="0.01"
-                              value={tempEdit?.amount ? Number((tempEdit.amount * (isLocalConversionActive ? currencies[currency].rate : 1)).toFixed(2)).toString() : ''}
+                              value={tempEdit?.amount ? Number((tempEdit.amount * (isConversionActive ? currencies[currency].rate : 1)).toFixed(2)).toString() : ''}
                               onChange={(e) => {
                                 const valString = e.target.value;
                                 const val = parseFloat(valString) || 0;
                                 const rate = currencies[currency].rate;
                                 setTempEdit({ 
                                   ...tempEdit!, 
-                                  amount: isLocalConversionActive ? val / rate : val,
+                                  amount: isConversionActive ? val / rate : val,
                                   originalAmount: val,
-                                  originalCurrency: isLocalConversionActive ? currency : 'USD',
+                                  originalCurrency: isConversionActive ? currency : 'USD',
                                   conversionRate: rate
                                 });
                               }}
                               className="w-24 bg-background border border-primary rounded-lg py-1 px-2 text-sm font-mono text-white text-right focus:outline-none pr-8"
                             />
                             <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-500 opacity-50">
-                              {isLocalConversionActive ? currency : 'USD'}
+                              {isConversionActive ? currency : 'USD'}
                             </span>
                           </div>
                         </div>

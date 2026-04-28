@@ -101,12 +101,6 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
   isConversionActive,
   currencies
 }) => {
-  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
-
-  useEffect(() => {
-    setIsLocalConversionActive(isConversionActive);
-  }, [isConversionActive]);
-
   const [viewMode, setViewMode] = useState<'form' | 'excel'>(() => {
     const saved = localStorage.getItem('ecommil_view_mode');
     return (saved === 'form' || saved === 'excel') ? saved : 'form';
@@ -205,7 +199,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
   const currencyInfo = currencies[currency];
 
   const formatLocalCurrency = (amount: number, curr: CurrencyCode = currency) => {
-    const isUSD = !isLocalConversionActive;
+    const isUSD = !isConversionActive;
     const targetCurrency = isUSD ? 'USD' : curr;
     
     // Internal values are stored in USD
@@ -580,16 +574,12 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
           <p className="text-[13px] text-slate-500">Simulación avanzada con registro de productos y análisis horizontal</p>
         </div>
         <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
-              isLocalConversionActive 
-                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
-                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
-          </button>
+          <div className="flex bg-background/50 rounded-lg p-0.5 border border-border">
+            <div className={`px-3 py-1.5 flex items-center gap-2 text-[10px] font-black tracking-widest ${isConversionActive ? 'text-neon' : 'text-slate-500'}`}>
+              <Globe size={14} />
+              {isConversionActive ? `MONEDA: ${currency}` : 'MODO USD'}
+            </div>
+          </div>
           {selectedProductIds.length > 0 && (
             <button 
               onClick={handleDeleteSelected}

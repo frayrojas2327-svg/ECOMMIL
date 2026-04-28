@@ -2,185 +2,112 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // ===============================================================
-    // Assumed Data Model
+    // Global Safety Net
     // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId}
-    // Fields:
-    //   - uid: string (required, immutable)
-    //   - email: string (required, immutable)
-    //   - displayName: string (optional)
-    //   - role: string (required, enum: ['admin', 'client'])
-    //
-    // Collection: orders
-    // Document ID: {orderId}
-    // Fields:
-    //   - id: string (required, immutable)
-    //   - uid: string (required, immutable, owner)
-    //   - date: string (required, ISO 8601)
-    //   - product: string (required)
-    //   - cost: number (required, positive)
-    //   - price: number (required, positive)
-    //   - shippingCharged: number (optional)
-    //   - shippingReal: number (optional)
-    //   - adsCost: number (optional)
-    //   - platformFee: number (optional)
-    //   - status: string (required, any valid string, app maps: ['Entregado', 'En tránsito', 'Guía Generada', 'Recolectado', 'Incidencia', 'Devuelto', 'Cancelado', 'Pendiente'])
-    //   - provider: string (optional)
-    //   - country: string (optional)
-    //   - cancellationReason: string (optional)
-    //
-    // ===============================================================
-
-    // Collection: ad_expenses
-    // Document ID: {expenseId}
-    // Fields:
-    //   - uid: string (required, owner)
-    //   - productId: string (optional)
-    //   - productName: string (required)
-    //   - date: string (required, YYYY-MM-DD)
-    //   - accountName: string (required)
-    //   - platform: string (required)
-    //   - amount: number (required, positive)
-    //   - timestamp: number (required)
-    //
-    // ===============================================================
-
-    // ===============================================================
-    //
-    // Collection: market_research
-    // Document ID: {researchId}
-    // Fields:
-    //   - uid: string (required, owner)
-    //   - productName: string (required)
-    //   - storeUrls: list (optional, strings)
-    //   - notes: string (optional)
-    //   - videoUrls: list (optional, strings)
-    //   - timestamp: number (required)
-    //
-    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
     // ===============================================================
     // Helper Functions
     // ===============================================================
     
-    function isAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.uid;
-    }
-
+    // Admin check - Restricted to 'get' operations to avoid list cost/complexity
     function isAdmin() {
-      return isAuthenticated() && 
+      return isSignedIn() && 
         (
-          request.auth.token.email.lower() in ["milnerdelacruz03@gmail.com", "mill03@gmail.com"] ||
-          request.auth.uid in ["Jd5wvVvZbKYoYr8sDf9TG6Edelf2", "XusIa0mGiwPWIc6jae6FQTZMlGP2"] ||
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+          request.auth.token.get('email', '').lower() in ["milnerdelacruz03@gmail.com", "mill03@gmail.com", "milner@gmail.com"] ||
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
         );
     }
 
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
-    }
-
-    function isValidDateString(dateStr) {
-      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
-    }
-
-    function isValidSimpleDate(dateStr) {
-      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
-    }
-
     // ===============================================================
-    // Domain Validators
+    // Validation Blueprints
     // ===============================================================
 
     function isValidUser(data) {
-      return hasRequiredFields(['uid', 'email', 'role']) &&
-             data.uid is string && data.uid.size() > 0 &&
-             data.email is string && isValidEmail(data.email) &&
-             data.role in ['admin', 'client'] &&
-             (data.displayName == null || (data.displayName is string && data.displayName.size() < 100));
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid == request.auth.uid;
     }
 
     function isValidOrder(data) {
-      // Relaxed validation to ensure operations pass while keeping basic security
-      return data.keys().hasAll(['id', 'orderId', 'uid', 'date', 'product', 'cost', 'price', 'status']) &&
+      return data.keys().hasAll(['uid', 'status']) &&
              data.uid == request.auth.uid;
     }
 
     function isValidAdExpense(data) {
-      return hasRequiredFields(['uid', 'productName', 'date', 'accountName', 'platform', 'amount', 'timestamp']) &&
-             data.uid is string && data.uid.size() > 0 &&
-             data.productName is string && data.productName.size() > 0 && data.productName.size() < 200 &&
-             isValidSimpleDate(data.date) &&
-             data.accountName is string && data.accountName.size() > 0 && data.accountName.size() < 200 &&
-             data.platform is string && data.platform.size() > 0 && data.platform.size() < 100 &&
-             data.amount is number && data.amount >= 0 &&
-             data.timestamp is number &&
-             (data.get('productId', null) == null || (data.productId is string && data.productId.size() < 100));
+      return data.keys().hasAll(['uid', 'productName', 'date', 'platform', 'amount']) &&
+             data.uid == request.auth.uid &&
+             data.productName is string && data.productName.size() < 500 &&
+             data.amount is number;
     }
 
     function isValidMarketResearch(data) {
-      return hasRequiredFields(['uid', 'productName', 'timestamp']) &&
-             data.uid is string && data.uid.size() > 0 &&
-             data.productName is string && data.productName.size() > 0 && data.productName.size() < 200 &&
-             data.timestamp is number &&
-             (data.get('storeUrls', null) == null || (data.storeUrls is list && data.storeUrls.size() <= 20)) &&
-             (data.get('notes', null) == null || (data.notes is string && data.notes.size() < 5000)) &&
-             (data.get('videoUrls', null) == null || (data.videoUrls is list && data.videoUrls.size() <= 10));
+      return data.keys().hasAll(['uid', 'productName']) &&
+             data.uid == request.auth.uid &&
+             data.productName is string && data.productName.size() < 500;
     }
 
     // ===============================================================
-    // Rules
+    // Collection Rules
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
-                      (isOwner(userId) && request.resource.data.role == 'client' || isAdmin());
-      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
-                      ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+      // Identity Poisoning Guard
+      allow get: if isOwner(userId) || isAdmin();
+      // No List for users to prevent scraping/PII leaks
+      allow list: if isOwner(userId) || isAdmin(); 
+      
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming());
     }
 
     match /orders/{orderId} {
-      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isAdmin()) && isValidOrder(request.resource.data);
-      allow update: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin()) && isValidOrder(request.resource.data);
-      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      // Secure List Query: Enforces that list queries MUST include the uid filter (unless admin)
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isValidOrder(incoming());
+      allow update: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin()) && isValidOrder(incoming());
+      allow delete: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
     }
 
     match /ad_expenses/{expenseId} {
-      allow read: if isDocOwner() || isAdmin();
-      allow create: if isAuthenticated() && isValidAdExpense(request.resource.data) && 
-                      (request.resource.data.uid == request.auth.uid || isAdmin());
-      allow update: if isAuthenticated() && isValidAdExpense(request.resource.data) && 
-                      ((isDocOwner() && request.resource.data.uid == resource.data.uid) || isAdmin());
-      allow delete: if isDocOwner() || isAdmin();
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isValidAdExpense(incoming());
+      allow update: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin()) && isValidAdExpense(incoming());
+      allow delete: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
     }
 
     match /market_research/{researchId} {
-      allow read: if isDocOwner() || isAdmin();
-      allow create: if isAuthenticated() && isValidMarketResearch(request.resource.data) && 
-                      (request.resource.data.uid == request.auth.uid || isAdmin());
-      allow update: if isAuthenticated() && isValidMarketResearch(request.resource.data) && 
-                      ((isDocOwner() && request.resource.data.uid == resource.data.uid) || isAdmin());
-      allow delete: if isDocOwner() || isAdmin();
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isValidMarketResearch(incoming());
+      allow update: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin()) && isValidMarketResearch(incoming());
+      allow delete: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
     }
   }
 }

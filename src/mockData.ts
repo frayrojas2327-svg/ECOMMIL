@@ -196,18 +196,24 @@ export const calculateOrderProfit = (order: Order) => {
   let netProfit = 0;
   let revenue = 0;
 
-  if (order.status === 'Entregado') {
+  // PRIORITY: If gananciaManual is set (imported from document), use it first
+  // It should be used for both positive and negative outcomes as found in columns like "UTILIDAD"
+  if (order.gananciaManual !== undefined && order.gananciaManual !== 0) {
+    // Note: gananciaManual from Dropi covers product and shipping, but NOT Facebook Ads
+    netProfit = Number(order.gananciaManual) - adsCost;
+    revenue = order.status === 'Entregado' ? price : 0;
+  } else if (order.status === 'Entregado') {
     revenue = price;
-    if (order.gananciaManual !== undefined && order.gananciaManual !== 0) {
-      // Use the exact profit from the document as requested
-      netProfit = order.gananciaManual;
-    } else {
-      netProfit = revenue - cost - shippingReal - adsCost - finalFees;
-    }
+    netProfit = revenue - cost - shippingReal - adsCost - finalFees;
   } else if (order.status === 'Devuelto') {
-    const returnCost = Math.abs(Number(order.costoDevolucionFlete || (shippingReal * 0.5)));
+    // For returns, the loss is typically the return flete (logistics) + ads spent.
+    // If the document has a specific return flete (costoDevolucionFlete), we use it.
+    // Otherwise we use a flat fallback (isConversionActive check used for relative value)
+    const returnPenalty = Math.abs(Number(order.costoDevolucionFlete || 0));
+    const finalReturnCost = returnPenalty > 0 ? returnPenalty : 3.88; // 3.88 USD approx 30 GTQ
+    
     revenue = 0;
-    netProfit = -(shippingReal + returnCost + adsCost);
+    netProfit = -(finalReturnCost + adsCost);
   } else {
     // Pendiente, En tránsito, Cancelado, etc.
     revenue = 0;

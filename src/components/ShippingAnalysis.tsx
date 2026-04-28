@@ -12,14 +12,8 @@ interface ShippingAnalysisProps {
 }
 
 const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurrency, currency = 'USD', currencies = {}, isConversionActive = false }) => {
-  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
-
-  useEffect(() => {
-    setIsLocalConversionActive(isConversionActive);
-  }, [isConversionActive]);
-
   const localFormatCurrency = (amount: number) => {
-    const isUSD = !isLocalConversionActive;
+    const isUSD = !isConversionActive;
     const targetCurrency = isUSD ? 'USD' : currency;
     const rate = currencies[currency]?.rate || 1;
     
@@ -83,16 +77,12 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
           <h2 className="text-2xl font-display font-bold text-white">Análisis de Fletes</h2>
           <p className="text-base text-slate-500">Comparativa de logística y eficiencia en envíos</p>
         </div>
-        <button 
-          onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
-            isLocalConversionActive 
-              ? 'bg-neon text-background shadow-lg shadow-neon/20' 
-              : 'bg-card border border-border text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
-        </button>
+        <div className="flex bg-background/50 rounded-lg p-0.5 border border-border">
+          <div className={`px-3 py-1.5 flex items-center gap-2 text-[10px] font-black tracking-widest ${isConversionActive ? 'text-neon' : 'text-slate-500'}`}>
+            <Globe size={14} />
+            {isConversionActive ? `MONEDA: ${currency}` : 'MODO USD'}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

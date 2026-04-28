@@ -1,6 +1,6 @@
 {
-  "name": "Remix: ECOMMIL Pro",
-  "description": "Plataforma fintech premium para gestión de rentabilidad, logística e investigación de mercado de ecommerce.",
+  "name": "ECOMMIL Pro",
+  "description": "Plataforma premium para gestión de rentabilidad, logística e inteligencia de mercado para E-commerce.",
   "requestFramePermissions": [
     "geolocation"
   ]

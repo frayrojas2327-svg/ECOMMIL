@@ -120,18 +120,12 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   viewMode = 'DROPI'
 }) => {
   const isReconciliationMode = viewMode === 'TIKTOK';
-  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
   const [activeSource, setActiveSource] = useState<'all' | 'shopify' | 'dropi' | 'tiktok' | 'reconciliation'>('all');
   const [shopifyOrders, setShopifyOrders] = useState<Order[]>([]);
   const [dropiOrders, setDropiOrders] = useState<Order[]>([]);
 
-  // Sync with global conversion when prop changes
-  useEffect(() => {
-    setIsLocalConversionActive(isConversionActive);
-  }, [isConversionActive]);
-
   const localFormatCurrency = (amount: number) => {
-    const isUSD = !isLocalConversionActive;
+    const isUSD = !isConversionActive;
     const targetCurrency = isUSD ? 'USD' : currentCurrency;
     
     let converted = amount;
@@ -253,11 +247,11 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     const normalizedOrder = {
       ...newOrderForm,
       id: `temp-${Math.random().toString(36).substring(2, 11)}`,
-      price: isLocalConversionActive ? newOrderForm.price / (exchangeRate || 1) : newOrderForm.price,
-      cost: isLocalConversionActive ? newOrderForm.cost / (exchangeRate || 1) : newOrderForm.cost,
-      shippingCharged: isLocalConversionActive ? newOrderForm.shippingCharged / (exchangeRate || 1) : newOrderForm.shippingCharged,
-      shippingReal: (newOrderForm.shippingReal || 0) / (isLocalConversionActive ? (exchangeRate || 1) : 1),
-      adsCost: isLocalConversionActive ? newOrderForm.adsCost / (exchangeRate || 1) : newOrderForm.adsCost,
+      price: isConversionActive ? newOrderForm.price / (exchangeRate || 1) : newOrderForm.price,
+      cost: isConversionActive ? newOrderForm.cost / (exchangeRate || 1) : newOrderForm.cost,
+      shippingCharged: isConversionActive ? newOrderForm.shippingCharged / (exchangeRate || 1) : newOrderForm.shippingCharged,
+      shippingReal: (newOrderForm.shippingReal || 0) / (isConversionActive ? (exchangeRate || 1) : 1),
+      adsCost: isConversionActive ? newOrderForm.adsCost / (exchangeRate || 1) : newOrderForm.adsCost,
       orderId: newOrderForm.orderId || `MAN-${Date.now().toString().slice(-6)}`
     };
 
@@ -302,20 +296,38 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           if (typeof val === 'number') return val;
           let str = String(val).trim();
           if (!str) return 0;
-          str = str.replace(/GTQ|TQ|6TQ|Q/gi, '').trim().replace(/[$\s]/g, '');
+          
+          // Remove currency symbols and non-numeric characters except separators
+          str = str.replace(/GTQ|TQ|6TQ|Q|COP|\$|\s/gi, '');
+          
+          // Heuristic for LATAM/Dropi: "179.000,00" or "179.000"
           const lastComma = str.lastIndexOf(',');
           const lastDot = str.lastIndexOf('.');
+          
           if (lastComma !== -1 && lastDot !== -1) {
-            if (lastComma > lastDot) str = str.replace(/\./g, '').replace(',', '.');
-            else str = str.replace(/,/g, '');
+            if (lastComma > lastDot) {
+              // Format: 1.234,56
+              str = str.replace(/\./g, '').replace(',', '.');
+            } else {
+              // Format: 1,234.56
+              str = str.replace(/,/g, '');
+            }
           } else if (lastComma !== -1) {
+            // Only comma: could be 1.000 (thousands) or 1,50 (decimal)
             const parts = str.split(',');
-            if (parts.length > 2 || parts[parts.length - 1].length > 2) str = str.replace(/,/g, '');
-            else str = str.replace(',', '.');
+            if (parts.length > 2 || parts[parts.length - 1].length === 3) {
+              str = str.replace(/,/g, '');
+            } else {
+              str = str.replace(',', '.');
+            }
           } else if (lastDot !== -1) {
+            // Only dot: could be 179.000 (thousands) or 17.50 (decimal)
             const parts = str.split('.');
-            if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) str = str.replace(/\./g, '');
+            if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+              str = str.replace(/\./g, '');
+            }
           }
+          
           const cleaned = str.replace(/[^0-9.-]/g, '');
           const parsed = parseFloat(cleaned);
           return isNaN(parsed) ? 0 : parsed;
@@ -360,7 +372,12 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           return '';
         };
 
-        const normalize = (amount: number) => isLocalConversionActive ? (amount / exchangeRate) : amount;
+        const normalize = (amount: number) => {
+          // Internal values must ALWAYS be stored in USD for consistency.
+          // Since Dropi/Shopify imports are typically in local currency, we divide by exchangeRate.
+          if (!exchangeRate || exchangeRate === 1) return amount;
+          return amount / exchangeRate;
+        };
 
         let newOrders: Omit<Order, 'id' | 'uid'>[] = [];
 
@@ -520,26 +537,99 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           newOrders = jsonData.map(row => {
             const keys = Object.keys(row);
             const getField = (possibleNames: string[]) => {
+              // Priority 1: Exact matches (cleaner)
               let key = keys.find(k => 
-                possibleNames.some(p => k.toLowerCase() === p.toLowerCase()) && 
+                possibleNames.some(p => k.toLowerCase().trim() === p.toLowerCase().trim()) && 
                 row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== ''
               );
+              
+              // Priority 2: Contains match (but avoiding greedy matches for common short terms)
               if (!key) {
                 key = keys.find(k => 
-                  possibleNames.some(p => k.toLowerCase().includes(p.toLowerCase())) && 
+                  possibleNames.some(p => {
+                    const pk = k.toLowerCase().trim();
+                    const pp = p.toLowerCase().trim();
+                    // Avoid matching "Flete" inside "Flete Devolución" when looking for outbound flete
+                    if (pp === 'flete' || pp === 'venta' || pp === 'total' || pp === 'precio') {
+                      return pk === pp; 
+                    }
+                    return pk.includes(pp);
+                  }) && 
                   row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== ''
                 );
               }
               return key ? row[key] : undefined;
             };
 
-            const valorFacturado = normalize(parseMoney(getField(['VALOR FACTURADO', 'Precio Venta', 'Total', 'Valor Total', 'Venta', 'Amount', 'Precio', 'PRECIO_VENTA', 'VALOR_VENTA', 'PRECIO_TOTAL', 'TOTAL_A_COBRAR', 'RECAUDO'])));
-            const valorCompra = normalize(parseMoney(getField(['VALOR DE COMPRA EN PRODUCTOS', 'Costo Producto', 'Costo', 'Provider Cost', 'Unit Price', 'Precio Costo', 'COSTO_PRODUCTO', 'COSTO_PROVEEDOR', 'TOTAL EN PRECIOS DE PROVEEDOR', 'PROVEEDOR', 'COSTO_TOTAL'])));
-            const flete = normalize(parseMoney(getField(['PRECIO FLETE', 'Flete', 'Valor Flete', 'Costo Envío', 'Shipping', 'Flete Real', 'Envío', 'VALOR_FLETE', 'COSTO_ENVIO', 'COSTO_FLETE'])));
-            const ganancia = normalize(parseMoney(getField(['GANANCIA', 'Profit', 'Utilidad', 'Net Profit', 'GANANCIA_VENDEDOR', 'LIQUIDACION', 'TOTAL_A_PAGAR', 'UTILIDAD_NETA', 'GANANCIA_NETA', 'UTILIDAD_BRUTA'])));
-            const comision = normalize(parseMoney(getField(['COMISION', 'Comisión', 'COMMISSION', 'FEE_PLATFORM', 'COMISION_CORTE', 'COMISION_VENTA'])));
-            const costoDevolucion = normalize(parseMoney(getField(['COSTO DEVOLUCION FLETE', 'Costo Devolución', 'Return Cost', 'FLETE_DEVOLUCION', 'COSTO_RETORNO'])));
-            const totalPreciosProveedor = normalize(parseMoney(getField(['TOTAL PRECIOS PROVEEDOR', 'Supplier Total', 'Costo Total Proveedor', 'TOTAL EN PRECIOS DE PROVEEDOR', 'TOTAL_PROVEEDOR', 'MONTO_PROVEEDOR'])));
+            const rawRecaudo = getField([
+              'VALOR FACTURADO', 
+              'PRECIO_VENTA', 
+              'VALOR_VENTA', 
+              'VALOR_RECAUDO',
+              'RECAUDO_TOTAL', 
+              'TOTAL_A_RECAUDAR', 
+              'TOTAL_RECAUDO', 
+              'RECAUDO', 
+              'Precio Venta', 
+              'Venta',
+              'Total'
+            ]);
+            const rawProductoCol = getField(['PRODUCTO', 'ITEM', 'NOMBRE_PRODUCTO', 'NOMBRE PRODUCTO']);
+            
+            let valorFacturadoRaw = parseMoney(rawRecaudo);
+            
+            // Priority: Product name often contains the real price in Dropi (e.g., "Producto - 179000" or "X3 - 179")
+            const pNameFull = String(getField(['Nombre Producto', 'Producto', 'Item', 'PRODUCTO', 'NOMBRE', 'ITEM', 'NOMBRE_PRODUCTO']) || '');
+            const priceInNameMatch = pNameFull.match(/\d{3,}/);
+            if (priceInNameMatch) {
+              const extracted = parseMoney(priceInNameMatch[0]);
+              // If extracted looks like a realistic price (usually > 10 in custom markets like GTQ)
+              if (extracted > valorFacturadoRaw || valorFacturadoRaw < 10) {
+                valorFacturadoRaw = extracted;
+              }
+            }
+
+            // Fallback for very low values (using 5 as a floor for GTQ/custom currencies)
+            if (valorFacturadoRaw < 5 && rawProductoCol !== undefined) {
+              const extractedPrice = parseMoney(rawProductoCol);
+              if (extractedPrice >= 5) valorFacturadoRaw = extractedPrice;
+            }
+
+            const valorFacturado = normalize(valorFacturadoRaw);
+            const valorCompra = normalize(parseMoney(getField(['VALOR DE COMPRA EN PRODUCTOS', 'COSTO_PRODUCTO', 'COSTO_PROVEEDOR', 'VALOR_COMPRA', 'VALOR_UNITARIO_PROVEEDOR', 'Costo Producto', 'Costo'])));
+            
+            // Outbound shipping flete - specifically avoiding return columns
+            // Added stricter matching for outbound flete
+            const fleteField = getField([
+              'PRECIO FLETE', 
+              'VALOR_FLETE', 
+              'COSTO_ENVIO', 
+              'VALOR_ENVIO',
+              'FLETE_TOTAL', 
+              'Flete', 
+              'Valor Flete'
+            ]);
+            const flete = normalize(parseMoney(fleteField));
+            
+            const ganancia = normalize(parseMoney(getField(['GANANCIA', 'Profit', 'Utilidad', 'GANANCIA_VENDEDOR', 'LIQUIDACION', 'UTILIDAD_NETA'])));
+            const comision = normalize(parseMoney(getField(['COMISION', 'COMMISSION', 'FEE_PLATFORM', 'COMISION_TOTAL', 'Comisión'])));
+            
+            // Specific mapping for return/devolución columns - focusing on Dropi's "Flete Devolución"
+            const rawDevolucion = getField([
+              'VALOR FLETE DEVOLUCION', 
+              'FLETE_DEVOLUCION', 
+              'COSTO_RETORNO', 
+              'VALOR_DEVOLUCION_FLETE', 
+              'COSTO_LOGISTICA_DEVOLUCION',
+              'Flete Devolución',
+              'Costo Retorno',
+              'FLETE_REGRESO',
+              'ENVIO_DEVOLUCION'
+            ]);
+            const valorDevolucionRaw = parseMoney(rawDevolucion);
+            const costoDevolucion = normalize(valorDevolucionRaw);
+            
+            const totalPreciosProveedor = normalize(parseMoney(getField(['TOTAL PRECIOS PROVEEDOR', 'TOTAL_PROVEEDOR', 'Supplier Total', 'Costo Total Proveedor'])));
 
             const rawStatus = String(getField(['Estado', 'Status', 'Estado Orden', 'Estado de la orden', 'Estado Actual', 'Seguimiento', 'Situación', 'ESTADO', 'ESTATUS']) || '').toUpperCase();
             let status: OrderStatus = 'Pendiente';
@@ -558,7 +648,16 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               id: `temp-${Math.random().toString(36).substring(2, 11)}`,
               date: (rawDropiDate ? parseFlexibleDate(String(rawDropiDate)) : null) || new Date(),
               orderId: String(getField(['ID Pedido', 'ID', 'Referencia']) || '').replace('#', '') || `DRP-${Math.random().toString(36).substring(7).toUpperCase()}`,
-              product: getField(['Producto', 'Nombre Producto', 'Item', 'PRODUCTO']) || 'Producto Dropi',
+              product: (() => {
+                const nameCol = getField(['Nombre Producto', 'Producto', 'Item', 'NOMBRE_PRODUCTO', 'PRODUCTO_NOMBRE', 'NOMBRE']);
+                if (nameCol) return String(nameCol);
+                
+                // Si "PRODUCTO" no es un número, probablemente sea el nombre
+                const prodCol = getField(['PRODUCTO']);
+                if (prodCol && parseMoney(prodCol) === 0) return String(prodCol);
+                
+                return 'Producto Dropi';
+              })(),
               price: valorFacturado,
               cost: valorCompra,
               shippingCharged: 0,
@@ -769,6 +868,13 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         value: (o: Order) => o.precioFlete || 0, 
         isMoney: true, 
         className: 'text-amber-400 text-right' 
+      },
+      { 
+        id: 'costoDevolucionFlete', 
+        label: 'FLETE DEV.', 
+        value: (o: Order) => o.costoDevolucionFlete || 0, 
+        isMoney: true, 
+        className: 'text-red-400 text-right' 
       },
       { 
         id: 'netProfit', 
@@ -1010,16 +1116,12 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             </button>
           )}
 
-          <button 
-            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
-            className={`flex items-center gap-2 px-5 py-4 rounded-xl font-black text-[9px] tracking-[0.3em] transition-all border shadow-lg active:scale-95 ${
-              isLocalConversionActive 
-                ? 'bg-[#00df9a]/10 border-[#00df9a]/30 text-[#00df9a]' 
-                : 'bg-slate-900 border-white/5 text-slate-600 hover:text-slate-400'
-            }`}
-          >
-            <Globe size={14} /> {isLocalConversionActive ? 'COP MODE' : 'USD MODE'}
-          </button>
+          <div className="flex bg-background/50 rounded-lg p-0.5 border border-border">
+            <div className={`px-3 py-1.5 flex items-center gap-2 text-[10px] font-black tracking-widest ${isConversionActive ? 'text-neon' : 'text-slate-500'}`}>
+              <Globe size={14} />
+              {isConversionActive ? `MONEDA: ${currentCurrency}` : 'MODO USD'}
+            </div>
+          </div>
         </div>
       </div>
 

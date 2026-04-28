@@ -12,14 +12,8 @@ interface FinancialSummaryProps {
 }
 
 const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurrency, currency = 'USD', currencies = {}, isConversionActive = false }) => {
-  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
-
-  useEffect(() => {
-    setIsLocalConversionActive(isConversionActive);
-  }, [isConversionActive]);
-
   const localFormatCurrency = (amount: number) => {
-    const isUSD = !isLocalConversionActive;
+    const isUSD = !isConversionActive;
     const targetCurrency = isUSD ? 'USD' : currency;
     const rate = currencies[currency]?.rate || 1;
     
@@ -95,16 +89,6 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
           <p className="text-base text-slate-500">Estado de resultados (P&L) y desglose de gastos</p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
-              isLocalConversionActive 
-                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
-                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
-          </button>
           <button className="flex items-center gap-2 px-4 py-2 border border-border rounded-xl text-slate-400 font-bold text-base hover:text-white hover:bg-white/5 transition-all">
             <Download size={18} /> Descargar PDF
           </button>

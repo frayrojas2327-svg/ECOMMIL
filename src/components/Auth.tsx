@@ -14,6 +14,7 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, UserPlus, Mail, Lock, User as UserIcon, Loader2, AlertCircle, LogOut, Chrome, Globe, Eye, EyeOff, Play } from 'lucide-react';
+import { Logo } from './Logo';
 
 interface AuthContextType {
   user: any; // Using any to allow for mock user
@@ -59,8 +60,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
+        setUser(currentUser);
+        setIsDemoMode(false);
+        localStorage.removeItem('ecommil_demo_mode');
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (userDoc.exists()) {
@@ -80,7 +83,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           console.error('Error fetching user role:', error);
           // Don't throw here to avoid crashing the whole app on auth check
         }
-      } else {
+      } else if (!isDemoMode) {
+        setUser(null);
         setIsAdmin(false);
       }
       setLoading(false);
@@ -142,7 +146,7 @@ export const AuthScreen = () => {
 
   const handleGoogleLogin = async () => {
     if (!isFirebaseConfigValid) {
-      alert("La configuración de Firebase no es válida. Por favor, use el 'Modo Demo'.");
+      setError("La configuración de Firebase está pendiente. Por favor, realiza el 'Setup Firebase' en el editor o usa el 'Modo Demo'.");
       return;
     }
     setError(null);
@@ -162,7 +166,7 @@ export const AuthScreen = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFirebaseConfigValid) {
-      alert("La configuración de Firebase no es válida o se ha rechazado. Por favor, use el 'Modo Demo'.");
+      setError("La configuración de Firebase no está activa. Usa el 'Modo Demo' para explorar o completa el setup.");
       return;
     }
     setError(null);
@@ -218,15 +222,15 @@ export const AuthScreen = () => {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <div className="p-3 rounded-2xl bg-neon/10 border border-neon/20">
-              <Globe className="text-neon" size={32} />
+            <div className="p-2 rounded-2xl bg-white/5 border border-border shadow-xl">
+              <Logo size={48} />
             </div>
           </div>
           <h1 className="text-4xl font-display font-bold text-white tracking-tighter mb-2">
-            ECOMM<span className="text-neon">IL</span>
+            ECOMM<span className="text-neon">IL</span> Pro
           </h1>
           <p className="text-slate-400 text-base">
-            {isLogin ? 'Bienvenido de nuevo a tu centro logístico' : 'Crea tu cuenta profesional hoy'}
+            {isLogin ? 'Inicia sesión para gestionar tu rentabilidad' : 'Crea tu cuenta profesional en segundos'}
           </p>
         </div>
 

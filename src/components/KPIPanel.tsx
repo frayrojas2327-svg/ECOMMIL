@@ -77,16 +77,10 @@ const KPIPanel: React.FC<KPIPanelProps> = ({
   manualAdSpend = 0,
   setManualAdSpend
 }) => {
-  const [isLocalConversionActive, setIsLocalConversionActive] = useState(isConversionActive);
-
   const currencySymbol = currencies[currency]?.symbol || '$';
 
-  useEffect(() => {
-    setIsLocalConversionActive(isConversionActive);
-  }, [isConversionActive]);
-
   const localFormatCurrency = (amount: number) => {
-    const isUSD = !isLocalConversionActive;
+    const isUSD = !isConversionActive;
     const targetCurrency = isUSD ? 'USD' : currency;
     const rate = currencies[currency]?.rate || 1;
     
@@ -156,16 +150,12 @@ const KPIPanel: React.FC<KPIPanelProps> = ({
             </div>
           </div>
 
-          <button 
-            onClick={() => setIsLocalConversionActive(!isLocalConversionActive)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-black text-[10px] tracking-widest transition-all ${
-              isLocalConversionActive 
-                ? 'bg-neon text-background shadow-lg shadow-neon/20' 
-                : 'bg-card border border-border text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            <Globe size={14} /> {isLocalConversionActive ? 'CONVERSIÓN ACTIVA' : 'MODO USD'}
-          </button>
+          <div className="flex bg-background/50 rounded-lg p-0.5 border border-border">
+            <div className={`px-2 py-1 flex items-center gap-2 text-[10px] font-black tracking-widest ${isConversionActive ? 'text-neon' : 'text-slate-500'}`}>
+              <Globe size={12} />
+              {isConversionActive ? `Métricas en ${currency}` : 'Métricas en USD'}
+            </div>
+          </div>
           <span className="hidden lg:flex items-center gap-1"><Zap size={10} className="text-neon" /> Actualizado: Real</span>
         </div>
       </div>
