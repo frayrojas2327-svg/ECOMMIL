@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 
 // Import the Firebase configuration
@@ -34,6 +34,18 @@ try {
 }
 
 export { db, auth };
+export const googleProvider = isFirebaseConfigValid ? new GoogleAuthProvider() : null;
+
+// Auth helpers
+export const loginWithGoogle = () => {
+  if (!isFirebaseConfigValid) throw new Error("Firebase not configured");
+  return signInWithPopup(auth, googleProvider!);
+};
+
+export const logout = () => {
+  if (!isFirebaseConfigValid) return Promise.resolve();
+  return signOut(auth);
+};
 
 // Using initializeFirestore with experimentalForceLongPolling: true 
 // to avoid connection issues in restricted network environments

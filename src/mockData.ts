@@ -206,14 +206,13 @@ export const calculateOrderProfit = (order: Order) => {
     revenue = price;
     netProfit = revenue - cost - shippingReal - adsCost - finalFees;
   } else if (order.status === 'Devuelto') {
-    // For returns, the loss is typically the return flete (logistics) + ads spent.
-    // If the document has a specific return flete (costoDevolucionFlete), we use it.
-    // Otherwise we use a flat fallback (isConversionActive check used for relative value)
+    // For returns, we lose the outbound shipping (shippingReal) AND the return logistics fee.
     const returnPenalty = Math.abs(Number(order.costoDevolucionFlete || 0));
-    const finalReturnCost = returnPenalty > 0 ? returnPenalty : 3.88; // 3.88 USD approx 30 GTQ
+    // Fallback if no return penalty is recorded (typical in some regions)
+    const finalReturnCost = returnPenalty > 0 ? returnPenalty : (shippingReal > 0 ? shippingReal * 0.8 : 3.8); 
     
     revenue = 0;
-    netProfit = -(finalReturnCost + adsCost);
+    netProfit = -(shippingReal + finalReturnCost + adsCost);
   } else {
     // Pendiente, En tránsito, Cancelado, etc.
     revenue = 0;

@@ -1,36 +1,23 @@
-# Security Specification - ECOMMIL Pro
+# Security Specification
 
 ## Data Invariants
-1. **User Profile**: Every user must have a profile in `/users/{userId}` where `{userId}` matches their Auth UID.
-2. **Order Ownership**: Every order in `/orders/{orderId}` must have a `uid` field matching the creator's Auth UID.
-3. **Expense Ownership**: Every advertising expense in `/ad_expenses/{expenseId}` must have a `uid` field matching the creator's Auth UID.
-4. **Research Ownership**: Every market research record in `/market_research/{researchId}` must have a `uid` field matching the creator's Auth UID.
-5. **Admin Access**: Users with the `admin` role (verified by a trusted document) can read all collections.
+- An Order MUST have a valid `uid` matching the authenticated user.
+- An Order MUST have a `date` and `status`.
+- User profiles can only be read/written by the owner.
 
 ## The "Dirty Dozen" Payloads (Denial Expected)
+1. Create Order with another user's `uid`.
+2. Update Order's `uid` to another user.
+3. Create Order with a 1MB string as `orderId`.
+4. Update Order's `price` to a negative value.
+5. Update Order's `status` to a value not in the enum.
+6. Create User profile with `role: 'admin'`.
+7. Update User profile `role` to `admin`.
+8. Delete an Order belonging to another user.
+9. List orders without filtered query (handled by rule enforcement).
+10. Update `createdAt` field on an order.
+11. Inject shadow field `isVerified: true` into an order.
+12. Create Order with future `date` (if applicable, but we use server timestamp for system fields).
 
-1. **Identity Spoofing (Users)**: Creating a user profile for a different UID.
-   - Payload: `{ "uid": "OTHER_UID", "email": "test@test.com", "role": "client" }` to `/users/MY_UID`
-2. **Privilege Escalation**: A non-admin user trying to set their own role to 'admin'.
-   - Payload: `{ "uid": "MY_UID", "email": "test@test.com", "role": "admin" }`
-3. **Identity Spoofing (Orders)**: Creating an order with someone else's `uid`.
-   - Payload: `{ "id": "1", "orderId": "ORD1", "uid": "OTHER_UID", ... }`
-4. **Orphaned Write (Orders)**: Creating an order without a `uid`.
-   - Payload: `{ "id": "1", "orderId": "ORD1", "date": "...", ... }`
-5. **Update Gap (Orders)**: Updating an order's `uid` after creation.
-   - Payload: `{ "uid": "OTHER_UID" }` (on an existing doc)
-6. **Value Poisoning (Orders)**: Injecting a massive string into the `product` field.
-   - Payload: `{ "product": "A".repeat(2000) }`
-7. **Type Poisoning (Expenses)**: Setting `amount` as a string instead of a number.
-   - Payload: `{ "amount": "100" }`
-8. **Malicious ID**: Creating a document with a path-injection-style ID.
-   - Path: `/orders/../../others/doc`
-9. **Unverified List Scraping**: Attempting to list all orders without a `uid` filter.
-   - Query: `db.collection('orders').get()`
-10. **State Shortcut**: Updating an order to a terminal status without following workflow (if applicable).
-11. **PII Leakage**: Reading another user's profile.
-    - Path: `/users/OTHER_UID`
-12. **Denial of Wallet**: Repeatedly querying with massive, unindexed, or unauthorized filters.
-
-## Test Runner (Logic Verification)
-The `firestore.rules.test.ts` will verify these scenarios.
+## Test Runner (Logic)
+The following rules will enforce these invariants.

@@ -562,17 +562,16 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             };
 
             const rawRecaudo = getField([
-              'VALOR FACTURADO', 
               'PRECIO_VENTA', 
               'VALOR_VENTA', 
               'VALOR_RECAUDO',
+              'VALOR FACTURADO', 
               'RECAUDO_TOTAL', 
               'TOTAL_A_RECAUDAR', 
               'TOTAL_RECAUDO', 
               'RECAUDO', 
               'Precio Venta', 
-              'Venta',
-              'Total'
+              'Venta'
             ]);
             const rawProductoCol = getField(['PRODUCTO', 'ITEM', 'NOMBRE_PRODUCTO', 'NOMBRE PRODUCTO']);
             
@@ -659,7 +658,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 return 'Producto Dropi';
               })(),
               price: valorFacturado,
+              valorFacturado: valorFacturado,
               cost: valorCompra,
+              valorCompraProductos: valorCompra,
               shippingCharged: 0,
               shippingReal: flete,
               adsCost: 0,

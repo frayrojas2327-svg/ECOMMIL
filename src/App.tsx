@@ -139,6 +139,13 @@ function AppContent() {
           shippingReal: Number(data.shippingReal || 0),
           adsCost: Number(data.adsCost || 0),
           platformFee: Number(data.platformFee || 0),
+          valorFacturado: Number(data.valorFacturado || 0),
+          valorCompraProductos: Number(data.valorCompraProductos || 0),
+          precioFlete: Number(data.precioFlete || 0),
+          gananciaManual: Number(data.gananciaManual || 0),
+          costoDevolucionFlete: Number(data.costoDevolucionFlete || 0),
+          comision: Number(data.comision || 0),
+          totalPreciosProveedor: Number(data.totalPreciosProveedor || 0),
         } as Order;
       });
       
@@ -333,9 +340,9 @@ function AppContent() {
     // So if we want to use manualAdSpend instead of sumAds:
     // we need to add back sumAds and subtract manualAdSpend.
     
-    const usedAds = manualAdSpend > 0 ? manualAdSpend : sumAds;
+    const usedAds = manualAdSpend > 0 ? (isConversionActive ? manualAdSpend / (dynamicCurrencies[currency]?.rate || 1) : manualAdSpend) : sumAds;
     const finalNetProfit = manualAdSpend > 0 
-      ? (totalNetProfit + sumAds - manualAdSpend) 
+      ? (totalNetProfit + sumAds - usedAds) 
       : totalNetProfit;
 
     const margin = totalRevenue > 0 ? (finalNetProfit / totalRevenue) * 100 : 0;
