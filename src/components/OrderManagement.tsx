@@ -217,7 +217,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const [reqDate, setReqDate] = useState('');
   const [delDate, setDelDate] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
-  const [showConfirm, setShowConfirm] = useState<{ type: 'selected' | 'all' } | null>(null);
+  const [showConfirm, setShowConfirm] = useState<{ type: 'selected' | 'all' | 'single', orderId?: string } | null>(null);
   const [isImporting, setIsImporting] = useState<false | 'Dropi' | 'Shopify'>(false);
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -562,16 +562,17 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             };
 
             const rawRecaudo = getField([
+              'VALOR FACTURADO', 
               'PRECIO_VENTA', 
               'VALOR_VENTA', 
               'VALOR_RECAUDO',
-              'VALOR FACTURADO', 
               'RECAUDO_TOTAL', 
               'TOTAL_A_RECAUDAR', 
               'TOTAL_RECAUDO', 
               'RECAUDO', 
               'Precio Venta', 
-              'Venta'
+              'Venta',
+              'Total'
             ]);
             const rawProductoCol = getField(['PRODUCTO', 'ITEM', 'NOMBRE_PRODUCTO', 'NOMBRE PRODUCTO']);
             
@@ -658,9 +659,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 return 'Producto Dropi';
               })(),
               price: valorFacturado,
-              valorFacturado: valorFacturado,
               cost: valorCompra,
-              valorCompraProductos: valorCompra,
               shippingCharged: 0,
               shippingReal: flete,
               adsCost: 0,
@@ -843,6 +842,23 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         { id: 'price', label: 'VALOR PRODUCTO', value: (o: Order) => (o.price || 0) - (o.priorityShipping || 0), isMoney: true, className: 'text-emerald-400 font-bold' },
         { id: 'priorityShipping', label: 'ENVÍO PRIORITARIO', value: (o: Order) => o.priorityShipping || 0, isMoney: true, className: 'text-amber-400 font-bold' },
         { id: 'status', label: 'ESTATUS', value: (o: Order) => o.status, render: (o: Order) => <StatusBadge status={o.status} /> },
+        { 
+          id: 'actions', 
+          label: 'ACCIONES', 
+          value: () => '', 
+          render: (o: Order) => (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowConfirm({ type: 'single', orderId: o.id });
+              }}
+              className="p-1.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all transform active:scale-95"
+              title="Eliminar Registro"
+            >
+              <Trash2 size={14} />
+            </button>
+          ) 
+        },
       ];
     }
 
@@ -901,6 +917,23 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       { id: 'ultimoMovimiento', label: 'ULT. MOVIMIENTO', value: (o: Order) => o.ultimoMovimiento },
       { id: 'conceptoUltimoMovimiento', label: 'CONCEPTO MOV.', value: (o: Order) => o.conceptoUltimoMovimiento, className: 'text-xs' },
       { id: 'tags', label: 'TAGS', value: (o: Order) => o.tags },
+      { 
+        id: 'actions', 
+        label: 'ACCIONES', 
+        value: () => '', 
+        render: (o: Order) => (
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowConfirm({ type: 'single', orderId: o.id });
+            }}
+            className="p-1.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all transform active:scale-95"
+            title="Eliminar Registro"
+          >
+            <Trash2 size={14} />
+          </button>
+        ) 
+      },
     ];
 
     if (filteredOrders.length === 0) return allCols.filter(col => !(col as any).hide).slice(0, 15);
@@ -942,6 +975,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     if (showConfirm.type === 'selected') {
       onDeleteOrders(selectedOrderIds);
       setSelectedOrderIds([]);
+    } else if (showConfirm.type === 'single' && showConfirm.orderId) {
+      onDeleteOrders([showConfirm.orderId]);
     }
     setShowConfirm(null);
   };
@@ -2011,7 +2046,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 <h4 className="text-xl font-display font-bold text-white">¿Confirmar Acción?</h4>
               </div>
               <p className="text-[15px] text-slate-400 leading-relaxed">
-                ¿Estás seguro de que deseas eliminar {selectedOrderIds.length} pedidos seleccionados? Esta acción no se puede deshacer.
+                {showConfirm.type === 'single' 
+                  ? '¿Estás seguro de que deseas eliminar este pedido? Esta acción no se puede deshacer.'
+                  : `¿Estás seguro de que deseas eliminar ${selectedOrderIds.length} pedidos seleccionados? Esta acción no se puede deshacer.`
+                }
               </p>
               <div className="flex gap-3">
                 <button 

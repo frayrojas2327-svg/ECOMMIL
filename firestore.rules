@@ -22,6 +22,9 @@ service cloud.firestore {
     function existing() {
       return resource.data;
     }
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
 
     // Helper for Orders
     function isValidOrder(data) {
@@ -32,28 +35,49 @@ service cloud.firestore {
              (data.cost == null || data.cost is number);
     }
 
+    // Helper for Ad Expenses
+    function isValidAdExpense(data) {
+      return data.uid == request.auth.uid &&
+             data.productId is string && data.productId.size() <= 128 &&
+             data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             data.platform is string && data.platform.size() <= 64 &&
+             data.amount is number &&
+             data.timestamp is number;
+    }
+
+    // Helper for Market Research
+    function isValidMarketResearch(data) {
+      return data.uid == request.auth.uid &&
+             data.productName is string && data.productName.size() <= 200 &&
+             data.timestamp is number;
+    }
+
+    // Helper for Sale Periods
+    function isValidSalePeriod(data) {
+      return data.uid == request.auth.uid &&
+             data.month is string && data.month.size() <= 50 &&
+             data.startDate is string &&
+             data.endDate is string;
+    }
+
     // 1. Orders Collection
     match /orders/{orderId} {
       allow get: if isOwner(existing().uid);
       allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
       allow create: if isSignedIn() && 
+                      // request.auth.token.email_verified == true && 
                       isValidId(orderId) &&
                       isValidOrder(incoming()) &&
                       incoming().keys().hasAll(['uid', 'orderId', 'date', 'status']);
       
       allow update: if isOwner(existing().uid) &&
+                       // request.auth.token.email_verified == true &&
                        isValidOrder(incoming()) &&
                        incoming().uid == existing().uid &&
-                       incoming().orderId == existing().orderId &&
-                       (
-                         // Action: Status Update
-                         (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
-                         // Action: Full Edit (typical in this app)
-                         true
-                       );
+                       incoming().orderId == existing().orderId;
       
-      allow delete: if isOwner(existing().uid);
+      allow delete: if isOwner(existing().uid); // && request.auth.token.email_verified == true;
     }
 
     // 2. Saved Products Collection
@@ -61,12 +85,55 @@ service cloud.firestore {
       allow get: if isOwner(existing().uid);
       allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create, update: if isSignedIn() && 
+                             // request.auth.token.email_verified == true &&
                              isValidId(productId) &&
                              incoming().uid == request.auth.uid;
       allow delete: if isOwner(existing().uid);
     }
 
-    // 3. Users Collection
+    // 3. Sale Periods Collection
+    match /salePeriods/{periodId} {
+      allow get: if isOwner(existing().uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      allow create: if isSignedIn() &&
+                      isValidId(periodId) &&
+                      isValidSalePeriod(incoming());
+      
+      allow update: if isOwner(existing().uid) &&
+                       isValidSalePeriod(incoming()) &&
+                       incoming().uid == existing().uid;
+                       
+      allow delete: if isOwner(existing().uid) || isAdmin();
+    }
+
+    // 4. Ad Expenses Collection
+    match /ad_expenses/{expenseId} {
+      allow get: if isOwner(existing().uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && 
+                      isValidId(expenseId) &&
+                      isValidAdExpense(incoming());
+      allow update: if isOwner(existing().uid) &&
+                       isValidAdExpense(incoming()) &&
+                       incoming().uid == existing().uid;
+      allow delete: if isOwner(existing().uid);
+    }
+
+    // 5. Market Research Collection
+    match /market_research/{researchId} {
+      allow get: if isOwner(existing().uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && 
+                      isValidId(researchId) &&
+                      isValidMarketResearch(incoming());
+      allow update: if isOwner(existing().uid) &&
+                       isValidMarketResearch(incoming()) &&
+                       incoming().uid == existing().uid;
+      allow delete: if isOwner(existing().uid);
+    }
+
+    // 6. Users Collection
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && 

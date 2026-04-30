@@ -40,6 +40,7 @@ import LogisticsAI from './components/LogisticsAI';
 import PlatformExpenses from './components/PlatformExpenses';
 import KPIPanel from './components/KPIPanel';
 import Settings from './components/Settings';
+import SalesManagement from './components/SalesManagement';
 import { AuthProvider, AuthScreen, useAuth } from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Logo } from './components/Logo';
@@ -58,11 +59,11 @@ function AppContent() {
   const [dynamicCurrencies, setDynamicCurrencies] = useState(CURRENCIES);
   const [currency, setCurrency] = useState<CurrencyCode>(() => {
     const saved = localStorage.getItem('profit_os_currency');
-    return (saved as CurrencyCode) || 'USD';
+    return (saved as CurrencyCode) || 'PEN';
   });
   const [isConversionActive, setIsConversionActive] = useState(() => {
     const saved = localStorage.getItem('profit_os_conversion_active');
-    return saved === 'true';
+    return saved !== 'false'; // Default to true if not explicitly false
   });
   const [manualAdSpend, setManualAdSpend] = useState(() => {
     const saved = localStorage.getItem('profit_os_manual_ad_spend');
@@ -139,13 +140,6 @@ function AppContent() {
           shippingReal: Number(data.shippingReal || 0),
           adsCost: Number(data.adsCost || 0),
           platformFee: Number(data.platformFee || 0),
-          valorFacturado: Number(data.valorFacturado || 0),
-          valorCompraProductos: Number(data.valorCompraProductos || 0),
-          precioFlete: Number(data.precioFlete || 0),
-          gananciaManual: Number(data.gananciaManual || 0),
-          costoDevolucionFlete: Number(data.costoDevolucionFlete || 0),
-          comision: Number(data.comision || 0),
-          totalPreciosProveedor: Number(data.totalPreciosProveedor || 0),
         } as Order;
       });
       
@@ -296,21 +290,24 @@ function AppContent() {
   const currencyInfo = dynamicCurrencies[currency];
 
   const formatCurrency = (amount: number) => {
+    if (currency === 'USD') return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'USD',
+      currencyDisplay: 'symbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(amount);
+
     const info = dynamicCurrencies[currency];
-    const isUSD = !isConversionActive;
-    const targetCurrency = isUSD ? 'USD' : currency;
-    
-    let converted = amount;
-    if (!isUSD) {
-      converted = amount * info.rate;
-    }
-    
-    // Safety rounding to avoid float precision artifacts
+    const converted = amount * info.rate;
     const rounded = Math.round(converted * 100) / 100;
     
-    return new Intl.NumberFormat(undefined, {
+    // Choose locale based on currency
+    const locale = currency === 'PEN' ? 'es-PE' : 'es-GT';
+    
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: targetCurrency,
+      currency: currency,
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
@@ -340,9 +337,9 @@ function AppContent() {
     // So if we want to use manualAdSpend instead of sumAds:
     // we need to add back sumAds and subtract manualAdSpend.
     
-    const usedAds = manualAdSpend > 0 ? (isConversionActive ? manualAdSpend / (dynamicCurrencies[currency]?.rate || 1) : manualAdSpend) : sumAds;
+    const usedAds = manualAdSpend > 0 ? manualAdSpend : sumAds;
     const finalNetProfit = manualAdSpend > 0 
-      ? (totalNetProfit + sumAds - usedAds) 
+      ? (totalNetProfit + sumAds - manualAdSpend) 
       : totalNetProfit;
 
     const margin = totalRevenue > 0 ? (finalNetProfit / totalRevenue) * 100 : 0;
@@ -470,6 +467,17 @@ function AppContent() {
 
         <div className="px-4 mb-2 space-y-2">
           <button
+            onClick={() => setActiveTab('sales')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'sales' 
+                ? 'bg-neon/10 text-neon border border-neon/20' 
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <TrendingUp size={20} className={activeTab === 'sales' ? 'text-neon' : 'group-hover:text-neon'} />
+            {!isSidebarCollapsed && <span className="font-medium">Ventas</span>}
+          </button>
+          <button
             onClick={() => setActiveTab('research')}
             className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
               activeTab === 'research' 
@@ -566,7 +574,6 @@ function AppContent() {
             <div className="flex flex-col items-end">
               <span className="text-[10px] font-mono text-slate-500 uppercase leading-none mb-1">Visualización General</span>
               <div className="flex items-center gap-2 bg-card/50 border border-border rounded-xl p-1 shadow-inner backdrop-blur-sm">
-                {/* Currency Base Switcher */}
                 <div className="flex bg-background rounded-lg p-0.5 border border-border/50">
                   <button
                     onClick={() => setIsConversionActive(false)}
@@ -575,46 +582,38 @@ function AppContent() {
                         ? 'bg-red-500/20 text-red-500 border border-red-500/30' 
                         : 'text-slate-500 hover:text-slate-300'
                     }`}
-                    title="Ver valores originales (USD)"
                   >
-                    DESACTIVAR
+                    USD
                   </button>
                   <button
-                    onClick={() => {
-                      setIsConversionActive(true);
-                      if (currency === 'USD') setCurrency('COP' as CurrencyCode); // Default to something else if activating
-                    }}
+                    onClick={() => setIsConversionActive(true)}
                     className={`px-3 py-1 rounded-md text-[10px] font-black tracking-widest transition-all ${
                       isConversionActive 
                         ? 'bg-neon/20 text-neon border border-neon/30 shadow-[0_0_15px_rgba(34,197,94,0.2)]' 
                         : 'text-slate-500 hover:text-slate-300'
                     }`}
-                    title={`Ver en moneda local (${currency})`}
                   >
-                    ACTIVAR
+                    CONVERSIÓN
                   </button>
                 </div>
-                
-                {/* Local Currency Picker */}
-                <div className="h-4 w-px bg-border/50 mx-1" />
-                <div className={`flex gap-1 transition-all duration-300 ${!isConversionActive ? 'opacity-30 grayscale pointer-events-none' : 'opacity-100'}`}>
-                  {(Object.keys(dynamicCurrencies) as CurrencyCode[]).filter(c => c !== 'USD').map((code) => (
-                    <button
-                      key={code}
-                      onClick={() => {
-                        setCurrency(code);
-                        setIsConversionActive(true);
-                      }}
-                      className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
-                        currency === code ? 'bg-neon/10 text-neon border border-neon/30' : 'text-slate-500 hover:text-white'
-                      }`}
-                    >
-                      {code}
-                    </button>
-                  ))}
-                </div>
+
+                {isConversionActive && (
+                  <div className="flex gap-1 p-1 bg-background rounded-lg border border-border/50 animate-in fade-in slide-in-from-right-1">
+                    {(['PEN', 'GTQ'] as CurrencyCode[]).map((code) => (
+                      <button
+                        key={code}
+                        onClick={() => setCurrency(code)}
+                        className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
+                          currency === code ? 'bg-neon/10 text-neon border border-neon/30' : 'text-slate-500 hover:text-white'
+                        }`}
+                      >
+                        {code === 'PEN' ? 'Soles (S/)' : 'Quetzales (Q)'}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              {isConversionActive && currency !== 'USD' && (
+              {isConversionActive && (
                 <div className="flex flex-col items-end mt-1.5 animate-in fade-in slide-in-from-top-1">
                    {currencyError ? (
                      <div className="flex items-center gap-1.5 text-[9px] text-amber-500 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
@@ -766,6 +765,14 @@ function AppContent() {
                   currencySymbol={currencyInfo.symbol} 
                   currency={currency}
                   setCurrency={setCurrency}
+                  isConversionActive={isConversionActive}
+                  currencies={dynamicCurrencies}
+                />
+              )}
+              {activeTab === 'sales' && (
+                <SalesManagement 
+                  formatCurrency={formatCurrency} 
+                  currency={currency}
                   isConversionActive={isConversionActive}
                   currencies={dynamicCurrencies}
                 />

@@ -97,7 +97,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* P&L Table */}
-        <div className="lg:col-span-2 glass-card overflow-hidden">
+        <div className="lg:col-span-2 glass-card overflow-hidden bg-black">
           <div className="p-6 border-b border-border bg-white/5 flex items-center justify-between">
             <h3 className="text-base font-display font-bold text-white flex items-center gap-2">
               <FileText size={16} className="text-neon" /> Profit & Loss Statement
@@ -154,7 +154,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({ orders, formatCurre
         </div>
 
         {/* Expense Breakdown Chart */}
-        <div className="glass-card p-8">
+        <div className="glass-card p-8 bg-black">
           <h3 className="text-xl font-display font-bold text-white mb-8">Estructura de Costos</h3>
           <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">

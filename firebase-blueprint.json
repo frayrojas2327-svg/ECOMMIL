@@ -55,6 +55,75 @@
         "timestamp": { "type": "number" }
       },
       "required": ["uid", "name", "timestamp"]
+    },
+    "SalePeriod": {
+      "title": "Sale Period",
+      "description": "Information about a sales period for Guatemaldropi",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "month": { "type": "string" },
+        "startDate": { "type": "string", "format": "date" },
+        "endDate": { "type": "string", "format": "date" },
+        "withdrawalDropi": { "type": "number" },
+        "withdrawalBankName": { "type": "string" },
+        "commission": { "type": "number" },
+        "withdrawalBank": { "type": "number" },
+        "adsSpend": { "type": "number" },
+        "platformExpenses": { "type": "number" },
+        "shopifyOrders": { "type": "number", "description": "Number of orders entered in Shopify" },
+        "cancelledOrders": { "type": "number", "description": "Number of cancelled orders" },
+        "dropiOrders": { "type": "number", "description": "Number of orders uploaded to Dropi" },
+        "tiktokOrders": { "type": "number", "description": "Number of TikTok orders" },
+        "dropiCancelled": { "type": "number", "description": "Number of orders cancelled in Dropi" },
+        "returnedOrders": { "type": "number", "description": "Number of returned orders" },
+        "tags": { "type": "string", "description": "Tags for filtering periods" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "month", "startDate", "endDate"]
+    },
+    "MarketResearchItem": {
+      "title": "Market Research Item",
+      "description": "Details about a market research analysis for a product.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "productName": { "type": "string" },
+        "storeUrls": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": { "type": "string" },
+        "videoUrls": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["uid", "productName", "timestamp"]
+    },
+    "AdExpense": {
+      "title": "Advertising Expense",
+      "description": "An isolated advertising investment record per product and platform",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "accountName": { "type": "string" },
+        "platform": { "type": "string" },
+        "amount": { "type": "number" },
+        "originalAmount": { "type": "number" },
+        "originalCurrency": { "type": "string" },
+        "conversionRate": { "type": "number" },
+        "timestamp": { "type": "number" },
+        "notes": { "type": "string" },
+        "color": { "type": "string" }
+      },
+      "required": ["uid", "productId", "date", "platform", "amount", "timestamp"]
     }
   },
   "firestore": {
@@ -65,6 +134,18 @@
     "savedProducts/{productId}": {
       "schema": "SavedProduct",
       "description": "Collection of saved product calculations"
+    },
+    "salePeriods/{periodId}": {
+      "schema": "SalePeriod",
+      "description": "Collection of sales periods for tracking profit and withdrawals"
+    },
+    "ad_expenses/{expenseId}": {
+      "schema": "AdExpense",
+      "description": "Collection of advertising expenses"
+    },
+    "market_research/{researchId}": {
+      "schema": "MarketResearchItem",
+      "description": "Collection of market research and product analysis"
     }
   }
 }

@@ -106,36 +106,18 @@ export default function AdvertisingExpenses({
   }, [notification]);
 
   const localFormatCurrency = (amount: number, expense?: AdvertisingExpense) => {
+    // Just use the passed global formatter, or apply current currency rate
     const info = currencies[currency];
-    const isUSD = !isConversionActive;
-    const targetCurrency = isUSD ? 'USD' : currency;
-
-    // Fixed logic: If we are viewing in a currency that matches the original registration currency,
-    // show the EXACT original amount to prevent "numbers changing" due to TRM volatility.
-    if (expense && expense.originalCurrency === targetCurrency && expense.originalAmount !== undefined) {
-      return new Intl.NumberFormat(undefined, {
-        style: 'currency',
-        currency: targetCurrency,
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2,
-      }).format(expense.originalAmount);
-    }
-
-    let converted = amount;
-    if (!isUSD) {
-      if (expense && expense.conversionRate && expense.originalCurrency === 'USD' && targetCurrency === currency) {
-        converted = amount * info.rate;
-      } else {
-        converted = amount * info.rate;
-      }
-    }
-    
-    // Safety rounding to avoid float precision artifacts
+    const converted = amount * info.rate;
     const rounded = Math.round(converted * 100) / 100;
-    
-    return new Intl.NumberFormat(undefined, {
+
+    // Choose locale based on currency
+    const locale = currency === 'PEN' ? 'es-PE' : 'es-GT';
+
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: targetCurrency,
+      currency: currency,
+      currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
     }).format(rounded);

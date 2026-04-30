@@ -219,7 +219,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Main Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 fintech-card p-8">
+        <div className="lg:col-span-2 fintech-card p-8 bg-black">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-xl font-display font-bold text-white">Rentabilidad Diaria</h3>
@@ -288,7 +288,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* Top/Bottom Products */}
-        <div className="fintech-card p-8 flex flex-col">
+        <div className="fintech-card p-8 flex flex-col bg-black">
           <h3 className="text-xl font-display font-bold text-white mb-6">Ranking de Productos</h3>
           
           <div className="space-y-6 flex-1">
@@ -327,7 +327,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Heatmap & Goal Calculator */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-3 fintech-card p-8">
+        <div className="lg:col-span-3 fintech-card p-8 bg-black">
           <h3 className="text-xl font-display font-bold text-white mb-6">Mapa de Calor de Rentabilidad</h3>
           <div className="grid grid-cols-7 gap-2">
             {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(day => (

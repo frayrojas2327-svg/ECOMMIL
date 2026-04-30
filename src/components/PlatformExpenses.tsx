@@ -47,20 +47,16 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   isConversionActive = false
 }) => {
   const localFormatCurrency = (amount: number) => {
-    const isUSD = !isConversionActive;
-    const targetCurrency = isUSD ? 'USD' : currency;
     const rate = currencies[currency]?.rate || 1;
-    
-    let converted = amount;
-    if (!isUSD) {
-      converted = amount * rate;
-    }
-    
+    const converted = amount * rate;
     const rounded = Math.round(converted * 100) / 100;
     
-    return new Intl.NumberFormat(undefined, {
+    // Choose locale based on currency
+    const locale = currency === 'PEN' ? 'es-PE' : 'es-GT';
+    
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: targetCurrency,
+      currency: currency,
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
