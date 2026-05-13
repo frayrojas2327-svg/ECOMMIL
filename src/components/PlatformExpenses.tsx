@@ -16,6 +16,8 @@ interface FixedExpense {
   name: string;
   category: string;
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
   frequency: 'monthly' | 'yearly';
   startDate: string;
   endDate: string;
@@ -25,6 +27,8 @@ interface VariableExpense {
   id: string;
   name: string;
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
   startDate: string;
   endDate: string;
 }
@@ -46,7 +50,19 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   currencies,
   isConversionActive = false
 }) => {
-  const localFormatCurrency = (amount: number) => {
+  const localFormatCurrency = (amount: number, expense?: FixedExpense | VariableExpense) => {
+    // If we have original currency that matches current, use it exactly
+    if (expense?.originalAmount !== undefined && expense?.originalCurrency === currency) {
+      const locale = currency === 'PEN' ? 'es-PE' : 'es-GT';
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: currency,
+        currencyDisplay: 'symbol',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      }).format(expense.originalAmount);
+    }
+
     const rate = currencies[currency]?.rate || 1;
     const converted = amount * rate;
     const rounded = Math.round(converted * 100) / 100;
@@ -108,6 +124,8 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
     const newExpense: FixedExpense = {
       ...newFixed,
       amount: amountToSave,
+      originalAmount: newFixed.amount,
+      originalCurrency: currency,
       id: Math.random().toString(36).substr(2, 9)
     };
     setFixedExpenses([...fixedExpenses, newExpense]);
@@ -125,10 +143,12 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   const addVariableExpense = () => {
     const info = currencies[currency];
     const amountToSave = newVariable.amount / info.rate;
-
+    
     const newExpense: VariableExpense = {
       ...newVariable,
       amount: amountToSave,
+      originalAmount: newVariable.amount,
+      originalCurrency: currency,
       id: Math.random().toString(36).substr(2, 9)
     };
     setVariableExpenses([...variableExpenses, newExpense]);
@@ -451,7 +471,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="text-[15px] font-mono text-white">{localFormatCurrency(expense.amount)}</span>
+                        <span className="text-[15px] font-mono text-white">{localFormatCurrency(expense.amount, expense)}</span>
                         <button 
                           onClick={() => setEditingId(expense.id)}
                           className="p-1 text-slate-500 hover:text-neon transition-colors opacity-0 group-hover:opacity-100"
@@ -508,7 +528,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                     )}
                   </td>
                   <td className="p-3 text-[15px] font-mono text-neon font-bold">
-                    {localFormatCurrency(expense.frequency === 'monthly' ? expense.amount : expense.amount / 12)}
+                    {localFormatCurrency(expense.frequency === 'monthly' ? expense.amount : expense.amount / 12, expense)}
                   </td>
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
@@ -566,7 +586,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="text-[15px] font-mono text-white">{localFormatCurrency(expense.amount)}</span>
+                        <span className="text-[15px] font-mono text-white">{localFormatCurrency(expense.amount, expense)}</span>
                         <button 
                           onClick={() => setEditingId(expense.id)}
                           className="p-1 text-slate-500 hover:text-gold transition-colors opacity-0 group-hover:opacity-100"
@@ -606,7 +626,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                     )}
                   </td>
                   <td className="p-3 text-[15px] font-mono text-gold font-bold">
-                    {localFormatCurrency(expense.amount)} <span className="text-[10px] text-slate-500 font-normal">(Unitario)</span>
+                    {localFormatCurrency(expense.amount, expense)} <span className="text-[10px] text-slate-500 font-normal">(Unitario)</span>
                   </td>
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">

@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 // Import the Firebase configuration
 import firebaseConfig from '../firebase-applet-config.json';
@@ -14,6 +15,7 @@ export const isFirebaseConfigValid =
 let app;
 let db: any;
 let auth: any;
+let storage: any;
 
 try {
   if (isFirebaseConfigValid) {
@@ -22,18 +24,21 @@ try {
       experimentalForceLongPolling: true
     }, firebaseConfig.firestoreDatabaseId);
     auth = getAuth(app);
+    storage = getStorage(app);
   } else {
     app = null;
     db = null;
     auth = { currentUser: null, onAuthStateChanged: (cb: any) => { cb(null); return () => {}; } };
+    storage = null;
   }
 } catch (e) {
   app = null;
   db = null;
   auth = { currentUser: null, onAuthStateChanged: (cb: any) => { cb(null); return () => {}; } };
+  storage = null;
 }
 
-export { db, auth };
+export { db, auth, storage };
 export const googleProvider = isFirebaseConfigValid ? new GoogleAuthProvider() : null;
 
 // Auth helpers

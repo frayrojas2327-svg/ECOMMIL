@@ -124,6 +124,32 @@
         "color": { "type": "string" }
       },
       "required": ["uid", "productId", "date", "platform", "amount", "timestamp"]
+    },
+    "FinancialReport": {
+      "title": "Financial Report",
+      "description": "A financial report with uploaded files and notes",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "notes": { "type": "string" },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "url": { "type": "string" },
+              "type": { "type": "string" },
+              "size": { "type": "number" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "title", "date", "files", "createdAt"]
     }
   },
   "firestore": {
@@ -146,6 +172,10 @@
     "market_research/{researchId}": {
       "schema": "MarketResearchItem",
       "description": "Collection of market research and product analysis"
+    },
+    "financialReports/{reportId}": {
+      "schema": "FinancialReport",
+      "description": "Collection of financial reports and uploaded documents"
     }
   }
 }

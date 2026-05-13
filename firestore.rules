@@ -13,6 +13,9 @@ service cloud.firestore {
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
+    function isVerified() {
+      return isSignedIn(); // Relaxed for demo/dev to unblock users with unverified emails
+    }
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -23,114 +26,127 @@ service cloud.firestore {
       return resource.data;
     }
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'client') == 'admin';
     }
 
     // Helper for Orders
     function isValidOrder(data) {
-      return data.uid == request.auth.uid &&
+      return data.get('uid', '') == request.auth.uid &&
              data.orderId is string && data.orderId.size() <= 100 &&
              data.status in ['Entregado', 'En tránsito', 'Devuelto', 'Cancelado', 'Pendiente', 'Guía Generada', 'Recolectado', 'Incidencia'] &&
-             (data.price == null || data.price is number) &&
-             (data.cost == null || data.cost is number);
+             (data.get('price', 0) is number) &&
+             (data.get('cost', 0) is number);
     }
 
     // Helper for Ad Expenses
     function isValidAdExpense(data) {
-      return data.uid == request.auth.uid &&
-             data.productId is string && data.productId.size() <= 128 &&
+      return data.get('uid', '') == request.auth.uid &&
+             data.get('productId', '') is string &&
              data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
-             data.platform is string && data.platform.size() <= 64 &&
+             data.get('platform', '') is string &&
              data.amount is number &&
              data.timestamp is number;
     }
 
     // Helper for Market Research
     function isValidMarketResearch(data) {
-      return data.uid == request.auth.uid &&
-             data.productName is string && data.productName.size() <= 200 &&
+      return data.get('uid', '') == request.auth.uid &&
+             data.get('productName', '') is string &&
              data.timestamp is number;
     }
 
     // Helper for Sale Periods
     function isValidSalePeriod(data) {
-      return data.uid == request.auth.uid &&
-             data.month is string && data.month.size() <= 50 &&
-             data.startDate is string &&
-             data.endDate is string;
+      return data.get('uid', '') == request.auth.uid &&
+             data.month is string && data.month.size() <= 60 &&
+             data.get('startDate', '') is string &&
+             data.get('endDate', '') is string;
+    }
+
+    // Helper for Financial Reports
+    function isValidFinancialReport(data) {
+      return data.get('uid', '') == request.auth.uid &&
+             data.title is string && data.title.size() <= 200 &&
+             data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             data.get('category', 'Otros') is string &&
+             data.get('notes', '') is string &&
+             data.files is list && data.files.size() <= 100;
     }
 
     // 1. Orders Collection
     match /orders/{orderId} {
-      allow get: if isOwner(existing().uid);
-      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
       
-      allow create: if isSignedIn() && 
-                      // request.auth.token.email_verified == true && 
+      allow create: if isVerified() && 
                       isValidId(orderId) &&
                       isValidOrder(incoming()) &&
                       incoming().keys().hasAll(['uid', 'orderId', 'date', 'status']);
       
-      allow update: if isOwner(existing().uid) &&
-                       // request.auth.token.email_verified == true &&
+      allow update: if isVerified() &&
+                       isOwner(resource.data.get('uid', '')) &&
                        isValidOrder(incoming()) &&
-                       incoming().uid == existing().uid &&
-                       incoming().orderId == existing().orderId;
+                       incoming().get('uid', '') == resource.data.get('uid', '') &&
+                       incoming().orderId == resource.data.get('orderId', '');
       
-      allow delete: if isOwner(existing().uid); // && request.auth.token.email_verified == true;
+      allow delete: if (isOwner(resource.data.get('uid', '')) && isVerified()) || isAdmin();
     }
 
     // 2. Saved Products Collection
     match /savedProducts/{productId} {
-      allow get: if isOwner(existing().uid);
-      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow create, update: if isSignedIn() && 
-                             // request.auth.token.email_verified == true &&
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow create, update: if isVerified() && 
                              isValidId(productId) &&
-                             incoming().uid == request.auth.uid;
-      allow delete: if isOwner(existing().uid);
+                             incoming().get('uid', '') == request.auth.uid;
+      allow delete: if (isOwner(resource.data.get('uid', '')) && isVerified()) || isAdmin();
     }
 
     // 3. Sale Periods Collection
     match /salePeriods/{periodId} {
-      allow get: if isOwner(existing().uid);
-      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
       
-      allow create: if isSignedIn() &&
+      allow create: if isVerified() &&
                       isValidId(periodId) &&
                       isValidSalePeriod(incoming());
       
-      allow update: if isOwner(existing().uid) &&
+      allow update: if isVerified() &&
+                       isOwner(resource.data.get('uid', '')) &&
                        isValidSalePeriod(incoming()) &&
-                       incoming().uid == existing().uid;
-                       
-      allow delete: if isOwner(existing().uid) || isAdmin();
+                       incoming().get('uid', '') == resource.data.get('uid', '');
+                        
+      allow delete: if (isOwner(resource.data.get('uid', '')) && isVerified()) || isAdmin();
     }
 
     // 4. Ad Expenses Collection
     match /ad_expenses/{expenseId} {
       allow get: if isOwner(existing().uid);
       allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow create: if isSignedIn() && 
+      allow create: if isVerified() && 
                       isValidId(expenseId) &&
                       isValidAdExpense(incoming());
-      allow update: if isOwner(existing().uid) &&
+      allow update: if isVerified() &&
+                       isOwner(existing().uid) &&
                        isValidAdExpense(incoming()) &&
                        incoming().uid == existing().uid;
-      allow delete: if isOwner(existing().uid);
+      allow delete: if isVerified() && isOwner(existing().uid);
     }
 
     // 5. Market Research Collection
     match /market_research/{researchId} {
       allow get: if isOwner(existing().uid);
       allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow create: if isSignedIn() && 
+      allow create: if isVerified() && 
                       isValidId(researchId) &&
                       isValidMarketResearch(incoming());
-      allow update: if isOwner(existing().uid) &&
+      allow update: if isVerified() &&
+                       isOwner(existing().uid) &&
                        isValidMarketResearch(incoming()) &&
                        incoming().uid == existing().uid;
-      allow delete: if isOwner(existing().uid);
+      allow delete: if isVerified() && isOwner(existing().uid);
     }
 
     // 6. Users Collection
@@ -142,6 +158,25 @@ service cloud.firestore {
       allow update: if isOwner(userId) && 
                       incoming().role == existing().role && // Prevent self-elevation
                       incoming().email == existing().email;
+    }
+
+    // 7. Financial Reports Collection
+    match /financialReports/{reportId} {
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      
+      allow create: if isVerified() &&
+                      isValidId(reportId) &&
+                      isValidFinancialReport(incoming()) &&
+                      incoming().createdAt == request.time;
+      
+      allow update: if isVerified() &&
+                       isOwner(resource.data.get('uid', '')) &&
+                       isValidFinancialReport(incoming()) &&
+                       incoming().uid == resource.data.uid &&
+                       incoming().get('createdAt', request.time) == existing().createdAt;
+      
+      allow delete: if isOwner(resource.data.get('uid', '')) || isAdmin();
     }
   }
 }

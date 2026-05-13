@@ -114,6 +114,7 @@ function AppContent() {
   }, []);
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [periods, setPeriods] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -163,6 +164,24 @@ function AppContent() {
       setLoadingOrders(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'orders');
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Fetch sale periods from Firestore for global stats
+  useEffect(() => {
+    if (!user || isDemoMode || !isFirebaseConfigValid) return;
+
+    const q = query(collection(db, 'salePeriods'), where('uid', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const periodsData = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      }));
+      setPeriods(periodsData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'salePeriods');
     });
 
     return () => unsubscribe();
@@ -315,6 +334,49 @@ function AppContent() {
   };
 
   const stats = useMemo(() => {
+    // If we have manual periods, they are the source of truth for high-level KPIs
+    if (periods.length > 0) {
+      const totalRevenue = 0; // SalePeriods don't have revenue directly, usually withdrawal bank is the proxy for "money in"
+      // But orders are better for revenue if they exist.
+      // However, for percentages, we use periods.
+      
+      const sumAds = periods.reduce((acc, p) => acc + (p.adsSpend || 0), 0);
+      const totalWithdrawalBank = periods.reduce((acc, p) => acc + (p.withdrawalBank || 0), 0);
+      const totalExpenses = periods.reduce((acc, p) => acc + (p.platformExpenses || 0), 0);
+      
+      const totalShopify = periods.reduce((acc, p) => acc + (p.shopifyOrders || 0), 0);
+      const totalDropiOrders = periods.reduce((acc, p) => acc + (p.dropiOrders || 0), 0);
+      const totalReturned = periods.reduce((acc, p) => acc + (p.returnedOrders || 0), 0);
+      const totalDelivered = periods.reduce((acc, p) => acc + (p.deliveredOrders || 0), 0);
+      
+      const returnRate = totalDropiOrders > 0 ? (totalReturned / totalDropiOrders) * 100 : 0;
+      const deliveredRate = totalDropiOrders > 0 ? (totalDelivered / totalDropiOrders) * 100 : 0;
+      
+      // Calculate revenue from orders for the dashboard card
+      let ordersRevenue = 0;
+      orders.forEach(o => {
+        ordersRevenue += calculateOrderProfit(o).revenue;
+      });
+
+      const usedAds = manualAdSpend > 0 ? manualAdSpend : sumAds;
+      const finalNetProfit = totalWithdrawalBank - usedAds - totalExpenses;
+      
+      const margin = ordersRevenue > 0 ? (finalNetProfit / ordersRevenue) * 100 : 0;
+      const roas = usedAds > 0 ? ordersRevenue / usedAds : 0;
+
+      return {
+        totalRevenue: ordersRevenue,
+        totalNetProfit: finalNetProfit,
+        margin,
+        roas,
+        roi: 0, // Simplified for now
+        healthScore: 70,
+        totalAds: usedAds,
+        autoAds: sumAds,
+        returnRate // Expose return rate for Dashboard alerts
+      };
+    }
+
     let totalRevenue = 0;
     let totalNetProfit = 0;
     let sumAds = 0;
@@ -330,13 +392,6 @@ function AppContent() {
       totalShipping += order.shippingReal;
     });
 
-    // If manual ad spend is provided, we adjust the total net profit
-    // Total Net Profit currently includes sumAds already subtracted in calculateOrderProfit?
-    // Wait, let's re-examine calculateOrderProfit.
-    // Yes: netProfit = revenue - cost - shippingReal - adsCost - finalFees;
-    // So if we want to use manualAdSpend instead of sumAds:
-    // we need to add back sumAds and subtract manualAdSpend.
-    
     const usedAds = manualAdSpend > 0 ? manualAdSpend : sumAds;
     const finalNetProfit = manualAdSpend > 0 
       ? (totalNetProfit + sumAds - manualAdSpend) 
@@ -348,7 +403,6 @@ function AppContent() {
       ? (finalNetProfit / (totalCost + totalShipping + usedAds)) * 100 
       : 0;
 
-    // Health Score calculation
     const returnRate = orders.length > 0 ? (orders.filter(o => o.status === 'Devuelto').length / orders.length) * 100 : 0;
     const healthScore = Math.max(0, Math.min(100, 
       (margin * 2) + (roi / 2) + (100 - returnRate * 5)
@@ -362,9 +416,10 @@ function AppContent() {
       roi, 
       healthScore,
       totalAds: usedAds,
-      autoAds: sumAds
+      autoAds: sumAds,
+      returnRate
     };
-  }, [orders, manualAdSpend]);
+  }, [orders, periods, manualAdSpend]);
 
   const menuItems = [
     { id: 'dashboard', label: 'Panel Control', icon: LayoutDashboard },

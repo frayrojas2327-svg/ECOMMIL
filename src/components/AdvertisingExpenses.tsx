@@ -106,7 +106,19 @@ export default function AdvertisingExpenses({
   }, [notification]);
 
   const localFormatCurrency = (amount: number, expense?: AdvertisingExpense) => {
-    // Just use the passed global formatter, or apply current currency rate
+    // If we have an expense with original amount and currency, and it matches current view, use it exactly
+    if (expense?.originalAmount !== undefined && expense?.originalCurrency === currency) {
+      const locale = currency === 'PEN' ? 'es-PE' : 'es-GT';
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: currency,
+        currencyDisplay: 'symbol',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      }).format(expense.originalAmount);
+    }
+
+    // Otherwise use the passed global formatter, or apply current currency rate
     const info = currencies[currency];
     const converted = amount * info.rate;
     const rounded = Math.round(converted * 100) / 100;
@@ -833,14 +845,14 @@ export default function AdvertisingExpenses({
                             <input 
                               type="number"
                               step="0.01"
-                              value={tempEdit?.amount ? Number((tempEdit.amount * (isConversionActive ? currencies[currency].rate : 1)).toFixed(2)).toString() : ''}
+                              value={tempEdit?.originalAmount && tempEdit.originalCurrency === currency ? tempEdit.originalAmount : (tempEdit?.amount ? Number((tempEdit.amount * (isConversionActive ? currencies[currency].rate : 1)).toFixed(2)) : '')}
                               onChange={(e) => {
                                 const valString = e.target.value;
                                 const val = parseFloat(valString) || 0;
-                                const rate = currencies[currency].rate;
+                                const rate = isConversionActive ? currencies[currency].rate : 1;
                                 setTempEdit({ 
                                   ...tempEdit!, 
-                                  amount: isConversionActive ? val / rate : val,
+                                  amount: val / rate,
                                   originalAmount: val,
                                   originalCurrency: isConversionActive ? currency : 'USD',
                                   conversionRate: rate
