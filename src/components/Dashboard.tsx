@@ -144,7 +144,10 @@ const Dashboard: React.FC<DashboardProps> = ({
               <input 
                 type="number"
                 value={manualAdSpend || ''}
-                onChange={(e) => setManualAdSpend?.(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? 0 : Number(e.target.value);
+                  setManualAdSpend?.(val);
+                }}
                 placeholder="0.00"
                 className="bg-black/40 border border-white/10 rounded-md py-1 px-2 text-[11px] text-white font-mono w-[80px] focus:border-gold outline-none transition-all text-right"
               />

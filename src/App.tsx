@@ -41,6 +41,7 @@ import PlatformExpenses from './components/PlatformExpenses';
 import KPIPanel from './components/KPIPanel';
 import Settings from './components/Settings';
 import SalesManagement from './components/SalesManagement';
+import { FloatingAIAssistant } from './components/FloatingAIAssistant';
 import { AuthProvider, AuthScreen, useAuth } from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Logo } from './components/Logo';
@@ -334,8 +335,13 @@ function AppContent() {
   };
 
   const stats = useMemo(() => {
-    // If we have manual periods, they are the source of truth for high-level KPIs
-    if (periods.length > 0) {
+    const rate = isConversionActive ? (dynamicCurrencies[currency]?.rate || 1) : 1;
+    // VERY IMPORTANT: manualAdSpend is stored in the DISPLAY currency in state/localStorage,
+    // so we must divide it by rate to convert to our internal base currency (USD).
+    const manualAdSpendInUSD = manualAdSpend > 0 ? (manualAdSpend / rate) : 0;
+
+    // If we have manual periods and NO orders, they are the source of truth for high-level KPIs
+    if (orders.length === 0 && periods.length > 0) {
       const totalRevenue = 0; // SalePeriods don't have revenue directly, usually withdrawal bank is the proxy for "money in"
       // But orders are better for revenue if they exist.
       // However, for percentages, we use periods.
@@ -358,7 +364,7 @@ function AppContent() {
         ordersRevenue += calculateOrderProfit(o).revenue;
       });
 
-      const usedAds = manualAdSpend > 0 ? manualAdSpend : sumAds;
+      const usedAds = manualAdSpend > 0 ? manualAdSpendInUSD : sumAds;
       const finalNetProfit = totalWithdrawalBank - usedAds - totalExpenses;
       
       const margin = ordersRevenue > 0 ? (finalNetProfit / ordersRevenue) * 100 : 0;
@@ -392,9 +398,9 @@ function AppContent() {
       totalShipping += order.shippingReal;
     });
 
-    const usedAds = manualAdSpend > 0 ? manualAdSpend : sumAds;
+    const usedAds = manualAdSpend > 0 ? manualAdSpendInUSD : sumAds;
     const finalNetProfit = manualAdSpend > 0 
-      ? (totalNetProfit + sumAds - manualAdSpend) 
+      ? (totalNetProfit + sumAds - manualAdSpendInUSD) 
       : totalNetProfit;
 
     const margin = totalRevenue > 0 ? (finalNetProfit / totalRevenue) * 100 : 0;
@@ -419,7 +425,7 @@ function AppContent() {
       autoAds: sumAds,
       returnRate
     };
-  }, [orders, periods, manualAdSpend]);
+  }, [orders, periods, manualAdSpend, currency, isConversionActive, dynamicCurrencies]);
 
   const menuItems = [
     { id: 'dashboard', label: 'Panel Control', icon: LayoutDashboard },
@@ -895,6 +901,18 @@ function AppContent() {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Global State-Aware voice guided AI Assistant */}
+      <FloatingAIAssistant
+        orders={orders}
+        stats={stats}
+        periods={periods}
+        formatCurrency={formatCurrency}
+        currency={currency}
+        currencies={dynamicCurrencies}
+        isConversionActive={isConversionActive}
+        activeTab={activeTab}
+      />
     </div>
   );
 }

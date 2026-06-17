@@ -375,7 +375,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         const normalize = (amount: number) => {
           // Internal values must ALWAYS be stored in USD for consistency.
           // Since Dropi/Shopify imports are typically in local currency, we divide by exchangeRate.
-          if (!exchangeRate || exchangeRate === 1) return amount;
+          if (!isConversionActive || !exchangeRate || exchangeRate === 1) return amount;
           return amount / exchangeRate;
         };
 

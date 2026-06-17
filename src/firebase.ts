@@ -7,7 +7,7 @@ import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Detect if configuration is placeholder/invalid
-export const isFirebaseConfigValid = 
+export let isFirebaseConfigValid = 
   !!firebaseConfig.apiKey && 
   firebaseConfig.apiKey !== 'remixed-api-key' && 
   firebaseConfig.apiKey.includes('AIzaSy'); // Google API keys usually start with AIzaSy
@@ -32,6 +32,8 @@ try {
     storage = null;
   }
 } catch (e) {
+  console.error("Firebase initialization failed, falling back to mock/demo mode:", e);
+  isFirebaseConfigValid = false;
   app = null;
   db = null;
   auth = { currentUser: null, onAuthStateChanged: (cb: any) => { cb(null); return () => {}; } };
