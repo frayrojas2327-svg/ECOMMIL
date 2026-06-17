@@ -51,3 +51,32 @@
 .secondary-glow {
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
 }
+
+/* Force Recharts Tooltips and active cursors to have black backgrounds and dark aesthetics */
+.recharts-default-tooltip {
+  background-color: #000000 !important;
+  border: 1px solid #1a1a1a !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8) !important;
+}
+
+.recharts-tooltip-item {
+  color: #ffffff !important;
+}
+
+.recharts-tooltip-label {
+  color: #ffffff !important;
+  font-weight: bold !important;
+}
+
+/* Override white/gray hovering block on charts to be a subtle black transition */
+.recharts-rectangle.recharts-tooltip-cursor {
+  fill: #000000 !important;
+  fill-opacity: 0.4 !important;
+}
+
+/* Fix any default sector or cell click shapes in Recharts Pie/Bar chart */
+.recharts-sector {
+  outline: none !important;
+}
+

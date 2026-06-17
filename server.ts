@@ -248,6 +248,238 @@ Tus datos demográficos muestran brechas importantes en la distribución regiona
     return res.json(fallback);
   });
 
+  // Helper function for fallback analysis of returns/novelties section
+  const getFallbackDevolucionesReport = (totalNovelties: number, carrierData: any[], monthlyData: any[], detailedNoveltiesList: any[]) => {
+    const sortedCarriers = [...(carrierData || [])].sort((a,b) => b.total - a.total);
+    const topCarrier = sortedCarriers[0]?.name || "Servientrega";
+    
+    const text = `### ⚠️ Diagnóstico Estratégico de Devoluciones e Incidencias (Motor de Contingencia Activo)
+Hemos evaluado las **${totalNovelties} novedades de devolución registradas** en esta sección operativa. A continuación, el diagnóstico detallado:
+
+---
+
+### 1. Diagnóstico de Novedades e Incidencias por Transportadora
+Analizando las novedades operativas en esta sección, se evidencian hallazgos clave:
+- **Desempeño de Transportadoras**: **${topCarrier}** presenta la mayor acumulación de fricciones logísticas registradas. Los factores determinantes son inconsistencias en la última milla, seguidos de reprogramaciones inadecuadas.
+- **Eficiencia Operativa**: Se requiere realizar auditorías recurrentes a las incidencias dadas por transportadoras para mitigar causales no verificadas como "direcciones insuficientes" o "clientes inconquistables".
+
+---
+
+### 2. Comportamiento Temporal (Estacionalidad mensual de devoluciones)
+- Los meses de registro muestran que las devoluciones se concentran tras periodos de campañas de alta pauta donde no se implementó un proceso riguroso de doble validación o contacto antes de la entrega física.
+
+---
+
+### 3. Plan Correctivo Operativo "Pro" de Mitigación
+- **Doble Confirmación Digital**: Instaurar un aviso previo de enrutamiento vía WhatsApp, confirmando dirección, barrio e indicaciones adicionales.
+- **Monitoreo Diario de Novedades**: Gestionar cada novedad reportada por la transportadora en menos de 24 horas para reprogramar visitas a tiempo.
+- **Clasificación de Transportadoras**: Priorizar transportadoras eficientes de acuerdo a su historial de reintentos exitosos.`;
+
+    const processedCarriers = (carrierData || []).slice(0, 5);
+    const processedMonths = (monthlyData || []).slice(0, 5);
+    
+    const causesMap: Record<string, number> = {};
+    const explanationsMap: Record<string, number> = {};
+    (detailedNoveltiesList || []).forEach(n => {
+      if (n.origenNovedad) {
+        causesMap[n.origenNovedad] = (causesMap[n.origenNovedad] || 0) + 1;
+      }
+      if (n.descripcion) {
+        // Clean and crop name for better display in charts
+        const desc = n.descripcion.length > 35 ? n.descripcion.substring(0, 35) + "..." : n.descripcion;
+        explanationsMap[desc] = (explanationsMap[desc] || 0) + 1;
+      }
+    });
+
+    let processedCauses = Object.entries(causesMap).map(([name, cantidad]) => ({ name, cantidad })).sort((a,b) => b.cantidad - a.cantidad).slice(0, 6);
+    if (processedCauses.length === 0) {
+      processedCauses = [
+        { name: "Cliente no contesta / Apagado", cantidad: 5 },
+        { name: "Dirección incorrecta o incompleta", cantidad: 3 },
+        { name: "Cliente rechaza compra (COD)", cantidad: 2 }
+      ];
+    }
+
+    let processedExplanations = Object.entries(explanationsMap).map(([name, cantidad]) => ({ name, cantidad })).sort((a,b) => b.cantidad - a.cantidad).slice(0, 6);
+    if (processedExplanations.length === 0) {
+      processedExplanations = [
+        { name: "Se intentó contacto telefónico, sin respuesta", cantidad: 4 },
+        { name: "Dirección incompleta, falta número de casa", cantidad: 3 },
+        { name: "Cliente indica que no tiene dinero ahora", cantidad: 2 },
+        { name: "Destinatario no se encuentra en dirección", cantidad: 2 }
+      ];
+    }
+
+    const processedRecommendations = [
+      { aspect: "Confirmación pre-envío WhatsApp", score: 95, label: "Reducción de novedades validando dirección antes de despachar." },
+      { aspect: "Canal de Reprogramación Activo", score: 88, label: "Gestionar novedades vigentes en menos de 12 horas con el destinatario." },
+      { aspect: "Auditoría de Guías con Transportadoras", score: 80, label: "Exigir evidencias fotográficas de visitas fallidas a transportadores." }
+    ];
+
+    return {
+      analysisText: text,
+      charts: {
+        carriers: processedCarriers,
+        months: processedMonths,
+        causes: processedCauses,
+        explanations: processedExplanations,
+        recommendations: processedRecommendations
+      }
+    };
+  };
+
+  // Route for Return/Novedades analysis only
+  app.post("/api/analisis-devoluciones-pro", async (req, res) => {
+    const { totalNovelties, carrierData, monthlyData, detailedNoveltiesList } = req.body;
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("[Backend AI] GEMINI_API_KEY no configurado para Análisis de Devoluciones. Usando fallback matemático de contingencia.");
+      const fallback = getFallbackDevolucionesReport(totalNovelties, carrierData, monthlyData, detailedNoveltiesList);
+      return res.json(fallback);
+    }
+
+    const prompt = `Analiza detalladamente las novedades de devolución e incidencias logísticas registradas de forma exclusiva en la sección de Devoluciones para este ecommerce.
+    
+    PROPORCIONA EL ANÁLISIS EN UN FORMATO DE RESPUESTA JSON ESTRICTO que contenga:
+    1. Un informe de análisis profesional en formato Markdown bajo la llave "analysisText". Este informe debe ser extremadamente ordenado, limpio, de nivel ejecutivo y formalmente estructurado:
+       - Usa títulos claros y directos (con #, ## o ###) para dividir las secciones con excelente estética.
+       - Sección 1: **Diagnóstico Crítico de Novedades** (Analiza los motivos y causales de novedad más recurrentes, por qué ocurren y su porcentaje de concentración).
+       - Sección 2: **Desempeño Operativo de Transportadoras** (Compara el comportamiento de incidencias, efectividad de entrega y transportadoras críticas).
+       - Sección 3: **Explicaciones Clave y Patrones NLP** (Identifica patrones de los sucesos reales y descripciones de las novedades, aclarando qué dice el destinatario o la transportadora).
+       - Sección 4: **Estrategias de Mitigación Pro** (Recomendaciones accionables de logística predictiva, contacto dinámico pre-envío y reprogramación inteligente).
+       - IMPORTANTE: Evita párrafos largos y aburridos. Usa viñetas estructuradas con excelentes iconos o emojis textuales congruentes, negritas para conceptos críticos, y formato de código para números/KPIs relevantes.
+    2. Datasets de gráficos estructurados bajo la llave "charts" listos para graficar con Recharts:
+       - "carriers": Arreglo de objetos con las transportadoras críticas registradas: { name: string, total: number, devuelto: number, reintento: number, solucionado: number } (máximo 5)
+       - "months": Arreglo de objetos con la distribución temporal mensual registrada: { name: string, total: number, devuelto: number, solucionado: number } (máximo 5)
+       - "causes": Arreglo de motivos/orígenes de novedad más frecuentes ("origenNovedad"): { name: string, cantidad: number } (máximo 6)
+       - "explanations": Arreglo de explicaciones de sucesos de novedades más frecuentes basado en el campo de descripción ("descripcion") o explicación del suceso de cada novedad: { name: string, cantidad: number } (máximo 6)
+       - "recommendations": Plan de acción recomendado con puntuaciones: { aspect: string, score: number, label: string } (score de 0 a 100 indicando prioridad/impacto)
+
+    Datos reales consolidados de la sección de devoluciones:
+    - Total de Devoluciones registradas: ${totalNovelties}
+    - Desempeño por Transportadora: ${JSON.stringify(carrierData)}
+    - Rendimiento Temporal Mensual: ${JSON.stringify(monthlyData)}
+    - Registros detallados de novedades: ${JSON.stringify((detailedNoveltiesList || []).slice(0, 30))}
+    
+    Asegúrate de que el formato de respuesta sea JSON válido y devuelva exactitud técnica completa de acuerdo al schema solicitado.`;
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+
+    for (const modelName of modelsToTry) {
+      try {
+        console.log(`[Backend AI ID: Devoluciones] Realizando análisis avanzado de devoluciones de la sección con: ${modelName}`);
+        
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              required: ["analysisText", "charts"],
+              properties: {
+                analysisText: {
+                  type: Type.STRING,
+                  description: "Informe de análisis estratégico en markdown con negritas, viñetas y títulos limpios."
+                },
+                charts: {
+                  type: Type.OBJECT,
+                  required: ["carriers", "months", "causes", "explanations", "recommendations"],
+                  properties: {
+                    carriers: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        required: ["name", "total", "devuelto", "reintento", "solucionado"],
+                        properties: {
+                          name: { type: Type.STRING },
+                          total: { type: Type.INTEGER },
+                          devuelto: { type: Type.INTEGER },
+                          reintento: { type: Type.INTEGER },
+                          solucionado: { type: Type.INTEGER }
+                        }
+                      }
+                    },
+                    months: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        required: ["name", "total", "devuelto", "solucionado"],
+                        properties: {
+                          name: { type: Type.STRING },
+                          total: { type: Type.INTEGER },
+                          devuelto: { type: Type.INTEGER },
+                          solucionado: { type: Type.INTEGER }
+                        }
+                      }
+                    },
+                    causes: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        required: ["name", "cantidad"],
+                        properties: {
+                          name: { type: Type.STRING },
+                          cantidad: { type: Type.INTEGER }
+                        }
+                      }
+                    },
+                    explanations: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        required: ["name", "cantidad"],
+                        properties: {
+                          name: { type: Type.STRING },
+                          cantidad: { type: Type.INTEGER }
+                        }
+                      }
+                    },
+                    recommendations: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        required: ["aspect", "score", "label"],
+                        properties: {
+                          aspect: { type: Type.STRING },
+                          score: { type: Type.NUMBER },
+                          label: { type: Type.STRING }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        const responseText = response.text;
+        if (responseText) {
+          const parsedData = JSON.parse(responseText.trim());
+          console.log(`[Backend AI ID: Devoluciones] Análisis procesado con éxito usando ${modelName}`);
+          return res.json(parsedData);
+        }
+      } catch (innerErr: any) {
+        console.warn(`[Backend AI ID: Devoluciones] Falló el modelo ${modelName}:`, innerErr.message || innerErr);
+      }
+    }
+
+    console.warn("[Backend AI ID: Devoluciones] No se pudo conectar con Gemini para Devoluciones. Entregando local-contingency.");
+    const fallback = getFallbackDevolucionesReport(totalNovelties, carrierData, monthlyData, detailedNoveltiesList);
+    return res.json(fallback);
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

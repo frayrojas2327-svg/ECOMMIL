@@ -150,6 +150,23 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "title", "date", "files", "createdAt"]
+    },
+    "ReturnNovelty": {
+      "title": "Return Novelty Log",
+      "description": "Log records for returned orders, incidents and novelties arisen during transit/return",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "orderId": { "type": "string" },
+        "productName": { "type": "string" },
+        "nombreCliente": { "type": "string" },
+        "fecha": { "type": "string", "format": "date" },
+        "origenNovedad": { "type": "string" },
+        "descripcion": { "type": "string" },
+        "resolucion": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["uid", "fecha", "origenNovedad", "descripcion", "timestamp"]
     }
   },
   "firestore": {
@@ -176,6 +193,10 @@
     "financialReports/{reportId}": {
       "schema": "FinancialReport",
       "description": "Collection of financial reports and uploaded documents"
+    },
+    "return_novelties/{noveltyId}": {
+      "schema": "ReturnNovelty",
+      "description": "Log records for incidents, return novelties, dates, edit and delete actions"
     }
   }
 }

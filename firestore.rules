@@ -75,6 +75,15 @@ service cloud.firestore {
              data.files is list && data.files.size() <= 100;
     }
 
+    // Helper for Return Novelties
+    function isValidReturnNovelty(data) {
+      return data.get('uid', '') == request.auth.uid &&
+             data.fecha is string && data.fecha.size() <= 60 &&
+             data.get('origenNovedad', '') is string && data.get('origenNovedad', '').size() <= 250 &&
+             data.get('descripcion', '') is string && data.get('descripcion', '').size() <= 2000 &&
+             data.timestamp is number;
+    }
+
     // 1. Orders Collection
     match /orders/{orderId} {
       allow get: if isOwner(resource.data.get('uid', ''));
@@ -123,30 +132,30 @@ service cloud.firestore {
 
     // 4. Ad Expenses Collection
     match /ad_expenses/{expenseId} {
-      allow get: if isOwner(existing().uid);
-      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
       allow create: if isVerified() && 
                       isValidId(expenseId) &&
                       isValidAdExpense(incoming());
       allow update: if isVerified() &&
-                       isOwner(existing().uid) &&
+                       isOwner(resource.data.get('uid', '')) &&
                        isValidAdExpense(incoming()) &&
-                       incoming().uid == existing().uid;
-      allow delete: if isVerified() && isOwner(existing().uid);
+                       incoming().get('uid', '') == resource.data.get('uid', '');
+      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
     }
 
     // 5. Market Research Collection
     match /market_research/{researchId} {
-      allow get: if isOwner(existing().uid);
-      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
       allow create: if isVerified() && 
                       isValidId(researchId) &&
                       isValidMarketResearch(incoming());
       allow update: if isVerified() &&
-                       isOwner(existing().uid) &&
+                       isOwner(resource.data.get('uid', '')) &&
                        isValidMarketResearch(incoming()) &&
-                       incoming().uid == existing().uid;
-      allow delete: if isVerified() && isOwner(existing().uid);
+                       incoming().get('uid', '') == resource.data.get('uid', '');
+      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
     }
 
     // 6. Users Collection
@@ -177,6 +186,23 @@ service cloud.firestore {
                        incoming().get('createdAt', request.time) == existing().createdAt;
       
       allow delete: if isOwner(resource.data.get('uid', '')) || isAdmin();
+    }
+
+    // 8. Return Novelties Collection
+    match /return_novelties/{noveltyId} {
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      
+      allow create: if isVerified() && 
+                      isValidId(noveltyId) &&
+                      isValidReturnNovelty(incoming());
+      
+      allow update: if isVerified() &&
+                       isOwner(resource.data.get('uid', '')) &&
+                       isValidReturnNovelty(incoming()) &&
+                       incoming().get('uid', '') == resource.data.get('uid', '');
+                       
+      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
     }
   }
 }
