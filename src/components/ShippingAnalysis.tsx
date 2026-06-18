@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
-import { Truck, TrendingDown, ShieldCheck, Zap, Globe, Search, MapPin, Map, AlertTriangle, AlertCircle, ChevronRight, Sliders } from 'lucide-react';
+import { Truck, TrendingDown, ShieldCheck, Zap, Globe, Search, MapPin, Map, AlertTriangle, AlertCircle, ChevronRight, Sliders, Bot, Sparkles, Loader2 } from 'lucide-react';
 import { Order, CurrencyCode } from '../mockData';
+import Markdown from 'react-markdown';
 
 interface ShippingAnalysisProps {
   orders: Order[];
@@ -17,6 +18,26 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
   const [semaforoFilter, setSemaforoFilter] = useState<'all' | 'green' | 'yellow' | 'red'>('all');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState('');
   const [selectedCarrierFilter, setSelectedCarrierFilter] = useState('');
+  
+  // Tag Filtering states (sin etiqueta / TikTok Orgánico)
+  const [tagFilter, setTagFilter] = useState<'all' | 'sin_etiqueta' | 'tiktok_organico'>('all');
+
+  // Ecommil AI Analysis states
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Mobile viewport detection to optimize chart rendering dynamically
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const localFormatCurrency = (amount: number) => {
     const isUSD = !isConversionActive;
@@ -39,9 +60,20 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     }).format(rounded);
   };
 
+  // Memoized filter for upstream orders based on tag filter choice
+  const filteredOrders = useMemo(() => {
+    if (tagFilter === 'sin_etiqueta') {
+      return orders.filter(o => !o.tags || o.tags.trim() === '');
+    }
+    if (tagFilter === 'tiktok_organico') {
+      return orders.filter(o => o.tags?.toLowerCase().includes('tik') && o.tags?.toLowerCase().includes('organ'));
+    }
+    return orders;
+  }, [orders, tagFilter]);
+
   const stats = useMemo(() => {
     // Exclude cancelled orders for shipping dynamics and deliverability calculations
-    const shippedOrders = orders.filter(o => o.status !== 'Cancelado');
+    const shippedOrders = filteredOrders.filter(o => o.status !== 'Cancelado');
     const totalOrdersCount = shippedOrders.length;
     
     let totalCharged = 0;
@@ -198,7 +230,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       citiesList, 
       carriersList 
     };
-  }, [orders]);
+  }, [filteredOrders]);
 
   // Filter elements computed dynamically
   const filteredDepts = useMemo(() => {
@@ -232,12 +264,24 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
   // Calculate dynamic dataset for the secondary distribution chart based on selected tab view
   const chartData = useMemo(() => {
     let sourceList: any[] = [];
-    if (activeTab === 'departamento') sourceList = filteredDepts;
-    else if (activeTab === 'ciudad') sourceList = filteredCities;
-    else sourceList = filteredCarriers;
+    let shouldSlice = false;
+    let sliceLimit = 6;
+    
+    if (activeTab === 'departamento') {
+      sourceList = filteredDepts;
+      shouldSlice = false; // Show all departments
+    } else if (activeTab === 'ciudad') {
+      sourceList = filteredCities;
+      shouldSlice = true;
+      sliceLimit = 12; // Allow more cities for better readability if filtered
+    } else {
+      sourceList = filteredCarriers;
+      shouldSlice = false; // Show all carriers
+    }
 
-    // Grab first 6 items for clean spacing in visual layout
-    return sourceList.slice(0, 6).map(item => ({
+    const itemsToProcess = shouldSlice ? sourceList.slice(0, sliceLimit) : sourceList;
+
+    return itemsToProcess.map(item => ({
       name: item.name,
       'Tasa de Entrega': parseFloat(item.deliveryRate.toFixed(1)),
       total: item.total,
@@ -453,7 +497,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
               </div>
 
               {/* Filters container (Dropdown + Search) */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+              <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2.5 w-full xl:w-auto">
                 {activeTab === 'ciudad' && (
                   <>
                     {/* Department Dropdown for Cities */}
@@ -461,13 +505,13 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       <select
                         value={selectedDeptFilter}
                         onChange={(e) => setSelectedDeptFilter(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full sm:w-36 occurrence-none appearance-none font-bold"
+                        className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-36 occurrence-none appearance-none font-bold"
                       >
                         <option value="">Filtro Deptos</option>
                         {stats.deptsList.map(dept => (
-                          <option key={dept.name} value={dept.name}>
-                            {dept.name}
-                          </option>
+                           <option key={dept.name} value={dept.name}>
+                             {dept.name}
+                           </option>
                         ))}
                       </select>
                       <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
@@ -480,13 +524,13 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       <select
                         value={selectedCarrierFilter}
                         onChange={(e) => setSelectedCarrierFilter(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full sm:w-36 occurrence-none appearance-none font-bold"
+                        className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-36 occurrence-none appearance-none font-bold"
                       >
                         <option value="">Filtro Carrier</option>
                         {stats.carriersList.map(carrier => (
-                          <option key={carrier.name} value={carrier.name}>
-                            {carrier.name}
-                          </option>
+                           <option key={carrier.name} value={carrier.name}>
+                             {carrier.name}
+                           </option>
                         ))}
                       </select>
                       <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
@@ -502,7 +546,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                     <select
                       value={selectedDeptFilter}
                       onChange={(e) => setSelectedDeptFilter(e.target.value)}
-                      className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full sm:w-44 occurrence-none appearance-none font-bold"
+                      className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-44 occurrence-none appearance-none font-bold"
                     >
                       <option value="">Filtro Deptos</option>
                       {stats.deptsList.map(dept => (
@@ -517,8 +561,71 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                   </div>
                 )}
 
+                {/* Filtro por Canal / Tag (TAC) dropdown */}
+                <div className="relative">
+                  <select
+                    value={tagFilter}
+                    onChange={(e) => {
+                      setTagFilter(e.target.value as any);
+                      setAiResult(null);
+                      setAiError(null);
+                    }}
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-44 occurrence-none appearance-none font-bold"
+                  >
+                    <option value="all">Canal: Todos</option>
+                    <option value="sin_etiqueta">Sin Etiqueta</option>
+                    <option value="tiktok_organico">TikTok Orgánico 🏷️</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
+                    ▼
+                  </div>
+                </div>
+
+                {/* Ecommil IA trigger button */}
+                <button
+                  onClick={async () => {
+                    setAiLoading(true);
+                    setAiError(null);
+                    try {
+                      const response = await fetch("/api/analisis-fletes-pro", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          totalCharged: stats.totalCharged,
+                          totalReal: stats.totalReal,
+                          totalShippingLoss: stats.totalShippingLoss,
+                          globalRate: stats.globalRate,
+                          deptsList: stats.deptsList.slice(0, 8),
+                          citiesList: stats.citiesList.slice(0, 15),
+                          carriersList: stats.carriersList,
+                          tagFilter: tagFilter
+                        })
+                      });
+                      if (!response.ok) {
+                        throw new Error("Ocurrió un problema de comunicación con Ecommil IA.");
+                      }
+                      const data = await response.json();
+                      setAiResult(data.analysisText);
+                    } catch (err: any) {
+                      console.error(err);
+                      setAiError(err.message || "Error al solicitar análisis. Por favor intenta de nuevo.");
+                    } finally {
+                      setAiLoading(false);
+                    }
+                  }}
+                  disabled={aiLoading}
+                  className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-black font-extrabold text-[14px] px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.2)] transition-all shrink-0 hover:scale-[1.02] active:scale-95 whitespace-nowrap"
+                >
+                  {aiLoading ? (
+                    <Loader2 className="animate-spin shrink-0" size={14} />
+                  ) : (
+                    <Sparkles className="shrink-0 text-black animate-pulse" size={14} />
+                  )}
+                  <span>Diagnóstico IA</span>
+                </button>
+
                 {/* Quick Search */}
-                <div className="relative w-full sm:w-60">
+                <div className="relative w-full xl:w-60">
                   <Search size={16} className="absolute left-2.5 top-2.5 text-slate-500" />
                   <input
                     type="text"
@@ -714,39 +821,6 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
         {/* RIGHT COLUMN: GRAPHICS & ACTIONABLE TIPS */}
         <div className="space-y-6 flex flex-col justify-between text-[15px]">
           
-          {/* DELIVERY RATES CHART */}
-          <div className="glass-card p-6 border border-slate-900 !bg-black">
-            <h3 className="text-[17px] font-display font-bold text-white mb-1 uppercase tracking-wide">Efectividad de Entrega %</h3>
-            <p className="text-[15px] text-slate-500 mb-6">Gráfica comparativa de tasa de éxito de los líderes en esta vista</p>
-            
-            {chartData.length === 0 ? (
-              <div className="h-[240px] flex items-center justify-center text-[15px] text-slate-600 bg-slate-950/20 rounded-xl border border-slate-900">
-                Filtros actuales excluyen todos los datos gráficos.
-              </div>
-            ) : (
-              <div className="h-[240px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} layout="vertical" margin={{ left: -10, right: 10, top: 5, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#101015" horizontal={true} vertical={false} />
-                    <XAxis type="number" domain={[0, 100]} stroke="#475569" fontSize={14} tickLine={false} axisLine={false} />
-                    <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={14} width={90} tickLine={false} axisLine={false} />
-                    <Tooltip 
-                      cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }}
-                      contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff', fontSize: '14px', fontFamily: 'DM Mono' }}
-                    />
-                    <Bar dataKey="Tasa de Entrega" radius={[0, 4, 4, 0]} barSize={16}>
-                      {chartData.map((entry, index) => {
-                        const barColor = entry.status === 'green' ? '#10b981' : entry.status === 'yellow' ? '#f59e0b' : '#ef4444';
-                        return <Cell key={`cell-${index}`} fill={barColor} />;
-                      })}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-
           {/* PREDICTIVE INSIGHT CARDS */}
           <div className="glass-card p-6 border border-slate-900 bg-slate-950/20 flex flex-col justify-between h-full min-h-[220px]">
             <div>
@@ -790,7 +864,120 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
           </div>
 
         </div>
+
+        {/* DELIVERY RATES CHART (FULL WIDTH UNDERNEATH THE METRIC / TABLE CONTENT) */}
+        <div className="lg:col-span-3 glass-card p-4 sm:p-6 border border-slate-900 !bg-black">
+          <h3 className="text-[17px] font-display font-bold text-white mb-1 uppercase tracking-wide">Efectividad de Entrega %</h3>
+          <p className="text-[15px] text-slate-500 mb-6">Gráfica comparativa de tasa de éxito de los líderes en esta vista</p>
+          
+          {chartData.length === 0 ? (
+            <div className="h-[280px] flex items-center justify-center text-[15px] text-slate-600 bg-slate-950/20 rounded-xl border border-slate-900">
+              Filtros actuales excluyen todos los datos gráficos.
+            </div>
+          ) : (
+            <div 
+              className="w-full"
+              style={{ height: isMobile ? `${Math.max(320, chartData.length * 32)}px` : '380px' }}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                {isMobile ? (
+                  /* Mobile: Vertical list (Horizontal bars going right) with all labels forced with interval={0} */
+                  <BarChart data={chartData} layout="vertical" margin={{ left: -10, right: 20, top: 5, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#101015" horizontal={false} vertical={true} />
+                    <XAxis type="number" domain={[0, 100]} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis 
+                      dataKey="name" 
+                      type="category" 
+                      stroke="#94a3b8" 
+                      fontSize={11} 
+                      width={110} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      interval={0} 
+                    />
+                    <Tooltip 
+                      cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }}
+                      contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff', fontSize: '13px', fontFamily: 'DM Mono' }}
+                    />
+                    <Bar dataKey="Tasa de Entrega" radius={[0, 4, 4, 0]} barSize={13}>
+                      {chartData.map((entry, index) => {
+                        const barColor = entry.status === 'green' ? '#10b981' : entry.status === 'yellow' ? '#f59e0b' : '#ef4444';
+                        return <Cell key={`cell-${index}`} fill={barColor} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                ) : (
+                  /* Desktop: Grid columns (Vertical bars going up) with rotated, fully visible labels and interval={0} */
+                  <BarChart data={chartData} margin={{ left: -10, right: 10, top: 10, bottom: 65 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#101015" horizontal={true} vertical={false} />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="#94a3b8" 
+                      fontSize={12} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      interval={0}
+                      angle={-35}
+                      textAnchor="end"
+                      height={65}
+                    />
+                    <YAxis type="number" domain={[0, 100]} stroke="#475569" fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip 
+                      cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }}
+                      contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
+                      itemStyle={{ color: '#fff', fontSize: '13px', fontFamily: 'DM Mono' }}
+                    />
+                    <Bar dataKey="Tasa de Entrega" radius={[4, 4, 0, 0]} barSize={28}>
+                      {chartData.map((entry, index) => {
+                        const barColor = entry.status === 'green' ? '#10b981' : entry.status === 'yellow' ? '#f59e0b' : '#ef4444';
+                        return <Cell key={`cell-${index}`} fill={barColor} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
       </div>
+
+      {/* AI ANALYSIS EXPANSION PANEL INDEPENDIENTE */}
+      {aiResult && (
+        <div className="glass-card p-6 border border-neon/20 !bg-[#050505] shadow-[0_0_30px_rgba(34,197,94,0.08)] rounded-2xl animate-in fade-in slide-in-from-top-4 duration-300 mt-6 animate-out fade-out duration-200">
+          <div className="flex items-center justify-between pb-4 border-b border-white/[0.08] mb-6 font-bold">
+            <div className="flex items-center gap-2.5">
+              <Bot className="text-neon" size={20} />
+              <div>
+                <h4 className="text-xs uppercase tracking-widest text-slate-500 font-display font-bold">Respuesta de IA Completada</h4>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-sm font-bold text-white">Ecommil LOGISTIC SPECIALIST</span>
+                  <span className="bg-neon/10 text-neon text-[8px] font-black tracking-widest uppercase px-1.5 py-0.5 rounded border border-neon/20">PRO ENGINE</span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setAiResult(null)}
+              className="text-xs text-slate-400 hover:text-white transition-colors cursor-pointer px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-800 font-bold"
+            >
+              Cerrar Diagnóstico [X]
+            </button>
+          </div>
+
+          <div className="markdown-body text-slate-300 prose prose-invert max-w-none text-[15px] leading-relaxed space-y-4">
+            <Markdown>{aiResult}</Markdown>
+          </div>
+        </div>
+      )}
+
+      {aiError && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex items-center gap-3 text-[15px] mt-6">
+          <AlertCircle size={16} />
+          {aiError}
+        </div>
+      )}
+
     </div>
   );
 };

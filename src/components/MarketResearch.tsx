@@ -3,6 +3,7 @@ import {
   Search, 
   Plus, 
   Trash2, 
+  Edit2,
   Link as LinkIcon, 
   Video, 
   FileText, 
@@ -12,7 +13,7 @@ import {
   Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, where, onSnapshot, doc, deleteDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, deleteDoc, addDoc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { useAuth } from './Auth';
 
@@ -31,6 +32,7 @@ export default function MarketResearch() {
   const [researchList, setResearchList] = useState<MarketResearchEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -90,7 +92,9 @@ export default function MarketResearch() {
         setFormData({ ...formData, storeUrls: [...formData.storeUrls, ''] });
       }
     } else {
-      setFormData({ ...formData, videoUrls: [...formData.videoUrls, ''] });
+      if (formData.videoUrls.length < 20) {
+        setFormData({ ...formData, videoUrls: [...formData.videoUrls, ''] });
+      }
     }
   };
 
@@ -130,9 +134,14 @@ export default function MarketResearch() {
     };
 
     if (isDemoMode || !isFirebaseConfigValid) {
-      const newEntry = { ...entryData, id: Math.random().toString(36).substr(2, 9) } as MarketResearchEntry;
-      setResearchList(prev => [newEntry, ...prev]);
+      if (editingId) {
+        setResearchList(prev => prev.map(item => item.id === editingId ? { ...item, ...entryData } : item));
+      } else {
+        const newEntry = { ...entryData, id: Math.random().toString(36).substr(2, 9) } as MarketResearchEntry;
+        setResearchList(prev => [newEntry, ...prev]);
+      }
       setShowAddForm(false);
+      setEditingId(null);
       setFormData({
         productName: '',
         storeUrls: [''],
@@ -145,9 +154,15 @@ export default function MarketResearch() {
     if (!db) return;
 
     try {
-      await addDoc(collection(db, 'market_research'), entryData);
+      if (editingId) {
+        const ref = doc(db, 'market_research', editingId);
+        await setDoc(ref, entryData, { merge: true });
+      } else {
+        await addDoc(collection(db, 'market_research'), entryData);
+      }
       
       setShowAddForm(false);
+      setEditingId(null);
       setFormData({
         productName: '',
         storeUrls: [''],
@@ -192,7 +207,16 @@ export default function MarketResearch() {
           <p className="text-slate-500 text-sm">Analiza la competencia y recopila referencias para tus productos</p>
         </div>
         <button 
-          onClick={() => setShowAddForm(true)}
+          onClick={() => {
+            setEditingId(null);
+            setFormData({
+              productName: '',
+              storeUrls: [''],
+              notes: '',
+              videoUrls: ['']
+            });
+            setShowAddForm(true);
+          }}
           className="bg-neon text-background font-bold px-4 py-2 rounded-xl flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-neon/20"
         >
           <Plus size={18} /> Nueva Investigación
@@ -210,10 +234,28 @@ export default function MarketResearch() {
             <div className="absolute top-0 left-0 w-1 h-full bg-neon" />
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
-                <Plus className="text-neon" size={20} /> Registrar Investigación
+                {editingId ? (
+                  <>
+                    <Edit2 className="text-neon" size={20} /> Editar Investigación
+                  </>
+                ) : (
+                  <>
+                    <Plus className="text-neon" size={20} /> Registrar Investigación
+                  </>
+                )}
               </h3>
               <button 
-                onClick={() => setShowAddForm(false)}
+                type="button"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setEditingId(null);
+                  setFormData({
+                    productName: '',
+                    storeUrls: [''],
+                    notes: '',
+                    videoUrls: ['']
+                  });
+                }}
                 className="text-slate-500 hover:text-white transition-colors"
               >
                 Cancelar
@@ -275,11 +317,12 @@ export default function MarketResearch() {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">URLs de Videos (Referencias)</label>
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">URLs de Videos (Referencias - Máx 20)</label>
                   <button 
                     type="button"
                     onClick={() => handleAddUrl('video')}
-                    className="text-xs text-neon hover:underline flex items-center gap-1"
+                    disabled={formData.videoUrls.length >= 20}
+                    className="text-xs text-neon hover:underline flex items-center gap-1 disabled:opacity-50"
                   >
                     <Plus size={12} /> Agregar URL
                   </button>
@@ -327,7 +370,7 @@ export default function MarketResearch() {
                 type="submit"
                 className="w-full bg-neon text-background font-bold py-3 rounded-xl hover:brightness-110 transition-all shadow-lg shadow-neon/20"
               >
-                Guardar Investigación
+                {editingId ? 'Actualizar Investigación' : 'Guardar Investigación'}
               </button>
             </form>
           </motion.div>
@@ -363,17 +406,37 @@ export default function MarketResearch() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                   <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(item.id);
+                    onClick={() => {
+                      setEditingId(item.id);
+                      setFormData({
+                        productName: item.productName || '',
+                        storeUrls: item.storeUrls && item.storeUrls.length ? [...item.storeUrls] : [''],
+                        notes: item.notes || '',
+                        videoUrls: item.videoUrls && item.videoUrls.length ? [...item.videoUrls] : ['']
+                      });
+                      setShowAddForm(true);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
+                    className="p-2 text-slate-500 hover:text-neon transition-colors"
+                    title="Editar"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(item.id)}
                     className="p-2 text-slate-500 hover:text-red-500 transition-colors"
+                    title="Eliminar"
                   >
                     <Trash2 size={16} />
                   </button>
-                  {expandedId === item.id ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                  <button
+                    onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                    className="p-2 text-slate-500 hover:text-white transition-colors"
+                  >
+                    {expandedId === item.id ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                  </button>
                 </div>
               </div>
 
@@ -389,7 +452,7 @@ export default function MarketResearch() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-3">
                           <h4 className="text-xs font-display uppercase tracking-widest text-neon font-bold flex items-center gap-2">
-                            <LinkIcon size={14} /> Tiendas Encontradas
+                            <LinkIcon size={14} /> Tiendas Encontradas ({item.storeUrls.length})
                           </h4>
                           <div className="space-y-2">
                             {item.storeUrls.map((url, idx) => (
@@ -409,7 +472,7 @@ export default function MarketResearch() {
 
                         <div className="space-y-3">
                           <h4 className="text-xs font-display uppercase tracking-widest text-blue-400 font-bold flex items-center gap-2">
-                            <Video size={14} /> Videos de Referencia
+                            <Video size={14} /> Videos de Referencia ({item.videoUrls.length})
                           </h4>
                           <div className="space-y-2">
                             {item.videoUrls.map((url, idx) => (

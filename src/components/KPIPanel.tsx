@@ -87,13 +87,44 @@ const KPIPanel: React.FC<KPIPanelProps> = ({
 }) => {
   const [tagFilterPro, setTagFilterPro] = useState('TODOS');
 
+  // Dynamically extract other tags from actual orders in alphabetical order
+  const availableTags = useMemo(() => {
+    const tagsSet = new Set<string>();
+    parentOrders.forEach(o => {
+      if (o.tags && o.tags.trim() !== '') {
+        const rawTags = o.tags.split(',');
+        rawTags.forEach(raw => {
+          const clean = raw.trim();
+          if (clean !== '') {
+            const lowerClean = clean.toLowerCase();
+            if (
+              lowerClean !== 'tik tok organico' && 
+              lowerClean !== 'tiktok organico' && 
+              lowerClean !== 'sin etiqueta' &&
+              lowerClean !== 'sin_etiqueta'
+            ) {
+              tagsSet.add(clean);
+            }
+          }
+        });
+      }
+    });
+    return Array.from(tagsSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [parentOrders]);
+
   const orders = useMemo(() => {
     return parentOrders.filter(o => {
+      const orderTagLower = o.tags?.toLowerCase() || '';
       if (tagFilterPro === 'SIN ETIQUETA') {
         return !o.tags || o.tags.trim() === '';
       }
-      if (tagFilterPro === 'CON ETIQUETA') {
-        return !!(o.tags && o.tags.trim() !== '');
+      if (tagFilterPro === 'TIK_TOK_ORGANICO') {
+        return orderTagLower.includes('tik tok organico') || orderTagLower.includes('tiktok organico') || (orderTagLower.includes('tik') && orderTagLower.includes('organ'));
+      }
+      if (tagFilterPro !== 'TODOS') {
+        const targetLower = tagFilterPro.toLowerCase();
+        const individualTags = orderTagLower.split(',').map(t => t.trim());
+        return individualTags.includes(targetLower) || orderTagLower.includes(targetLower);
       }
       return true;
     });
@@ -362,7 +393,7 @@ const KPIPanel: React.FC<KPIPanelProps> = ({
           </div>
 
           {/* Filtro de Etiquetas */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 animate-in fade-in duration-300">
             <span className="text-[9px] uppercase tracking-widest text-slate-500 font-black">ETIQUETAS:</span>
             <div className="flex bg-background/50 rounded-lg p-0.5 border border-border focus-within:border-gold transition-all">
               <select 
@@ -370,9 +401,20 @@ const KPIPanel: React.FC<KPIPanelProps> = ({
                 onChange={(e) => setTagFilterPro(e.target.value)}
                 className="bg-transparent border-none py-1 px-2 text-[10px] font-black tracking-widest text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-7"
               >
-                <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
-                <option value="SIN ETIQUETA" className="bg-[#111] text-[#ef4444]">SIN ETIQUETA</option>
-                <option value="CON ETIQUETA" className="bg-[#111] text-neon">TIK TOK ORGANICO</option>
+                <optgroup label="PRINCIPALES" className="bg-[#111] text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                  <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
+                  <option value="SIN ETIQUETA" className="bg-[#111] text-[#ef4444]">SIN ETIQUETA</option>
+                  <option value="TIK_TOK_ORGANICO" className="bg-[#111] text-neon">TIK TOK ORGANICO</option>
+                </optgroup>
+                {availableTags.length > 0 && (
+                  <optgroup label="OTRAS ETIQUETAS" className="bg-[#111] text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                    {availableTags.map(tag => (
+                      <option key={tag} value={tag} className="bg-[#111] text-sky-400">
+                        {tag.toUpperCase()}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           </div>

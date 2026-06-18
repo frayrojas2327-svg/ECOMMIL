@@ -167,6 +167,23 @@
         "timestamp": { "type": "number" }
       },
       "required": ["uid", "fecha", "origenNovedad", "descripcion", "timestamp"]
+    },
+    "FinancialOverride": {
+      "title": "Financial Override",
+      "description": "Customized financial report values per month to override default calculations",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "monthKey": { "type": "string", "description": "Format: YYYY-MM" },
+        "revenue": { "type": "number" },
+        "cogs": { "type": "number" },
+        "shipping": { "type": "number" },
+        "ads": { "type": "number" },
+        "fees": { "type": "number" },
+        "returnsLoss": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "monthKey", "revenue", "cogs", "shipping", "ads", "fees", "returnsLoss"]
     }
   },
   "firestore": {
@@ -197,6 +214,10 @@
     "return_novelties/{noveltyId}": {
       "schema": "ReturnNovelty",
       "description": "Log records for incidents, return novelties, dates, edit and delete actions"
+    },
+    "financialOverrides/{overrideId}": {
+      "schema": "FinancialOverride",
+      "description": "Collection of customized finance ratios and overrides per month"
     }
   }
 }

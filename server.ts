@@ -480,6 +480,100 @@ Analizando las novedades operativas en esta sección, se evidencian hallazgos cl
     return res.json(fallback);
   });
 
+  // Route for Fletes / Envíos Ecommil AI Analysis
+  app.post("/api/analisis-fletes-pro", async (req, res) => {
+    const { totalCharged, totalReal, totalShippingLoss, globalRate, deptsList, citiesList, carriersList, tagFilter } = req.body;
+    
+    const formattedLoss = `-$${Math.abs(totalShippingLoss || 0).toLocaleString()}`;
+    const textFallback = `### 🚀 Diagnóstico Logístico de Fletes y Distribución por Ecommil IA
+
+Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar la eficiencia en fletes y carriers.
+
+---
+
+### 1. Ineficiencias de Flete y Brecha de Cobros
+* **Déficit Consolidado**: Tu pérdida por flete absorbido asciende a **${formattedLoss}** (Flete cobrado al cliente es menor que el flete real de la transportadora).
+* **Fórmula de Mitigación**: El flete promedio cobrado es muy bajo respecto al flete real facturado por las transportadoras. Te aconsejamos incrementar el recargo general o establecer un recargo dinámico del **12% al 15%** para compras en municipios de difícil acceso.
+
+---
+
+### 2. Semáforo Regional y Desempeño Geográfico
+* **Zonas Rojas (<60% efectividad)**: Los departamentos y ciudades críticas muestran tasas de entrega ineficientes que duplican el costo de logística inversa (flete de ida y vuelta cobrado sin entrega).
+* **Solución de Enrutamiento**: Te recomendamos suspender temporalmente el método Contra Entrega (COD) en municipios críticos o delegar exclusivamente a las transportadoras con mejor desempeño.
+
+---
+
+### 3. Recomendaciones Inmediatas con Ecommil IA
+1. **Validación Preventiva Obligatoria**: Implementar un chatbot de confirmación pre-despacho automático para pedidos con etiquetas críticas de pauta digital o campañas.
+2. **Diferenciación de Tarifas por Carrier**: Asignar Transportadoras según el departamento destino obtenido en las métricas de mayor Tasa de Entrega.`;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("[Backend AI Fletes] GEMINI_API_KEY no configurado. Llamando al fallback local.");
+      return res.json({ analysisText: textFallback });
+    }
+
+    const prompt = `Analiza detalladamente las estadísticas y métricas de fletes de este ecommerce para optimizar la logística, fletes reales vs facturados, efectividad de transportadoras y costos. Filtro de tag actual aplicado: ${tagFilter || 'Ninguno'}.
+    
+    PROPORCIONA UN INFORME DE ANÁLISIS EN UN FORMATO DE RESPUESTA JSON ESTRICTO bajo la llave "analysisText" en formato Markdown. El informe debe presentarse de forma extremadamente de nivel ejecutivo, estética, limpia y profunda:
+    - Usa títulos claros y directos (con #, ## o ###).
+    - Sección 1: **Diagnóstico del Rendimiento de Fletes** (Analiza la pérdida de ${formattedLoss} por flete del total, la relación entre fletes reales ($${totalReal}) vs fletes cobrados ($${totalCharged})).
+    - Sección 2: **Análisis por Regiones y Ciudades Críticas** (Evalúa los mejores y peores destinos basados en: ${JSON.stringify((deptsList || []).slice(0, 5))} y ${JSON.stringify((citiesList || []).slice(0, 5))}).
+    - Sección 3: **Evaluación de Transportadoras** (Compara la efectividad de las transportadoras registradas: ${JSON.stringify((carriersList || []).slice(0, 5))} para indicar cuál es la recomendada).
+    - Sección 4: **Estrategias y Tácticas de Mitigación con Ecommil IA** (Da recomendaciones concretas y numéricas de recargos inteligentes, filtros de dirección y control del flete).
+    - IMPORTANTE: Evita párrafos largos. Usa viñetas estructuradas con iconos, negritas para conceptos críticos, y formato de código para números/KPIs.
+
+    Asegúrate de que la respuesta sea JSON con la llave "analysisText".`;
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+
+      for (const modelName of modelsToTry) {
+        try {
+          console.log(`[Backend AI Fletes] Realizando análisis con: ${modelName}`);
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                required: ["analysisText"],
+                properties: {
+                  analysisText: {
+                    type: Type.STRING,
+                    description: "Informe de análisis profundo en markdown para fletes y logística."
+                  }
+                }
+              }
+            }
+          });
+
+          const text = response.text;
+          if (text) {
+            const parsed = JSON.parse(text.trim());
+            return res.json(parsed);
+          }
+        } catch (innerErr: any) {
+          console.warn(`[Backend AI Fletes] Falló el modelo ${modelName}:`, innerErr.message || innerErr);
+        }
+      }
+    } catch (outerErr: any) {
+      console.error("[Backend AI Fletes] Error al inicializar o usar SDK de GoogleGenAI:", outerErr);
+    }
+
+    return res.json({ analysisText: textFallback });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

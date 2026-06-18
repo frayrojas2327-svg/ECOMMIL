@@ -10,7 +10,8 @@ import {
   CheckCircle2,
   Loader2,
   Globe,
-  RefreshCw
+  RefreshCw,
+  Palette
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CURRENCIES } from '../mockData';
@@ -24,6 +25,8 @@ interface SettingsProps {
   isConversionActive: boolean;
   setIsConversionActive: (active: boolean) => void;
   currencies: any;
+  theme: 'theme-light-white' | 'theme-dark-green' | 'theme-dark-blue';
+  setTheme: (theme: 'theme-light-white' | 'theme-dark-green' | 'theme-dark-blue') => void;
 }
 
 const Settings: React.FC<SettingsProps> = ({ 
@@ -34,7 +37,9 @@ const Settings: React.FC<SettingsProps> = ({
   setCurrency,
   isConversionActive,
   setIsConversionActive,
-  currencies
+  currencies,
+  theme,
+  setTheme
 }) => {
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
@@ -58,6 +63,101 @@ const Settings: React.FC<SettingsProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
+      {/* SECCIÓN PLAN REGISTRO DE PALETAS DE COLORES (TEMAS) */}
+      <div>
+        <h2 className="text-3xl font-display font-bold text-white tracking-tight flex items-center gap-3">
+          <Palette className="text-neon" /> Paleta de Colores
+        </h2>
+        <p className="text-slate-400 mt-2">Personaliza la estética visual y los contrastes de tu panel de control.</p>
+      </div>
+
+      <div className="glass-card p-6 border-border bg-card/50">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* Card 1: Verde Original */}
+          <button
+            onClick={() => setTheme('theme-dark-green')}
+            className={`p-5 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden group ${
+              theme === 'theme-dark-green'
+                ? 'bg-neon/10 border-neon shadow-lg shadow-neon/15 scale-[1.02]'
+                : 'bg-white/5 border-border hover:border-slate-500'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-neon">Verde Original</span>
+                {theme === 'theme-dark-green' && <CheckCircle2 size={16} className="text-neon" />}
+              </div>
+              <h3 className="text-base font-bold text-white font-display mb-1">Oscuridad Absoluta</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Nuestra interfaz clásica profunda y cyberpunk con acentos en verde de alta luminiscencia.
+              </p>
+            </div>
+            
+            <div className="flex gap-2 mt-4">
+              <span className="w-5 h-5 rounded-full bg-black border border-white/10" title="Fondo" />
+              <span className="w-5 h-5 rounded-full bg-[#0a0a0a] border border-white/10" title="Tarjeta" />
+              <span className="w-5 h-5 rounded-full bg-[#22c55e]" title="Acento" />
+            </div>
+          </button>
+
+          {/* Card 2: Cyber Azul */}
+          <button
+            onClick={() => setTheme('theme-dark-blue')}
+            className={`p-5 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden group ${
+              theme === 'theme-dark-blue'
+                ? 'bg-blue-500/10 border-blue-500 shadow-lg shadow-blue-500/15 scale-[1.02]'
+                : 'bg-white/5 border-border hover:border-slate-500'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-400">Cyber Azul</span>
+                {theme === 'theme-dark-blue' && <CheckCircle2 size={16} className="text-blue-400" />}
+              </div>
+              <h3 className="text-base font-bold text-white font-display mb-1">Azul Ciberespacio</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Estilo tecnológico de bases azul noche y realces de cielo digital para una elegancia relajada.
+              </p>
+            </div>
+            
+            <div className="flex gap-2 mt-4">
+              <span className="w-5 h-5 rounded-full bg-[#030712] border border-white/10" title="Fondo" />
+              <span className="w-5 h-5 rounded-full bg-[#0b0f19] border border-white/10" title="Tarjeta" />
+              <span className="w-5 h-5 rounded-full bg-[#2563eb]" title="Acento" />
+            </div>
+          </button>
+
+          {/* Card 3: Blanco Limpio */}
+          <button
+            onClick={() => setTheme('theme-light-white')}
+            className={`p-5 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden group ${
+              theme === 'theme-light-white'
+                ? 'bg-emerald-500/10 border-emerald-500 shadow-lg shadow-emerald-500/15 scale-[1.02]'
+                : 'bg-white/5 border-border hover:border-slate-500'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-600">Blanco Limpio</span>
+                {theme === 'theme-light-white' && <CheckCircle2 size={16} className="text-emerald-600" />}
+              </div>
+              <h3 className="text-base font-bold text-slate-900 font-display mb-1">Luz Diurna Minimalista</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Tema de fondo blanco resplandeciente con tarjetas en color puro y realces en verde esmeralda.
+              </p>
+            </div>
+            
+            <div className="flex gap-2 mt-4">
+              <span className="w-5 h-5 rounded-full bg-[#f8fafc] border border-slate-200" title="Fondo" />
+              <span className="w-5 h-5 rounded-full bg-white border border-slate-200" title="Tarjeta" />
+              <span className="w-5 h-5 rounded-full bg-[#10b981]" title="Acento" />
+            </div>
+          </button>
+
+        </div>
+      </div>
+
       <div>
         <h2 className="text-3xl font-display font-bold text-white tracking-tight flex items-center gap-3">
           <Database className="text-neon" /> Gestión de Datos

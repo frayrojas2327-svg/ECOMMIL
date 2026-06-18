@@ -161,7 +161,8 @@ export const generateMockData = (): Order[] => {
       tipoEnvio: 'Nacional',
       direccion: 'Calle ' + Math.floor(Math.random() * 100) + ' # ' + Math.floor(Math.random() * 50),
       numeroFactura: 'FE-' + (5000 + i),
-      fueSolucionadaNovedad: 'No'
+      fueSolucionadaNovedad: 'No',
+      tags: Math.random() < 0.25 ? 'tik tok organico' : Math.random() < 0.15 ? 'facebook ads' : undefined
     });
   }
 

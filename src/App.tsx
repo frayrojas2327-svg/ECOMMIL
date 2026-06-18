@@ -71,6 +71,19 @@ function AppContent() {
     return saved ? Number(saved) : 0;
   });
 
+  const [theme, setTheme] = useState<'theme-light-white' | 'theme-dark-green' | 'theme-dark-blue'>(() => {
+    const saved = localStorage.getItem('profit_os_theme');
+    return (saved as any) || 'theme-dark-green';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('profit_os_theme', theme);
+    // Remove previous theme classes and apply the active one
+    const root = document.documentElement;
+    root.classList.remove('theme-light-white', 'theme-dark-green', 'theme-dark-blue');
+    root.classList.add(theme);
+  }, [theme]);
+
   useEffect(() => {
     localStorage.setItem('profit_os_currency', currency);
   }, [currency]);
@@ -118,6 +131,24 @@ function AppContent() {
   const [periods, setPeriods] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  const activeTabContentRef = useRef<HTMLDivElement>(null);
+
+  // Scroll mobile active tab into view and reset scroll position of the content
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const activeEl = document.getElementById(`mobile-tab-${activeTab}`);
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+    }, 100);
+
+    if (activeTabContentRef.current) {
+      activeTabContentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    return () => clearTimeout(timer);
+  }, [activeTab]);
 
   // Fetch orders from Firestore
   useEffect(() => {
@@ -463,11 +494,11 @@ function AppContent() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* Sidebar */}
+      {/* Sidebar - hidden on mobile, visible on desktop */}
       <motion.aside 
         initial={false}
         animate={{ width: isSidebarCollapsed ? 80 : 260 }}
-        className="border-r border-border bg-card flex flex-col z-20"
+        className="hidden md:flex border-r border-border bg-card flex-col z-20"
       >
         <div className="p-6 flex flex-col items-center gap-4">
           {isSidebarCollapsed ? (
@@ -612,33 +643,33 @@ function AppContent() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* Top Bar */}
-        <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-8 z-10">
-          <div className="flex items-center gap-6">
+        <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-10">
+          <div className="flex items-center gap-3 md:gap-6">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-display text-slate-500 uppercase tracking-tighter">Health Score</span>
+              <span className="text-[10px] sm:text-xs font-display text-slate-500 uppercase tracking-tighter">Health Score</span>
               <div className="flex items-center gap-2">
-                <div className="w-24 h-1.5 bg-border rounded-full overflow-hidden">
+                <div className="w-16 sm:w-24 h-1.5 bg-border rounded-full overflow-hidden hidden sm:block">
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: `${stats.healthScore}%` }}
                     className={`h-full ${stats.healthScore > 70 ? 'bg-neon' : stats.healthScore > 40 ? 'bg-gold' : 'bg-red-500'}`}
                   />
                 </div>
-                <span className={`text-sm font-mono font-bold ${stats.healthScore > 70 ? 'text-neon' : stats.healthScore > 40 ? 'text-gold' : 'text-red-500'}`}>
+                <span className={`text-xs sm:text-sm font-mono font-bold ${stats.healthScore > 70 ? 'text-neon' : stats.healthScore > 40 ? 'text-gold' : 'text-red-500'}`}>
                   {Math.round(stats.healthScore || 0)}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
             <div className="flex flex-col items-end">
-              <span className="text-[10px] font-mono text-slate-500 uppercase leading-none mb-1">Visualización General</span>
-              <div className="flex items-center gap-2 bg-card/50 border border-border rounded-xl p-1 shadow-inner backdrop-blur-sm">
+              <span className="text-[9px] font-mono text-slate-500 uppercase leading-none mb-1 hidden sm:inline">Visualización General</span>
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-card/50 border border-border rounded-xl p-1 shadow-inner backdrop-blur-sm">
                 <div className="flex bg-background rounded-lg p-0.5 border border-border/50">
                   <button
                     onClick={() => setIsConversionActive(false)}
-                    className={`px-3 py-1 rounded-md text-[10px] font-black tracking-widest transition-all ${
+                    className={`px-2 sm:px-3 py-1 rounded-md text-[9px] sm:text-[10px] font-black tracking-widest transition-all ${
                       !isConversionActive 
                         ? 'bg-red-500/20 text-red-500 border border-red-500/30' 
                         : 'text-slate-500 hover:text-slate-300'
@@ -648,44 +679,43 @@ function AppContent() {
                   </button>
                   <button
                     onClick={() => setIsConversionActive(true)}
-                    className={`px-3 py-1 rounded-md text-[10px] font-black tracking-widest transition-all ${
+                    className={`px-2 sm:px-3 py-1 rounded-md text-[9px] sm:text-[10px] font-black tracking-widest transition-all ${
                       isConversionActive 
                         ? 'bg-neon/20 text-neon border border-neon/30 shadow-[0_0_15px_rgba(34,197,94,0.2)]' 
                         : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
-                    CONVERSIÓN
+                    CONV
                   </button>
                 </div>
 
                 {isConversionActive && (
-                  <div className="flex gap-1 p-1 bg-background rounded-lg border border-border/50 animate-in fade-in slide-in-from-right-1">
+                  <div className="flex gap-0.5 sm:gap-1 p-0.5 sm:p-1 bg-background rounded-lg border border-border/50 animate-in fade-in slide-in-from-right-1">
                     {(['PEN', 'GTQ'] as CurrencyCode[]).map((code) => (
                       <button
                         key={code}
                         onClick={() => setCurrency(code)}
-                        className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
+                        className={`px-1.5 sm:px-2 py-1 rounded-md text-[9px] sm:text-[10px] font-mono font-bold transition-all ${
                           currency === code ? 'bg-neon/10 text-neon border border-neon/30' : 'text-slate-500 hover:text-white'
                         }`}
                       >
-                        {code === 'PEN' ? 'Soles (S/)' : 'Quetzales (Q)'}
+                        {code === 'PEN' ? 'S/' : 'Q'}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
               {isConversionActive && (
-                <div className="flex flex-col items-end mt-1.5 animate-in fade-in slide-in-from-top-1">
+                <div className="flex flex-col items-end mt-1 animate-in fade-in slide-in-from-top-1">
                    {currencyError ? (
-                     <div className="flex items-center gap-1.5 text-[9px] text-amber-500 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                       <AlertCircle size={10} />
-                       Usando tasas de respaldo (Offline)
+                     <div className="flex items-center gap-1 text-[8px] text-amber-500 font-bold bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20">
+                       Offline
                      </div>
                    ) : (
-                     <div className="flex items-center gap-1.5">
-                       <Globe size={10} className="text-neon animate-spin-slow" />
-                       <span className="text-[10px] font-mono text-neon/70 font-bold">
-                        1 USD = {dynamicCurrencies[currency].rate.toFixed(2)} {currency}
+                     <div className="flex items-center gap-1">
+                       <Globe size={8} className="text-neon animate-spin-slow" />
+                       <span className="text-[8px] sm:text-[10px] font-mono text-neon/70 font-bold">
+                        1 = {dynamicCurrencies[currency].rate.toFixed(2)} {currency}
                        </span>
                      </div>
                    )}
@@ -696,10 +726,10 @@ function AppContent() {
             <div className="relative">
               <button 
                 onClick={() => setShowNotifications(!showNotifications)}
-                className={`p-2 rounded-lg border transition-all relative ${showNotifications ? 'bg-neon/10 border-neon text-neon' : 'bg-card border-border text-slate-400 hover:text-white'}`}
+                className={`p-1.5 sm:p-2 rounded-lg border transition-all relative ${showNotifications ? 'bg-neon/10 border-neon text-neon' : 'bg-card border-border text-slate-400 hover:text-white'}`}
               >
-                <Bell size={18} />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-card"></span>
+                <Bell size={16} />
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full border border-card"></span>
               </button>
 
               <AnimatePresence>
@@ -708,7 +738,7 @@ function AppContent() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-80 bg-card border border-border rounded-2xl shadow-2xl p-4 z-50"
+                    className="absolute right-0 mt-2 w-72 bg-card border border-border rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in-50 duration-200"
                   >
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-xs font-display uppercase tracking-widest text-white font-bold">Alertas Smart</h3>
@@ -725,19 +755,48 @@ function AppContent() {
                 )}
               </AnimatePresence>
             </div>
-            <div className="h-8 w-px bg-border mx-2" />
-            <div className="flex items-center gap-3">
-              <GlowingAnalysisIcon size={24} />
+            
+            <div className="h-6 w-px bg-border mx-1 md:mx-2" />
+            
+            <div className="flex items-center gap-1.5 sm:gap-3">
+              <div className="hidden sm:block">
+                <GlowingAnalysisIcon size={20} />
+              </div>
               <div className="text-right">
-                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-display">Net Profit 30D</p>
-                <p className="text-lg font-mono font-bold text-neon">{formatCurrency(stats.totalNetProfit)}</p>
+                <p className="text-[8px] sm:text-[10px] uppercase tracking-widest text-slate-500 font-display">Net Profit</p>
+                <p className="text-xs sm:text-base font-mono font-bold text-neon">{formatCurrency(stats.totalNetProfit)}</p>
               </div>
             </div>
           </div>
         </header>
 
+        {/* Mobile Horizontal Navigation (No Icons on Mobile - Highly Optimized) */}
+        <div className="md:hidden bg-[#0A0A0A] border-b border-border/60 py-2.5 px-4 flex gap-2 overflow-x-auto scrollbar-none shrink-0" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+          {[
+            ...menuItems,
+            { id: 'sales', label: 'Ventas' },
+            { id: 'research', label: 'Investigación' },
+            { id: 'ads', label: 'Publicidad' },
+            { id: 'platform-expenses', label: 'Gastos Plataforma' },
+            { id: 'settings', label: 'Ajustes' }
+          ].map((item) => (
+            <button
+              key={item.id}
+              id={`mobile-tab-${item.id}`}
+              onClick={() => setActiveTab(item.id)}
+              className={`whitespace-nowrap px-4 py-1.5 rounded-xl text-xs font-display transition-all duration-200 ${
+                activeTab === item.id 
+                  ? 'bg-neon/10 text-neon border border-neon/30 font-bold shadow-[0_0_15px_rgba(34,197,94,0.1)]' 
+                  : 'text-slate-400 bg-card/20 border border-transparent hover:text-white'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
         {/* View Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div ref={activeTabContentRef} className="flex-1 overflow-y-auto p-4 md:p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -895,6 +954,8 @@ function AppContent() {
                   isConversionActive={isConversionActive}
                   setIsConversionActive={setIsConversionActive}
                   currencies={dynamicCurrencies}
+                  theme={theme}
+                  setTheme={setTheme}
                 />
               )}
             </motion.div>

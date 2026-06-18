@@ -84,6 +84,18 @@ service cloud.firestore {
              data.timestamp is number;
     }
 
+    // Helper for Financial Overrides
+    function isValidFinancialOverride(data) {
+      return data.get('uid', '') == request.auth.uid &&
+             data.monthKey is string && data.monthKey.matches('^\\d{4}-\\d{2}$') &&
+             data.revenue is number &&
+             data.cogs is number &&
+             data.shipping is number &&
+             data.ads is number &&
+             data.fees is number &&
+             data.returnsLoss is number;
+    }
+
     // 1. Orders Collection
     match /orders/{orderId} {
       allow get: if isOwner(resource.data.get('uid', ''));
@@ -200,6 +212,23 @@ service cloud.firestore {
       allow update: if isVerified() &&
                        isOwner(resource.data.get('uid', '')) &&
                        isValidReturnNovelty(incoming()) &&
+                       incoming().get('uid', '') == resource.data.get('uid', '');
+                       
+      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
+    }
+
+    // 9. Financial Overrides Collection
+    match /financialOverrides/{overrideId} {
+      allow get: if isOwner(resource.data.get('uid', ''));
+      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      
+      allow create: if isVerified() && 
+                      isValidId(overrideId) &&
+                      isValidFinancialOverride(incoming());
+      
+      allow update: if isVerified() &&
+                       isOwner(resource.data.get('uid', '')) &&
+                       isValidFinancialOverride(incoming()) &&
                        incoming().get('uid', '') == resource.data.get('uid', '');
                        
       allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));

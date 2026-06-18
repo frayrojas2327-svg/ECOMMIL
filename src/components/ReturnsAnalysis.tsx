@@ -25,6 +25,7 @@ export interface ReturnNovelty {
   timestamp: number;
   transportadora?: string;
   mes?: string;
+  etiquetaDevolucion?: string;
 }
 
 export interface SavedProduct {
@@ -154,6 +155,9 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
   const [formTransportadora, setFormTransportadora] = useState<string>('');
   const [formMes, setFormMes] = useState<string>('');
   const [noveltySearch, setNoveltySearch] = useState<string>('');
+  const [noveltyTagFilter, setNoveltyTagFilter] = useState<string>('TODOS');
+  const [noveltyDevolucionFilter, setNoveltyDevolucionFilter] = useState<string>('TODOS');
+  const [formEtiquetaDevolucion, setFormEtiquetaDevolucion] = useState<string>('');
 
   // Auto-sync month when fecha changes
   useEffect(() => {
@@ -252,6 +256,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
     setFormResolucion('🟡 En Proceso de Retorno / Bodega');
     setFormTransportadora('');
     setFormMes('');
+    setFormEtiquetaDevolucion('');
     setSelectedOrderId('manual');
     setShowManualProductInput(false);
     setIsFormOpen(false);
@@ -274,6 +279,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
       resolucion: formResolucion,
       transportadora: formTransportadora,
       mes: formMes,
+      etiquetaDevolucion: formEtiquetaDevolucion,
       timestamp: editingNovelty ? editingNovelty.timestamp : Date.now()
     };
 
@@ -310,6 +316,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
     setFormResolucion(item.resolucion);
     setFormTransportadora(item.transportadora || '');
     setFormMes(item.mes || getMonthFromDate(item.fecha));
+    setFormEtiquetaDevolucion(item.etiquetaDevolucion || '');
     setSelectedOrderId('manual');
     
     // Check if the current product name exists in saved products. If not, default to manual product input
@@ -337,10 +344,75 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
     return orders.filter(o => o.status === 'Devuelto' || o.status === 'Incidencia' || o.status === 'Cancelado');
   }, [orders]);
 
+  // Dynamically extract other tags from actual orders in alphabetical order
+  const availableTags = useMemo(() => {
+    const tagsSet = new Set<string>();
+    orders.forEach(o => {
+      if (o.tags && o.tags.trim() !== '') {
+        const rawTags = o.tags.split(',');
+        rawTags.forEach(raw => {
+          const clean = raw.trim();
+          if (clean !== '') {
+            const lowerClean = clean.toLowerCase();
+            if (
+              lowerClean !== 'tik tok organico' && 
+              lowerClean !== 'tiktok organico' && 
+              lowerClean !== 'sin etiqueta' &&
+              lowerClean !== 'sin_etiqueta'
+            ) {
+              tagsSet.add(clean);
+            }
+          }
+        });
+      }
+    });
+    return Array.from(tagsSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [orders]);
+
+  const orderLookupMap = useMemo(() => {
+    const map = new Map<string, Order>();
+    orders.forEach(o => {
+      if (o.orderId) map.set(o.orderId.toLowerCase(), o);
+      if (o.id) map.set(o.id.toLowerCase(), o);
+    });
+    return map;
+  }, [orders]);
+
   // Filter return novelties for listing
   const filteredNovelties = useMemo(() => {
     return novelties.filter(n => {
+      // Tag filter
+      if (noveltyTagFilter !== 'TODOS') {
+        const orderIdKey = n.orderId?.toLowerCase() || '';
+        const relatedOrder = orderLookupMap.get(orderIdKey);
+        const orderTagLower = relatedOrder?.tags?.toLowerCase() || '';
+
+        if (noveltyTagFilter === 'SIN ETIQUETA') {
+          const hasNoTags = !relatedOrder || !relatedOrder.tags || relatedOrder.tags.trim() === '';
+          if (!hasNoTags) return false;
+        } else if (noveltyTagFilter === 'TIK_TOK_ORGANICO') {
+          const isTikTok = orderTagLower.includes('tik tok organico') || orderTagLower.includes('tiktok organico') || (orderTagLower.includes('tik') && orderTagLower.includes('organ'));
+          if (!isTikTok) return false;
+        } else {
+          const targetLower = noveltyTagFilter.toLowerCase();
+          const individualTags = orderTagLower.split(',').map(t => t.trim());
+          const hasTag = individualTags.includes(targetLower) || orderTagLower.includes(targetLower);
+          if (!hasTag) return false;
+        }
+      }
+
+      // Return label filter
+      if (noveltyDevolucionFilter !== 'TODOS') {
+        const itemLabel = n.etiquetaDevolucion || '';
+        if (noveltyDevolucionFilter === 'SIN_ETIQUETA') {
+          if (itemLabel !== '') return false;
+        } else {
+          if (itemLabel.toLowerCase() !== noveltyDevolucionFilter.toLowerCase()) return false;
+        }
+      }
+
       const queryLower = noveltySearch.toLowerCase();
+      if (!queryLower) return true;
       return (
         n.nombreCliente?.toLowerCase().includes(queryLower) ||
         n.orderId?.toLowerCase().includes(queryLower) ||
@@ -352,7 +424,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
         n.mes?.toLowerCase().includes(queryLower)
       );
     });
-  }, [novelties, noveltySearch]);
+  }, [novelties, noveltySearch, noveltyTagFilter, noveltyDevolucionFilter, orderLookupMap]);
 
   const localFormatCurrency = (amount: number) => {
     const isUSD = !isConversionActive;
@@ -1093,15 +1165,33 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 </select>
               </div>
 
+              {/* Etiqueta por Devolución */}
+              <div className="space-y-2 md:col-span-1">
+                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Etiqueta por Devolución</label>
+                <select
+                  value={formEtiquetaDevolucion}
+                  onChange={(e) => setFormEtiquetaDevolucion(e.target.value)}
+                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                >
+                  <option value="" className="bg-[#111] text-slate-500">-- Ninguna / Sin Etiqueta --</option>
+                  <option value="TIK TOK ORGANICO" className="bg-[#111] text-neon font-bold">TIK TOK ORGANICO</option>
+                  <option value="RECORDAR EXPRES CENT" className="bg-[#111] text-sky-450 font-bold">RECORDAR EXPRES CENT</option>
+                  <option value="PEDIR BIEN DEPAR-CIU" className="bg-[#111] text-pink-450 font-bold">PEDIR BIEN DEPAR-CIU</option>
+                  <option value="PRUEBA" className="bg-[#111] text-yellow-450 font-bold">PRUEBA</option>
+                  <option value="DATOS INCORR-BUZON" className="bg-[#111] text-purple-450 font-bold">DATOS INCORR-BUZON</option>
+                  <option value="CLIENTE NO CONTESTA" className="bg-[#111] text-red-455 font-bold">CLIENTE NO CONTESTA</option>
+                </select>
+              </div>
+
               {/* Descripción detallada */}
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2 md:col-span-3">
                 <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Explicación por qué surgió la novedad (Copia chat o detalle)</label>
                 <textarea
                   required
                   placeholder="Detalla detalladamente qué causó la novedad. Ej: La transportadora reprogramó la entrega 2 veces..."
                   value={formDescripcion}
                   onChange={(e) => setFormDescripcion(e.target.value)}
-                  rows={2}
+                  rows={2.5}
                   className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold resize-none"
                 />
               </div>
@@ -1132,17 +1222,64 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
               Historial de Novedades Registradas ({filteredNovelties.length})
             </h4>
             
-            <div className="relative w-full sm:w-72">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 pointer-events-none">
-                <Search size={15} />
-              </span>
-              <input
-                type="text"
-                placeholder="Buscar novedad..."
-                value={noveltySearch}
-                onChange={(e) => setNoveltySearch(e.target.value)}
-                className="w-full bg-background/60 border border-border rounded-xl pl-9 pr-4 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-gold font-sans"
-              />
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              {/* Filtro de ETIQUETAS */}
+              <div className="flex items-center gap-2 bg-[#0c0c14] border border-border rounded-xl px-3 py-1.5 h-8">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Etiqueta de Pedido:</span>
+                <select 
+                  value={noveltyTagFilter}
+                  onChange={(e) => setNoveltyTagFilter(e.target.value)}
+                  className="bg-transparent border-none p-0 text-xs font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full"
+                >
+                  <optgroup label="PRINCIPALES" className="bg-[#111] text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                    <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
+                    <option value="SIN ETIQUETA" className="bg-[#111] text-[#ef4444]">SIN ETIQUETA</option>
+                    <option value="TIK_TOK_ORGANICO" className="bg-[#111] text-neon">TIK TOK ORGANICO</option>
+                  </optgroup>
+                  {availableTags.length > 0 && (
+                    <optgroup label="OTRAS ETIQUETAS" className="bg-[#111] text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                      {availableTags.map(tag => (
+                        <option key={tag} value={tag} className="bg-[#111] text-sky-400">
+                          {tag.toUpperCase()}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+
+              {/* Filtro de ETIQUETA POR DEVOLUCION */}
+              <div className="flex items-center gap-2 bg-[#0c0c14] border border-border rounded-xl px-3 py-1.5 h-8">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Etiqueta Devolución:</span>
+                <select 
+                  value={noveltyDevolucionFilter}
+                  onChange={(e) => setNoveltyDevolucionFilter(e.target.value)}
+                  className="bg-transparent border-none p-0 text-xs font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full"
+                >
+                  <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
+                  <option value="SIN_ETIQUETA" className="bg-[#111] text-[#ef4444]">SIN ETIQUETA</option>
+                  <option value="TIK TOK ORGANICO" className="bg-[#111] text-neon">TIK TOK ORGANICO</option>
+                  <option value="RECORDAR EXPRES CENT" className="bg-[#111] text-sky-400">RECORDAR EXPRES CENT</option>
+                  <option value="PEDIR BIEN DEPAR-CIU" className="bg-[#111] text-pink-400">PEDIR BIEN DEPAR-CIU</option>
+                  <option value="PRUEBA" className="bg-[#111] text-yellow-450">PRUEBA</option>
+                  <option value="DATOS INCORR-BUZON" className="bg-[#111] text-purple-400">DATOS INCORR-BUZON</option>
+                  <option value="CLIENTE NO CONTESTA" className="bg-[#111] text-red-400">CLIENTE NO CONTESTA</option>
+                </select>
+              </div>
+
+              {/* Búsqueda de novedad */}
+              <div className="relative w-full sm:w-64 h-8 flex items-center">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 pointer-events-none">
+                  <Search size={15} />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Buscar novedad..."
+                  value={noveltySearch}
+                  onChange={(e) => setNoveltySearch(e.target.value)}
+                  className="w-full bg-background/60 border border-border rounded-xl pl-9 pr-4 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-gold font-sans h-full"
+                />
+              </div>
             </div>
           </div>
 
@@ -1180,6 +1317,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                     <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">ID Pedido</th>
                     <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Guía / Tracking</th>
                     <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Cliente / Producto</th>
+                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Etiqueta Devolución</th>
                     <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Transportadora</th>
                     <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Incidencia / Causa</th>
                     <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Explicación Suceso</th>
@@ -1241,6 +1379,29 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                               <span className="text-[13px] text-slate-500 block italic truncate">{item.productName}</span>
                             )}
                           </div>
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap">
+                          {item.etiquetaDevolucion ? (
+                            <span 
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
+                                item.etiquetaDevolucion === 'TIK TOK ORGANICO'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                  : item.etiquetaDevolucion === 'RECORDAR EXPRES CENT'
+                                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                  : item.etiquetaDevolucion === 'PEDIR BIEN DEPAR-CIU'
+                                  ? 'bg-pink-500/10 text-pink-400 border-pink-500/20'
+                                  : item.etiquetaDevolucion === 'PRUEBA'
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : item.etiquetaDevolucion === 'DATOS INCORR-BUZON'
+                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                  : 'bg-red-500/10 text-red-400 border-red-500/20'
+                              }`}
+                            >
+                              {item.etiquetaDevolucion}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600 text-xs italic font-sans">— Sin Etiqueta —</span>
+                          )}
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
                           <span className="text-[14px] text-cyan-400 font-semibold bg-cyan-950/20 px-2.5 py-1 rounded-lg border border-cyan-500/10 block text-center max-w-[150px] truncate">
