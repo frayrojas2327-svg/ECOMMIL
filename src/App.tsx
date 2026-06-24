@@ -36,6 +36,7 @@ import ShippingAnalysis from './components/ShippingAnalysis';
 import FinancialSummary from './components/FinancialSummary';
 import AdvertisingExpenses from './components/AdvertisingExpenses';
 import MarketResearch from './components/MarketResearch';
+import AdPanel from './components/AdPanel';
 import LogisticsAI from './components/LogisticsAI';
 import PlatformExpenses from './components/PlatformExpenses';
 import KPIPanel from './components/KPIPanel';
@@ -73,7 +74,13 @@ function AppContent() {
 
   const [theme, setTheme] = useState<'theme-light-white' | 'theme-dark-green' | 'theme-dark-blue'>(() => {
     const saved = localStorage.getItem('profit_os_theme');
-    return (saved as any) || 'theme-dark-green';
+    const migrated = localStorage.getItem('profit_os_theme_migrated_v2');
+    if (!migrated) {
+      localStorage.setItem('profit_os_theme_migrated_v2', 'true');
+      localStorage.setItem('profit_os_theme', 'theme-light-white');
+      return 'theme-light-white';
+    }
+    return (saved as any) || 'theme-light-white';
   });
 
   useEffect(() => {
@@ -464,7 +471,7 @@ function AppContent() {
     { id: 'logistics-ai', label: 'Asesor IA', icon: Bot },
     { id: 'orders', label: 'DROPI', icon: ShoppingCart },
     { id: 'shopify', label: 'SHOPIFY', icon: Globe },
-    { id: 'consiliador-pro', label: 'TIKTOK PANEL', icon: Zap, isGlowing: true },
+    { id: 'consiliador-pro', label: 'FLUJOS ADS', icon: Zap, isGlowing: true },
     { id: 'calculator', label: 'Calculadora', icon: Calculator },
     { id: 'returns', label: 'Devoluciones', icon: RotateCcw },
     { id: 'shipping', label: 'Fletes', icon: Truck },
@@ -579,6 +586,17 @@ function AppContent() {
           >
             <Search size={20} className={activeTab === 'research' ? 'text-neon' : 'group-hover:text-neon'} />
             {!isSidebarCollapsed && <span className="font-medium">Investigación</span>}
+          </button>
+          <button
+            onClick={() => setActiveTab('ad-panel')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'ad-panel' 
+                ? 'bg-neon/10 text-neon border border-neon/20' 
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <TrendingUp size={20} className={activeTab === 'ad-panel' ? 'text-neon' : 'group-hover:text-neon'} />
+            {!isSidebarCollapsed && <span className="font-medium">Panel Ads</span>}
           </button>
           <button
             onClick={() => setActiveTab('ads')}
@@ -764,7 +782,7 @@ function AppContent() {
               </div>
               <div className="text-right">
                 <p className="text-[8px] sm:text-[10px] uppercase tracking-widest text-slate-500 font-display">Net Profit</p>
-                <p className="text-xs sm:text-base font-mono font-bold text-neon">{formatCurrency(stats.totalNetProfit)}</p>
+                <p className={`text-xs sm:text-base font-mono font-bold ${stats.totalNetProfit >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>{formatCurrency(stats.totalNetProfit)}</p>
               </div>
             </div>
           </div>
@@ -776,6 +794,7 @@ function AppContent() {
             ...menuItems,
             { id: 'sales', label: 'Ventas' },
             { id: 'research', label: 'Investigación' },
+            { id: 'ad-panel', label: 'Panel Ads' },
             { id: 'ads', label: 'Publicidad' },
             { id: 'platform-expenses', label: 'Gastos Plataforma' },
             { id: 'settings', label: 'Ajustes' }
@@ -898,6 +917,7 @@ function AppContent() {
                 />
               )}
               {activeTab === 'research' && <MarketResearch />}
+              {activeTab === 'ad-panel' && <AdPanel />}
               {activeTab === 'returns' && (
                 <ReturnsAnalysis 
                   orders={orders} 
@@ -973,6 +993,7 @@ function AppContent() {
         currencies={dynamicCurrencies}
         isConversionActive={isConversionActive}
         activeTab={activeTab}
+        theme={theme}
       />
     </div>
   );

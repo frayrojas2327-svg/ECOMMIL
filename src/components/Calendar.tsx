@@ -117,7 +117,7 @@ export default function Calendar({ orders, formatCurrency }: CalendarProps) {
                       <TrendingUp size={10} />
                       {formatCurrency(stats.revenue)}
                     </div>
-                    <div className={`flex items-center gap-1 text-[11px] font-bold ${stats.profit >= 0 ? 'text-secondary' : 'text-red-400'}`}>
+                    <div className={`flex items-center gap-1 text-[11px] font-bold ${stats.profit >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                       {stats.profit >= 0 ? <DollarSign size={10} /> : <TrendingDown size={10} />}
                       {formatCurrency(stats.profit)}
                     </div>
@@ -155,7 +155,7 @@ export default function Calendar({ orders, formatCurrency }: CalendarProps) {
           </div>
           <div>
             <p className="text-[13px] font-bold text-slate-500 uppercase tracking-widest">Utilidad Mes</p>
-            <p className="text-xl font-mono font-bold text-white">
+            <p className={`text-xl font-mono font-bold ${monthOrders.reduce((acc, o) => acc + calculateOrderProfit(o).netProfit, 0) >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
               {formatCurrency(monthOrders.reduce((acc, o) => acc + calculateOrderProfit(o).netProfit, 0))}
             </p>
           </div>

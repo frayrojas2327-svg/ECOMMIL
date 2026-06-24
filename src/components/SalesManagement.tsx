@@ -1005,7 +1005,7 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
                           </div>
                           <div className="flex justify-between items-center">
                             <span className="text-[18px] text-slate-500 uppercase font-black">Profit Neto</span>
-                            <span className="text-[18px] font-mono text-white font-bold">{formatCurrency(period.withdrawalBank - period.adsSpend - period.platformExpenses)}</span>
+                            <span className={`text-[18px] font-mono font-bold ${period.withdrawalBank - period.adsSpend - period.platformExpenses >= 0 ? "text-positive-green" : "text-negative-red"}`}>{formatCurrency(period.withdrawalBank - period.adsSpend - period.platformExpenses)}</span>
                           </div>
                         </div>
                       </div>
@@ -1074,7 +1074,7 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
                               </div>
                             </td>
                             <td className="px-4 py-4 text-right">
-                              <span className={`px-2 py-1 rounded font-mono text-[18px] font-black ${((period.withdrawalBank - period.adsSpend - period.platformExpenses)) >= 0 ? 'bg-neon/10 text-neon' : 'bg-red-500/10 text-red-500'}`}>
+                              <span className={`px-2 py-1 rounded font-mono text-[18px] font-black ${((period.withdrawalBank - period.adsSpend - period.platformExpenses)) >= 0 ? 'bg-positive-green-10 text-positive-green' : 'bg-negative-red-10 text-negative-red'}`}>
                                 {formatCurrency(period.withdrawalBank - period.adsSpend - period.platformExpenses)}
                               </span>
                             </td>

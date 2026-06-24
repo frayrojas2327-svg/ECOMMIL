@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -18,18 +18,18 @@
 
 /* 1. Fondo Blanco (Blanco Limpio) */
 :root.theme-light-white {
-  --bg-color: #f8fafc;  /* slate-50 */
-  --card-color: #ffffff; /* pure white card */
-  --primary-color: #10b981; /* emerald/green accent */
-  --secondary-color: #357ae8; /* google blue */
-  --neon-color: #10b981;
-  --gold-color: #357ae8;
-  --border-color: #e2e8f0; /* slate-200 */
-  --neon-glow-color: rgba(16, 185, 129, 0.15);
+  --bg-color: #f8fafc;  /* slate-50 background corresponding to the screenshot */
+  --card-color: #ffffff; /* pure white rows and card structures */
+  --primary-color: #f97316; /* Vibrant Orange for important boxes and action accents */
+  --secondary-color: #10b981; /* green accent for delivered/completed status */
+  --neon-color: #f97316;     /* Orange primary brand highlight */
+  --gold-color: #ea580c;     /* Darker orange accent */
+  --border-color: #e2e8f0;   /* Slate-200 border for solid dividers */
+  --neon-glow-color: rgba(249, 115, 22, 0.12);
   
-  --text-title: #0f172a; /* slate-900 */
-  --text-main: #334155;  /* slate-700 */
-  --text-muted: #64748b; /* slate-500 */
+  --text-title: #0f172a; /* deep slate-900 for readable main titles and names */
+  --text-main: #334155;  /* slate-700 for table cells and body content */
+  --text-muted: #64748b; /* slate-500 for phone numbers and smaller descriptions */
 }
 
 /* 2. Azul (Azul Ciberespacio) */
@@ -151,4 +151,428 @@
 .recharts-sector {
   outline: none !important;
 }
+
+/* =========================================================================
+   WHITE THEME COMPATIBILITY OVERRIDES (theme-light-white)
+   Translates all hardcoded dark containers into high-contrast polished panels.
+   ========================================================================= */
+
+/* TOMA EL TIPO DE TEXTO QUE TE ENVIE EN LA IMAGNE PARA TODO SOLO PARA LA PALETA DE BLACNO Y NARANJA */
+.theme-light-white,
+.theme-light-white * {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+.theme-light-white {
+  color: #334155;
+  background-color: #f8fafc !important;
+}
+
+/* Eliminate EVERY potential black, dark gray or charcoal container background and make them pure solid white or light slate */
+.theme-light-white,
+.theme-light-white body,
+.theme-light-white .bg-background,
+.theme-light-white .bg-slate-950,
+.theme-light-white .bg-slate-900,
+.theme-light-white .bg-zinc-950,
+.theme-light-white [class*="bg-[#000000]"],
+.theme-light-white [class*="bg-[#050505]"],
+.theme-light-white [class*="bg-[#0a0a0a]"],
+.theme-light-white [class*="bg-[#0f0f0f]"],
+.theme-light-white [class*="bg-[#111111]"],
+.theme-light-white [class*="bg-[#111]"],
+.theme-light-white [class*="bg-[#151515]"],
+.theme-light-white [class*="bg-[#1a1a1a]"],
+.theme-light-white [class*="bg-slate-950"],
+.theme-light-white [class*="bg-slate-900"],
+.theme-light-white [class*="bg-[#000000]/60"],
+.theme-light-white [class*="bg-zinc-950"],
+.theme-light-white [class*="bg-[#0f0f13]"],
+.theme-light-white [class*="bg-[#0a0a0f]"],
+.theme-light-white .bg-\[\#000000\],
+.theme-light-white .bg-\[\#050505\],
+.theme-light-white .bg-\[\#0a0a0a\],
+.theme-light-white .bg-\[\#0f0f0f\],
+.theme-light-white .bg-\[\#111111\],
+.theme-light-white .bg-\[\#111\],
+.theme-light-white .bg-\[\#151515\],
+.theme-light-white .bg-\[\#1a1a1a\],
+.theme-light-white .bg-\[\#000000\]\/60,
+.theme-light-white .bg-\[\#0f0f13\],
+.theme-light-white .bg-\[\#0a0a0f\] {
+  background-color: #f8fafc !important; /* Page body backdrops are clean light light gray/slate */
+}
+
+/* Sidebar, Modals, popups, and Cards - pure white layout with premium thin borders */
+.theme-light-white aside,
+.theme-light-white header,
+.theme-light-white .bg-card,
+.theme-light-white .glass-card,
+.theme-light-white .fintech-card,
+.theme-light-white .modal-content,
+.theme-light-white table,
+.theme-light-white thead,
+.theme-light-white tbody,
+.theme-light-white tr,
+.theme-light-white td,
+.theme-light-white th,
+.theme-light-white [class*="bg-card"],
+.theme-light-white [class*="bg-slate-900/40"],
+.theme-light-white [class*="bg-slate-900/60"],
+.theme-light-white [class*="bg-slate-900/20"],
+.theme-light-white .bg-card\/50,
+.theme-light-white .bg-card\/30,
+.theme-light-white .bg-slate-900\/40,
+.theme-light-white .bg-slate-900\/60,
+.theme-light-white .bg-slate-900\/20,
+.theme-light-white .overflow-x-auto.custom-scrollbar.relative.border {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Custom cards shadow styling */
+.theme-light-white .glass-card,
+.theme-light-white .fintech-card {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Active navigations / Sidebar lists */
+.theme-light-white aside button,
+.theme-light-white aside a {
+  color: #475569 !important;
+}
+
+.theme-light-white aside button:hover,
+.theme-light-white aside a:hover,
+.theme-light-white aside .active-nav-item,
+.theme-light-white aside .active-nav-item * {
+  background-color: #fff7ed !important; /* elegant soft orange background active state */
+  color: #ea580c !important;            /* orange active text */
+}
+
+/* Typography contrast corrections. Forces whites and light slates into deep high-contrast titles */
+.theme-light-white .text-white,
+.theme-light-white .text-slate-100,
+.theme-light-white .text-slate-200,
+.theme-light-white .text-slate-300,
+.theme-light-white .text-zinc-100,
+.theme-light-white .text-zinc-200,
+.theme-light-white .text-zinc-300 {
+  color: #0f172a !important;
+}
+
+.theme-light-white .text-slate-400,
+.theme-light-white .text-slate-500,
+.theme-light-white .text-zinc-400,
+.theme-light-white .text-zinc-500 {
+  color: #64748b !important;
+}
+
+/* IMPORTANT BOXES & KPI ACCENTS - High-contrast Orange Highlights */
+.theme-light-white .text-neon,
+.theme-light-white .text-primary,
+.theme-light-white .text-[#00df9a] {
+  color: #f97316 !important; /* Premium eye-catching orange */
+}
+
+.theme-light-white .border-neon,
+.theme-light-white .border-neon\/20,
+.theme-light-white .border-neon\/30,
+.theme-light-white .border-primary {
+  border-color: #f97316 !important; /* Important outline markers are Orange */
+}
+
+/* Orange highlights for important boxes */
+.theme-light-white .bg-gold\/10,
+.theme-light-white .bg-neon\/10,
+.theme-light-white .bg-neon\/20,
+.theme-light-white .bg-[#22c55e]\/10 {
+  background-color: #fff7ed !important; /* soft comfortable light orange */
+  color: #ea580c !important;            /* deep rich orange */
+}
+
+/* Active buttons inside filter tabs or controls: force orange highlight */
+.theme-light-white button.bg-white.text-black {
+  background-color: #f97316 !important; /* Orange background on active tabs */
+  color: #ffffff !important;
+}
+
+/* Icon backgrounds inside KPI card metrics: make white with orange borders or nice details */
+.theme-light-white [class*="bg-[#00df9a]/10"],
+.theme-light-white [class*="bg-neon/10"],
+.theme-light-white [class*="bg-emerald-500/10"] {
+  background-color: #fff7ed !important;
+  color: #f97316 !important;
+}
+
+/* Border overrides */
+.theme-light-white .border-border,
+.theme-light-white .border-white\/5,
+.theme-light-white .border-white\/10,
+.theme-light-white .border-slate-800,
+.theme-light-white .border-slate-900,
+.theme-light-white .border-zinc-800 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Recharts chart labels readability in light white theme */
+.theme-light-white .recharts-text {
+  fill: #475569 !important;
+}
+
+.theme-light-white .recharts-cartesian-grid-horizontal line,
+.theme-light-white .recharts-cartesian-grid-vertical line {
+  stroke: #f1f5f9 !important;
+}
+
+.theme-light-white .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light-white .recharts-tooltip-item {
+  color: #0f172a !important;
+}
+
+.theme-light-white .recharts-tooltip-label {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+/* Table layout styling matching the exact look in screenshot */
+.theme-light-white thead th {
+  background-color: #f8fafc !important;
+  color: #475569 !important;
+  font-weight: 700 !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+}
+
+.theme-light-white tbody td {
+  border-bottom: 1px solid #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+/* Ensure sticky custom cells and table rows are white/light, not dark zinc or black */
+.theme-light-white table,
+.theme-light-white tr,
+.theme-light-white tr td,
+.theme-light-white th.sticky,
+.theme-light-white td.sticky {
+  background-color: #ffffff !important;
+  color: #334155 !important;
+}
+
+/* Row selection and hover states */
+.theme-light-white tr:hover,
+.theme-light-white tr:hover td,
+.theme-light-white tr[class*="hover:"],
+.theme-light-white td.bg-slate-900,
+.theme-light-white td.bg-\[\#0a0a0a\] {
+  background-color: #f8fafc !important;
+}
+
+.theme-light-white tr[class*="bg-white/"]:hover,
+.theme-light-white tr[class*="bg-white/"] td {
+  background-color: #f1f5f9 !important;
+}
+
+/* Input Fields and Select Dropdowns styling in theme-light-white */
+.theme-light-white input,
+.theme-light-white textarea,
+.theme-light-white select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+.theme-light-white select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* =========================================================================
+   PRECISE STATUS BADGE STYLES (MATCHES THE PROVIDED IMAGE)
+   ========================================================================= */
+
+/* ENTREGADO (Solid bright emerald/green, white text, pill shape, no icon) */
+.theme-light-white .status-badge-entregado {
+  background-color: #22c55e !important; /* solid beautiful high-luminance green */
+  color: #ffffff !important;           /* white text */
+  border: none !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 9999px !important;    /* pill shape */
+  padding: 4px 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* RECOLECTADO (Solid dark charcoal slate, white text, pill shape, no icon) */
+.theme-light-white .status-badge-recolectado {
+  background-color: #1e293b !important; /* solid rich dark slate */
+  color: #ffffff !important;           /* white text */
+  border: none !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 9999px !important;
+  padding: 4px 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* GUIA GENERADA & PENDIENTE (Solid slate blue, white text, pill shape) */
+.theme-light-white .status-badge-guia-generada,
+.theme-light-white .status-badge-pendiente {
+  background-color: #64748b !important; /* solid cool slate-500 */
+  color: #ffffff !important;
+  border: none !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 9999px !important;
+  padding: 4px 12px !important;
+}
+
+/* INCIDENCIA & DEVOLUCION (Solid coral red, white text, pill shape) */
+.theme-light-white .status-badge-incidencia,
+.theme-light-white .status-badge-devuelto {
+  background-color: #ef4444 !important; /* solid vivid return red */
+  color: #ffffff !important;
+  border: none !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 9999px !important;
+  padding: 4px 12px !important;
+}
+
+/* CANCELADO (Solid deep dark black/slate, white text, pill shape) */
+.theme-light-white .status-badge-cancelado {
+  background-color: #0f172a !important; /* solid blackish slate */
+  color: #ffffff !important;
+  border: none !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 9999px !important;
+  padding: 4px 12px !important;
+}
+
+/* EN TRÁNSITO (Solid vibrant blue, white text, pill shape) */
+.theme-light-white .status-badge-en-transito {
+  background-color: #3b82f6 !important; /* solid rich blue */
+  color: #ffffff !important;
+  border: none !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 9999px !important;
+  padding: 4px 12px !important;
+}
+
+/* Hide SVG icons inside white theme status badges to match the clean rounded status pills in the screenshot */
+.theme-light-white [class*="status-badge-"] svg {
+  display: none !important;
+}
+
+/* Clickable sky-blue/indigo Tracking Link underneath the badge */
+.theme-light-white .status-tracking-id {
+  color: #3b82f6 !important; /* elegant blue text */
+  font-weight: bold !important;
+  text-decoration: underline !important;
+}
+
+.theme-light-white .status-subtext {
+  color: #64748b !important; /* soft cool gray secondary description */
+  font-weight: 600 !important;
+}
+
+/* =========================================================================
+   DYNAMIC POSITIVE / NEGATIVE VALUE COLORING (GREEN FOR POSITIVE, RED FOR NEGATIVE)
+   ========================================================================= */
+
+.text-positive-green {
+  color: #22c55e !important; /* Elegant green for dark theme */
+}
+.theme-light-white .text-positive-green {
+  color: #16a34a !important; /* Elegant dark-green for light white readability */
+}
+
+.text-negative-red {
+  color: #ef4444 !important; /* Vibrant red for dark theme */
+}
+.theme-light-white .text-negative-red {
+  color: #dc2626 !important; /* Crisp red for light white readability */
+}
+
+.bg-positive-green-10 {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+}
+.theme-light-white .bg-positive-green-10 {
+  background-color: rgba(22, 163, 74, 0.1) !important;
+}
+
+.bg-negative-red-10 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+.theme-light-white .bg-negative-red-10 {
+  background-color: rgba(220, 38, 38, 0.1) !important;
+}
+
+
+/* Floating AI Assistant Drawer Custom Styling */
+.theme-light-white .floating-ai-body .markdown-body,
+.theme-light-white .floating-ai-body .markdown-body p,
+.theme-light-white .floating-ai-body .markdown-body span,
+.theme-light-white .floating-ai-body .markdown-body h1,
+.theme-light-white .floating-ai-body .markdown-body h2,
+.theme-light-white .floating-ai-body .markdown-body h3,
+.theme-light-white .floating-ai-body .markdown-body h4,
+.theme-light-white .floating-ai-body .markdown-body h5,
+.theme-light-white .floating-ai-body .markdown-body h6,
+.theme-light-white .floating-ai-body .markdown-body li,
+.theme-light-white .floating-ai-body .markdown-body ul,
+.theme-light-white .floating-ai-body .markdown-body ol {
+  color: #020617 !important;
+  font-family: inherit;
+}
+
+.theme-light-white .floating-ai-body .markdown-body strong,
+.theme-light-white .floating-ai-body .markdown-body b {
+  color: #000000 !important;
+  font-weight: 850 !important;
+}
+
+/* Dark themes floating advisor markdown styling */
+.theme-dark-green .floating-ai-body .markdown-body,
+.theme-dark-green .floating-ai-body .markdown-body p,
+.theme-dark-green .floating-ai-body .markdown-body span,
+.theme-dark-green .floating-ai-body .markdown-body li,
+.theme-dark-blue .floating-ai-body .markdown-body,
+.theme-dark-blue .floating-ai-body .markdown-body p,
+.theme-dark-blue .floating-ai-body .markdown-body span,
+.theme-dark-blue .floating-ai-body .markdown-body li {
+  color: #f1f5f9 !important;
+  font-family: inherit;
+}
+
+.theme-dark-green .floating-ai-body .markdown-body strong,
+.theme-dark-green .floating-ai-body .markdown-body b,
+.theme-dark-blue .floating-ai-body .markdown-body strong,
+.theme-dark-blue .floating-ai-body .markdown-body b {
+  color: #ffffff !important;
+  font-weight: 750 !important;
+}
+
+div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button#floating-ai-trigger:nth-of-type(1) {
+  width: 56px !important;
+  height: 56px !important;
+  display: flex !important;
+}
+
 

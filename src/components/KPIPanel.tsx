@@ -39,41 +39,59 @@ interface KPIPanelProps {
   setManualAdSpend?: (val: number) => void;
 }
 
-const MetricCard = ({ title, value, subValue, trend, icon: Icon, description, color = 'neon', onClick }: any) => (
-  <div 
-    onClick={onClick}
-    className={`border border-border bg-card/50 p-6 relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-primary transition-all' : ''}`}
-  >
-    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-      <Icon size={64} />
-    </div>
-    
-    <div className="flex items-center gap-2 mb-4">
-      <div className={`p-2 rounded-lg bg-${color}/10 text-${color}`}>
-        <Icon size={18} />
+const MetricCard = ({ title, value, subValue, trend, icon: Icon, description, color = 'neon', onClick }: any) => {
+  const isProfitKPI = title.toLowerCase().includes('ganancia') || 
+                      title.toLowerCase().includes('profit') || 
+                      title.toLowerCase().includes('margen') || 
+                      title.toLowerCase().includes('utilidad') || 
+                      title.toLowerCase().includes('roi');
+  
+  const isNegative = typeof value === 'string' && (value.trim().startsWith('-') || value.trim().includes('-%') || value.trim().startsWith('('));
+  
+  const valueColorClass = isProfitKPI 
+    ? (isNegative ? 'text-negative-red' : 'text-positive-green')
+    : 'text-white';
+
+  const iconBgClass = isProfitKPI
+    ? (isNegative ? 'bg-negative-red-10 text-negative-red' : 'bg-positive-green-10 text-positive-green')
+    : `bg-${color}/10 text-${color}`;
+
+  return (
+    <div 
+      onClick={onClick}
+      className={`border border-border bg-card/50 p-6 relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-primary transition-all' : ''}`}
+    >
+      <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+        <Icon size={64} />
       </div>
-      <span className="text-[15px] font-mono uppercase tracking-widest text-slate-500">{title}</span>
-    </div>
-
-    <div className="flex items-baseline gap-3">
-      <h3 className="text-3xl font-mono font-bold text-white tracking-tighter">{value}</h3>
-      {trend !== undefined && (
-        <div className={`flex items-center gap-0.5 text-[15px] font-mono ${trend >= 0 ? 'text-neon' : 'text-red-500'}`}>
-          {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-          {Math.abs(trend)}%
+      
+      <div className="flex items-center gap-2 mb-4">
+        <div className={`p-2 rounded-lg ${iconBgClass}`}>
+          <Icon size={18} />
         </div>
-      )}
-    </div>
-    
-    <div className="mt-4 space-y-1">
-      <p className="text-base text-slate-400 font-medium">{subValue}</p>
-      <p className="text-[15px] text-slate-600 italic leading-tight">{description}</p>
-    </div>
+        <span className="text-[15px] font-mono uppercase tracking-widest text-slate-500">{title}</span>
+      </div>
 
-    {/* Technical Grid Accent */}
-    <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-border to-transparent opacity-20" />
-  </div>
-);
+      <div className="flex items-baseline gap-3">
+        <h3 className={`text-3xl font-mono font-bold tracking-tighter ${valueColorClass}`}>{value}</h3>
+        {trend !== undefined && (
+          <div className={`flex items-center gap-0.5 text-[15px] font-mono ${trend >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
+            {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+            {Math.abs(trend)}%
+          </div>
+        )}
+      </div>
+      
+      <div className="mt-4 space-y-1">
+        <p className="text-base text-slate-400 font-medium">{subValue}</p>
+        <p className="text-[15px] text-slate-600 italic leading-tight">{description}</p>
+      </div>
+
+      {/* Technical Grid Accent */}
+      <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-border to-transparent opacity-20" />
+    </div>
+  );
+};
 
 const KPIPanel: React.FC<KPIPanelProps> = ({ 
   orders: parentOrders, 

@@ -20,28 +20,46 @@ interface DashboardProps {
   setManualAdSpend?: (val: number) => void;
 }
 
-const KPICard = ({ title, value, subValue, icon: Icon, trend, color = 'primary', onClick }: any) => (
-  <motion.div 
-    whileHover={{ y: -5 }}
-    onClick={onClick}
-    className={`fintech-card p-6 relative group ${onClick ? 'cursor-pointer' : ''}`}
-  >
-    <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${color}`}>
-      <Icon size={48} />
-    </div>
-    <p className="text-[15px] font-display uppercase tracking-widest text-slate-500 mb-2">{title}</p>
-    <div className="flex items-end gap-3">
-      <h3 className="text-3xl font-mono font-bold text-white">{value}</h3>
-      {trend && (
-        <div className={`flex items-center gap-1 text-[15px] mb-1.5 ${trend > 0 ? 'text-primary' : 'text-red-500'}`}>
-          {trend > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-          <span>{Math.abs(trend)}%</span>
-        </div>
-      )}
-    </div>
-    <p className="text-[15px] text-slate-500 mt-2 font-mono">{subValue}</p>
-  </motion.div>
-);
+const KPICard = ({ title, value, subValue, icon: Icon, trend, color = 'primary', onClick }: any) => {
+  const isProfitKPI = title.toLowerCase().includes('ganancia') || 
+                      title.toLowerCase().includes('profit') || 
+                      title.toLowerCase().includes('margen') || 
+                      title.toLowerCase().includes('utilidad') || 
+                      title.toLowerCase().includes('roi');
+  
+  const isNegative = typeof value === 'string' && (value.trim().startsWith('-') || value.trim().includes('-%'));
+
+  const valueColorClass = isProfitKPI 
+    ? (isNegative ? 'text-negative-red' : 'text-positive-green')
+    : 'text-white';
+
+  const iconColorClass = isProfitKPI
+    ? (isNegative ? 'text-negative-red' : 'text-positive-green')
+    : `text-${color}`;
+
+  return (
+    <motion.div 
+      whileHover={{ y: -5 }}
+      onClick={onClick}
+      className={`fintech-card p-6 relative group ${onClick ? 'cursor-pointer' : ''}`}
+    >
+      <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity ${iconColorClass}`}>
+        <Icon size={48} />
+      </div>
+      <p className="text-[15px] font-display uppercase tracking-widest text-slate-500 mb-2">{title}</p>
+      <div className="flex items-end gap-3">
+        <h3 className={`text-3xl font-mono font-bold ${valueColorClass}`}>{value}</h3>
+        {trend && (
+          <div className={`flex items-center gap-1 text-[15px] mb-1.5 ${trend > 0 ? 'text-positive-green' : 'text-negative-red'}`}>
+            {trend > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            <span>{Math.abs(trend)}%</span>
+          </div>
+        )}
+      </div>
+      <p className="text-[15px] text-slate-500 mt-2 font-mono">{subValue}</p>
+    </motion.div>
+  );
+};
 
 const Dashboard: React.FC<DashboardProps> = ({ 
   orders, 

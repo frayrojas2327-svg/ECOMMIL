@@ -98,8 +98,8 @@ service cloud.firestore {
 
     // 1. Orders Collection
     match /orders/{orderId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
       allow create: if isVerified() && 
                       isValidId(orderId) &&
@@ -107,67 +107,67 @@ service cloud.firestore {
                       incoming().keys().hasAll(['uid', 'orderId', 'date', 'status']);
       
       allow update: if isVerified() &&
-                       isOwner(resource.data.get('uid', '')) &&
+                       isOwner(resource.data.uid) &&
                        isValidOrder(incoming()) &&
-                       incoming().get('uid', '') == resource.data.get('uid', '') &&
-                       incoming().orderId == resource.data.get('orderId', '');
+                       incoming().uid == resource.data.uid &&
+                       incoming().orderId == resource.data.orderId;
       
-      allow delete: if (isOwner(resource.data.get('uid', '')) && isVerified()) || isAdmin();
+      allow delete: if (isOwner(resource.data.uid) && isVerified()) || isAdmin();
     }
 
     // 2. Saved Products Collection
     match /savedProducts/{productId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create, update: if isVerified() && 
                              isValidId(productId) &&
-                             incoming().get('uid', '') == request.auth.uid;
-      allow delete: if (isOwner(resource.data.get('uid', '')) && isVerified()) || isAdmin();
+                             incoming().uid == request.auth.uid;
+      allow delete: if (isOwner(resource.data.uid) && isVerified()) || isAdmin();
     }
 
     // 3. Sale Periods Collection
     match /salePeriods/{periodId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
       allow create: if isVerified() &&
                       isValidId(periodId) &&
                       isValidSalePeriod(incoming());
       
       allow update: if isVerified() &&
-                       isOwner(resource.data.get('uid', '')) &&
+                       isOwner(resource.data.uid) &&
                        isValidSalePeriod(incoming()) &&
-                       incoming().get('uid', '') == resource.data.get('uid', '');
+                       incoming().uid == resource.data.uid;
                         
-      allow delete: if (isOwner(resource.data.get('uid', '')) && isVerified()) || isAdmin();
+      allow delete: if (isOwner(resource.data.uid) && isVerified()) || isAdmin();
     }
 
     // 4. Ad Expenses Collection
     match /ad_expenses/{expenseId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create: if isVerified() && 
                       isValidId(expenseId) &&
                       isValidAdExpense(incoming());
       allow update: if isVerified() &&
-                       isOwner(resource.data.get('uid', '')) &&
+                       isOwner(resource.data.uid) &&
                        isValidAdExpense(incoming()) &&
-                       incoming().get('uid', '') == resource.data.get('uid', '');
-      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
+                       incoming().uid == resource.data.uid;
+      allow delete: if isVerified() && isOwner(resource.data.uid);
     }
 
     // 5. Market Research Collection
     match /market_research/{researchId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create: if isVerified() && 
                       isValidId(researchId) &&
                       isValidMarketResearch(incoming());
       allow update: if isVerified() &&
-                       isOwner(resource.data.get('uid', '')) &&
+                       isOwner(resource.data.uid) &&
                        isValidMarketResearch(incoming()) &&
-                       incoming().get('uid', '') == resource.data.get('uid', '');
-      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
+                       incoming().uid == resource.data.uid;
+      allow delete: if isVerified() && isOwner(resource.data.uid);
     }
 
     // 6. Users Collection
@@ -183,8 +183,8 @@ service cloud.firestore {
 
     // 7. Financial Reports Collection
     match /financialReports/{reportId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
       allow create: if isVerified() &&
                       isValidId(reportId) &&
@@ -192,46 +192,46 @@ service cloud.firestore {
                       incoming().createdAt == request.time;
       
       allow update: if isVerified() &&
-                       isOwner(resource.data.get('uid', '')) &&
+                       isOwner(resource.data.uid) &&
                        isValidFinancialReport(incoming()) &&
                        incoming().uid == resource.data.uid &&
                        incoming().get('createdAt', request.time) == existing().createdAt;
       
-      allow delete: if isOwner(resource.data.get('uid', '')) || isAdmin();
+      allow delete: if isOwner(resource.data.uid) || isAdmin();
     }
 
     // 8. Return Novelties Collection
     match /return_novelties/{noveltyId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
       allow create: if isVerified() && 
                       isValidId(noveltyId) &&
                       isValidReturnNovelty(incoming());
       
       allow update: if isVerified() &&
-                       isOwner(resource.data.get('uid', '')) &&
+                       isOwner(resource.data.uid) &&
                        isValidReturnNovelty(incoming()) &&
-                       incoming().get('uid', '') == resource.data.get('uid', '');
+                       incoming().uid == resource.data.uid;
                        
-      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
+      allow delete: if isVerified() && isOwner(resource.data.uid);
     }
 
     // 9. Financial Overrides Collection
     match /financialOverrides/{overrideId} {
-      allow get: if isOwner(resource.data.get('uid', ''));
-      allow list: if isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
       allow create: if isVerified() && 
                       isValidId(overrideId) &&
                       isValidFinancialOverride(incoming());
       
       allow update: if isVerified() &&
-                       isOwner(resource.data.get('uid', '')) &&
+                       isOwner(resource.data.uid) &&
                        isValidFinancialOverride(incoming()) &&
-                       incoming().get('uid', '') == resource.data.get('uid', '');
-                       
-      allow delete: if isVerified() && isOwner(resource.data.get('uid', ''));
+                       incoming().uid == resource.data.uid;
+                        
+      allow delete: if isVerified() && isOwner(resource.data.uid);
     }
   }
 }

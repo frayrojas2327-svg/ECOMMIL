@@ -788,20 +788,22 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             {/* EBITDA / FINAL REAL NET PROFIT (CALCULATED LIVE) */}
             <div className={`mt-6 p-6 rounded-xl flex justify-between items-center transition-all ${
               liveNetProfit >= 0 
-                ? 'bg-emerald-500/10 border border-emerald-500/20' 
-                : 'bg-red-500/10 border border-red-500/20'
+                ? 'bg-positive-green-10 border border-emerald-500/20' 
+                : 'bg-negative-red-10 border border-red-500/20'
             }`}>
               <div>
                 <p className={`text-[12px] uppercase tracking-widest font-bold mb-1 ${
-                  liveNetProfit >= 0 ? 'text-emerald-400' : 'text-red-400'
+                  liveNetProfit >= 0 ? 'text-positive-green' : 'text-negative-red'
                 }`}>Resultado Neto Final</p>
-                <p className="text-3xl font-mono font-bold text-white">
+                <p className={`text-3xl font-mono font-bold ${
+                  liveNetProfit >= 0 ? 'text-positive-green' : 'text-negative-red'
+                }`}>
                   {localFormatCurrency(liveNetProfit)}
                 </p>
               </div>
               <div className="text-right">
                 <div className={`flex items-center gap-1 text-[15px] font-mono font-bold mb-1 ${
-                  liveNetProfit >= 0 ? 'text-emerald-400' : 'text-red-400'
+                  liveNetProfit >= 0 ? 'text-positive-green' : 'text-negative-red'
                 }`}>
                   {liveNetProfit >= 0 ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
                   {liveNetProfit !== 0 && Number(editedRevenue) > 0 ? (

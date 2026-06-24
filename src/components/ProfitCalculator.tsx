@@ -885,13 +885,13 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">Ganancia Neta (Unidad)</p>
-                  <p className={`text-3xl font-mono font-bold ${results.netProfit >= 0 ? 'text-white' : 'text-red-400'}`}>
+                  <p className={`text-3xl font-mono font-bold ${results.netProfit >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                     {formatLocalCurrency(results.netProfit)}
                   </p>
                 </div>
                 <div>
                   <p className="text-[13px] uppercase tracking-widest text-slate-500 mb-0.5">Margen Neto</p>
-                  <p className={`text-3xl font-mono font-bold ${results.margin > 15 ? 'text-neon' : results.margin > 0 ? 'text-gold' : 'text-red-400'}`}>
+                  <p className={`text-3xl font-mono font-bold ${results.margin >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                     {Math.round(results.margin || 0)}%
                   </p>
                 </div>
@@ -928,7 +928,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     </div>
                     <div className="flex-1 text-right">
                       <p className="text-[13px] uppercase tracking-widest text-neon mb-1 font-bold">Ganancia Total</p>
-                      <p className={`text-2xl font-mono font-bold ${results.netProfit * projectionOrders - results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                      <p className={`text-2xl font-mono font-bold ${results.netProfit * projectionOrders - results.totalFixedExpenses >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                         {formatLocalCurrency(results.netProfit * projectionOrders - results.totalFixedExpenses)}
                       </p>
                     </div>
@@ -1088,18 +1088,18 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     />
                   </td>
                   <td className="p-1.5">
-                    <p className={`font-mono font-bold text-[15px] ${results.netProfit >= 0 ? 'text-white' : 'text-red-400'}`}>
+                    <p className={`font-mono font-bold text-[15px] ${results.netProfit >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                       {formatLocalCurrency(results.netProfit)}
                     </p>
                   </td>
                   <td className="p-1.5">
-                    <p className={`font-mono font-bold text-[15px] ${results.margin > 15 ? 'text-neon' : 'text-gold'}`}>
+                    <p className={`font-mono font-bold text-[15px] ${results.margin >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                       {Math.round(results.margin || 0)}%
                     </p>
                   </td>
                   {isProjectionActive && (
                     <td className="p-1.5">
-                      <p className={`font-mono font-bold text-[15px] ${results.netProfit * projectionOrders - results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                      <p className={`font-mono font-bold text-[15px] ${results.netProfit * projectionOrders - results.totalFixedExpenses >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                         {formatLocalCurrency(results.netProfit * projectionOrders - results.totalFixedExpenses)}
                       </p>
                     </td>
@@ -1171,18 +1171,18 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                       {product.inputs.platformFee}%
                     </td>
                     <td className="p-2">
-                      <p className={`font-mono font-bold text-[15px] ${product.results.netProfit >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                      <p className={`font-mono font-bold text-[15px] ${product.results.netProfit >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                         {formatLocalCurrency(product.results.netProfit, product.currency)}
                       </p>
                     </td>
                     <td className="p-2">
-                      <p className={`font-mono font-bold text-[15px] ${product.results.margin > 15 ? 'text-neon' : 'text-gold'}`}>
+                      <p className={`font-mono font-bold text-[15px] ${product.results.margin >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                         {Math.round(product.results.margin || 0)}%
                       </p>
                     </td>
                     {isProjectionActive && (
                       <td className="p-2">
-                        <p className={`font-mono font-bold text-[15px] ${product.results.netProfit * projectionOrders - product.results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                        <p className={`font-mono font-bold text-[15px] ${product.results.netProfit * projectionOrders - product.results.totalFixedExpenses >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                           {formatLocalCurrency(product.results.netProfit * projectionOrders - product.results.totalFixedExpenses, product.currency)}
                         </p>
                       </td>
@@ -1356,11 +1356,11 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   </div>
                   <div className="space-y-1">
                     <p className="text-[13px] uppercase tracking-widest text-slate-500">Ganancia</p>
-                    <p className={`text-[15px] font-mono font-bold ${product.results.netProfit >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                    <p className={`text-[15px] font-mono font-bold ${product.results.netProfit >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                       {formatLocalCurrency(product.results.netProfit, product.currency)}
                     </p>
                     <p className="text-[13px] uppercase tracking-widest text-slate-500">Margen</p>
-                    <p className={`text-[15px] font-mono font-bold ${product.results.margin > 15 ? 'text-neon' : 'text-gold'}`}>
+                    <p className={`text-[15px] font-mono font-bold ${product.results.margin >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                       {Math.round(product.results.margin || 0)}%
                     </p>
                   </div>
@@ -1378,7 +1378,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                         <span className="text-[11px] uppercase tracking-widest text-slate-500 font-bold">x{projectionOrders} Pedidos:</span>
                       </div>
                       <div className="text-right">
-                        <span className={`text-[14px] font-mono font-bold ${product.results.netProfit * projectionOrders - product.results.totalFixedExpenses >= 0 ? 'text-neon' : 'text-red-400'}`}>
+                        <span className={`text-[14px] font-mono font-bold ${product.results.netProfit * projectionOrders - product.results.totalFixedExpenses >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
                           {formatLocalCurrency(product.results.netProfit * projectionOrders - product.results.totalFixedExpenses, product.currency)}
                         </span>
                       </div>

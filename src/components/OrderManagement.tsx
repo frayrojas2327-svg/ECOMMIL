@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Download, ChevronDown, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX } from 'lucide-react';
+import { Search, Filter, Download, ChevronDown, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp } from 'lucide-react';
 import { Order, calculateOrderProfit, OrderStatus } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -19,14 +19,14 @@ interface OrderManagementProps {
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
   const styles = {
-    'Entregado': 'text-[#00df9a] border-[#00df9a]/40 bg-[#00df9a]/5',
-    'En tránsito': 'text-blue-400 border-blue-400/40 bg-blue-400/5',
-    'Devuelto': 'text-[#ff9100] border-[#ff9100]/40 bg-[#ff9100]/5',
-    'Cancelado': 'text-[#ff4b4b] border-[#ff4b4b]/40 bg-[#ff4b4b]/5',
-    'Pendiente': 'text-amber-400 border-amber-400/40 bg-amber-400/5',
-    'Guía Generada': 'text-slate-300 border-slate-500/40 bg-slate-500/5',
-    'Recolectado': 'text-slate-300 border-slate-600/40 bg-slate-600/5',
-    'Incidencia': 'text-red-400 border-red-900/40 bg-red-900/5',
+    'Entregado': 'text-[#00df9a] border-[#00df9a]/40 bg-[#00df9a]/5 status-badge-entregado',
+    'En tránsito': 'text-blue-400 border-blue-400/40 bg-blue-400/5 status-badge-en-transito',
+    'Devuelto': 'text-[#ff9100] border-[#ff9100]/40 bg-[#ff9100]/5 status-badge-devuelto',
+    'Cancelado': 'text-[#ff4b4b] border-[#ff4b4b]/40 bg-[#ff4b4b]/5 status-badge-cancelado',
+    'Pendiente': 'text-amber-400 border-amber-400/40 bg-amber-400/5 status-badge-pendiente',
+    'Guía Generada': 'text-slate-300 border-slate-500/40 bg-slate-500/5 status-badge-guia-generada',
+    'Recolectado': 'text-slate-300 border-slate-600/40 bg-slate-600/5 status-badge-recolectado',
+    'Incidencia': 'text-red-400 border-red-900/40 bg-red-900/5 status-badge-incidencia',
   };
 
   const icons = {
@@ -120,9 +120,642 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   viewMode = 'DROPI'
 }) => {
   const isReconciliationMode = viewMode === 'TIKTOK';
-  const [activeSource, setActiveSource] = useState<'all' | 'shopify' | 'dropi' | 'tiktok' | 'reconciliation'>('all');
+  const [activeSource, setActiveSource] = useState<'all' | 'shopify' | 'dropi' | 'tiktok' | 'reconciliation' | 'flows'>(
+    viewMode === 'TIKTOK' ? 'flows' : 'all'
+  );
   const [shopifyOrders, setShopifyOrders] = useState<Order[]>([]);
   const [dropiOrders, setDropiOrders] = useState<Order[]>([]);
+
+  // TikTok Flow Ads State
+  interface TikTokAdFlow {
+    id: string;
+    name: string;
+    objective: 'conversions' | 'traffic' | 'leads';
+    status: 'active' | 'paused';
+    spend: number;
+    clicks: number;
+    leads: number;
+    sales: number;
+    dateCreated: string;
+    nodes: {
+      creative: {
+        videoUrl: string;
+        caption: string;
+      };
+      target: {
+        locations: string[];
+        ageGroup: string;
+        gender: 'all' | 'male' | 'female';
+        interests: string[];
+      };
+      offer: {
+        type: 'bogo' | 'discount_30' | 'free_shipping';
+        productName: string;
+      };
+      destination: 'instant_page' | 'direct_checkout' | 'whatsapp';
+    };
+  }
+
+  const [tiktokFlows, setTiktokFlows] = useState<TikTokAdFlow[]>(() => {
+    const saved = localStorage.getItem('profit_os_tiktok_flows');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error reading tiktok flows", e);
+      }
+    }
+    return [
+      {
+        id: 'flow-1',
+        name: 'Promo Faja Slender 2x1',
+        objective: 'conversions',
+        status: 'active',
+        spend: 120.50,
+        clicks: 840,
+        leads: 185,
+        sales: 42,
+        dateCreated: '2026-06-15',
+        nodes: {
+          creative: {
+            videoUrl: 'faja_reductora_promocion.mp4',
+            caption: '¡Luce espectacular este verano! ☀️ Pide 2 y Paga 1 con envío gratis en todo el país.'
+          },
+          target: {
+            locations: ['Colombia', 'Bogotá', 'Medellín'],
+            ageGroup: '25-44',
+            gender: 'female',
+            interests: ['Belleza', 'Moda', 'Salud y Bienestar']
+          },
+          offer: {
+            type: 'bogo',
+            productName: 'Faja Reductora Slender Pro'
+          },
+          destination: 'instant_page'
+        }
+      },
+      {
+        id: 'flow-2',
+        name: 'Colágeno Marino Hidrolizado Oferta',
+        objective: 'traffic',
+        status: 'paused',
+        spend: 45.00,
+        clicks: 310,
+        leads: 42,
+        sales: 8,
+        dateCreated: '2026-06-18',
+        nodes: {
+          creative: {
+            videoUrl: 'colageno_secreto.mp4',
+            caption: 'El secreto de una piel joven, radiante y articulaciones 100% vitales. 🌸'
+          },
+          target: {
+            locations: ['Colombia', 'Cali', 'Barranquilla'],
+            ageGroup: '35-65',
+            gender: 'all',
+            interests: ['Salud', 'Suplementos', 'Cuidado de la piel']
+          },
+          offer: {
+            type: 'discount_30',
+            productName: 'Colágeno Marino Hidrolizado'
+          },
+          destination: 'direct_checkout'
+        }
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('profit_os_tiktok_flows', JSON.stringify(tiktokFlows));
+  }, [tiktokFlows]);
+
+  const [isEditingFlow, setIsEditingFlow] = useState(false);
+  const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
+  const [activeFlowStep, setActiveFlowStep] = useState<number>(0);
+
+  const [flowForm, setFlowForm] = useState<{
+    name: string;
+    objective: 'conversions' | 'traffic' | 'leads';
+    creativeVideo: string;
+    creativeCaption: string;
+    targetLocations: string;
+    targetAge: string;
+    targetGender: 'all' | 'male' | 'female';
+    targetInterests: string;
+    offerType: 'bogo' | 'discount_30' | 'free_shipping';
+    offerProduct: string;
+    destinationType: 'instant_page' | 'direct_checkout' | 'whatsapp';
+  }>({
+    name: '',
+    objective: 'conversions',
+    creativeVideo: 'anuncio_viral.mp4',
+    creativeCaption: '¡Aprovecha esta promoción exclusiva! ⚡️ Envío contra entrega gratis en minutos.',
+    targetLocations: 'Colombia, Bogotá, Medellín',
+    targetAge: '18-54',
+    targetGender: 'all',
+    targetInterests: 'Compras online, Ofertas, Belleza, Cuidado personal',
+    offerType: 'bogo',
+    offerProduct: '',
+    destinationType: 'instant_page'
+  });
+
+  // White chalkboard Interfaces & States
+  interface WhiteboardCard {
+    id: string;
+    title: string;
+    type: 'creative' | 'target' | 'offer' | 'landing' | 'whatsapp' | 'other';
+    desc: string;
+    cost: number;
+    clicks: number;
+    leads: number;
+    sales: number;
+    x: number;
+    y: number;
+    color: string; // 'orange' | 'emerald' | 'blue' | 'rose' | 'violet'
+    isWiggling?: boolean;
+    scale?: number;
+    shape?: 'card' | 'rectangle' | 'oval' | 'diamond' | 'sticky' | 'avatar';
+    avatarUrl?: string;
+    date?: string;
+  }
+
+  interface WhiteboardConnection {
+    id: string;
+    fromId: string;
+    toId: string;
+    color?: string;
+  }
+
+  const [boardCards, setBoardCards] = useState<WhiteboardCard[]>(() => {
+    const saved = localStorage.getItem('profit_os_whiteboard_cards');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // If any of the cards are positioned near 0,0 instead of 3000,3000, migrate them
+          const needsMigration = parsed.some(c => c.x < 1500 && c.y < 1500);
+          if (needsMigration) {
+            return parsed.map(c => ({
+              ...c,
+              x: c.x < 1500 ? c.x + 2400 : c.x,
+              y: c.y < 1500 ? c.y + 2700 : c.y
+            }));
+          }
+          return parsed;
+        }
+      } catch (e) {}
+    }
+    return [
+      {
+        id: 'node-1',
+        title: '🎬 Anuncio Gancho Slender',
+        type: 'creative',
+        desc: 'Faja Reductora Verano.mp4 (Primeros 3 seg: "Cuerpo moldeado hoy")',
+        cost: 150,
+        clicks: 1200,
+        leads: 350,
+        sales: 84,
+        x: 2400,
+        y: 2900,
+        color: 'orange'
+      },
+      {
+        id: 'node-2',
+        title: '🎯 Segmentación: Mujeres Fit',
+        type: 'target',
+        desc: 'Edad 22-45 | Intereses: Belleza, Compras Online (Comportamiento digital)',
+        cost: 80,
+        clicks: 850,
+        leads: 190,
+        sales: 45,
+        x: 2750,
+        y: 2820,
+        color: 'blue'
+      },
+      {
+        id: 'node-3',
+        title: '🎁 Oferta Paga 1 Lleva 2',
+        type: 'offer',
+        desc: 'Gancho Ganador: Envío Premium gratis + Faja de Silicona de Regalo.',
+        cost: 60,
+        clicks: 720,
+        leads: 140,
+        sales: 32,
+        x: 3100,
+        y: 2940,
+        color: 'emerald'
+      },
+      {
+        id: 'node-4',
+        title: '📲 Shopify Cash-On-Delivery Landing',
+        type: 'landing',
+        desc: 'Formulario simplificado de 1 clic para aumentar conversiones locales.',
+        cost: 40,
+        clicks: 450,
+        leads: 95,
+        sales: 22,
+        x: 3450,
+        y: 2860,
+        color: 'rose'
+      }
+    ];
+  });
+
+  const [boardConnections, setBoardConnections] = useState<WhiteboardConnection[]>(() => {
+    const saved = localStorage.getItem('profit_os_whiteboard_connections');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [
+      { id: 'conn-1', fromId: 'node-1', toId: 'node-2', color: '#38bdf8' },
+      { id: 'conn-2', fromId: 'node-2', toId: 'node-3', color: '#10b981' },
+      { id: 'conn-3', fromId: 'node-3', toId: 'node-4', color: '#f43f5e' }
+    ];
+  });
+
+  const [boardPan, setBoardPan] = useState({ x: 0, y: 0 });
+  const [boardZoom, setBoardZoom] = useState(1);
+  const [dragNodeId, setDragNodeId] = useState<string | null>(null);
+  const [isPanningBoard, setIsPanningBoard] = useState(false);
+  const [connectFromId, setConnectFromId] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  const [editCardId, setEditCardId] = useState<string | null>(null);
+  const [newCardCoords, setNewCardCoords] = useState<{ x: number; y: number } | null>(null);
+  const [cardForm, setCardForm] = useState({
+    title: '',
+    type: 'creative' as 'creative' | 'target' | 'offer' | 'landing' | 'whatsapp' | 'other',
+    desc: '',
+    cost: 100,
+    clicks: 1000,
+    leads: 200,
+    sales: 50,
+    color: 'orange' as 'orange' | 'emerald' | 'blue' | 'rose' | 'violet',
+    shape: 'card' as 'card' | 'rectangle' | 'oval' | 'diamond' | 'sticky' | 'avatar',
+    avatarUrl: '',
+    date: ''
+  });
+
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  useEffect(() => {
+    localStorage.setItem('profit_os_whiteboard_cards', JSON.stringify(boardCards));
+  }, [boardCards]);
+
+  useEffect(() => {
+    localStorage.setItem('profit_os_whiteboard_connections', JSON.stringify(boardConnections));
+  }, [boardConnections]);
+
+  const shakeNode = (id: string) => {
+    setBoardCards(prev => prev.map(c => {
+      if (c.id === id) {
+        return { ...c, isWiggling: true };
+      }
+      return c;
+    }));
+    setTimeout(() => {
+      setBoardCards(prev => prev.map(c => {
+        if (c.id === id) {
+          return { ...c, isWiggling: false };
+        }
+        return c;
+      }));
+    }, 350);
+  };
+
+  const onNodeMouseDown = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    shakeNode(id);
+    const node = boardCards.find(n => n.id === id);
+    if (!node) return;
+    setDragNodeId(id);
+    dragOffsetRef.current = {
+      x: e.clientX / boardZoom - node.x,
+      y: e.clientY / boardZoom - node.y
+    };
+  };
+
+  const onCanvasMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.whiteboard-card')) return;
+    setIsPanningBoard(true);
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: boardPan.x,
+      panY: boardPan.y
+    };
+  };
+
+  const onWhiteboardMouseMove = (e: React.MouseEvent) => {
+    if (dragNodeId) {
+      const potentialX = e.clientX / boardZoom - dragOffsetRef.current.x;
+      const potentialY = e.clientY / boardZoom - dragOffsetRef.current.y;
+      setBoardCards(prev => prev.map(c => {
+        if (c.id === dragNodeId) {
+          return { ...c, x: Math.round(potentialX), y: Math.round(potentialY) };
+        }
+        return c;
+      }));
+    } else if (isPanningBoard) {
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      setBoardPan({
+        x: panStartRef.current.panX + dx,
+        y: panStartRef.current.panY + dy
+      });
+    }
+  };
+
+  const onWhiteboardMouseUp = () => {
+    setDragNodeId(null);
+    setIsPanningBoard(false);
+  };
+
+  const onWhiteboardDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Prevent double clicking on cards or buttons from triggering card spawn
+    if ((e.target as HTMLElement).closest('.whiteboard-card') || (e.target as HTMLElement).closest('button')) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+
+    const cx = Math.round(3000 + (localX - rect.width / 2 - boardPan.x) / boardZoom);
+    const cy = Math.round(3000 + (localY - rect.height / 2 - boardPan.y) / boardZoom);
+
+    // Center the new card on double-click cursor position (card dimension is ~260x140)
+    const spawnX = cx - 130;
+    const spawnY = cy - 70;
+
+    setNewCardCoords({ x: spawnX, y: spawnY });
+    setCardForm({
+      title: '',
+      type: 'creative',
+      desc: '',
+      cost: 100,
+      clicks: 1000,
+      leads: 200,
+      sales: 40,
+      color: 'orange',
+      shape: 'card',
+      avatarUrl: '',
+      date: ''
+    });
+    setEditCardId('new');
+  };
+
+  const handleConnectNodes = (toId: string) => {
+    if (!connectFromId || connectFromId === toId) {
+      setConnectFromId(null);
+      return;
+    }
+    const exists = boardConnections.some(conn => 
+      (conn.fromId === connectFromId && conn.toId === toId) ||
+      (conn.fromId === toId && conn.toId === connectFromId)
+    );
+    if (!exists) {
+      const colors = {
+        orange: '#ff9100',
+        blue: '#38bdf8',
+        emerald: '#10b981',
+        rose: '#f43f5e',
+        violet: '#8b5cf6'
+      };
+      const sourceCard = boardCards.find(c => c.id === connectFromId);
+      const nodeColor = sourceCard ? colors[sourceCard.color as keyof typeof colors] : '#ff9100';
+      setBoardConnections(prev => [...prev, {
+        id: 'conn-' + Date.now(),
+        fromId: connectFromId,
+        toId: toId,
+        color: nodeColor || '#ff9100'
+      }]);
+    }
+    setConnectFromId(null);
+  };
+
+  const handleShakeAll = () => {
+    boardCards.forEach((c, idx) => {
+      setTimeout(() => {
+        shakeNode(c.id);
+      }, idx * 60);
+    });
+  };
+
+  const handleSimulateBoardKPIs = () => {
+    setBoardCards(prev => prev.map(c => {
+      const isOk = Math.random() > 0.25;
+      if (!isOk) return c;
+      const addCost = Math.floor(Math.random() * 8 + 3);
+      const addClicks = Math.floor(Math.random() * 20 + 8);
+      const addLeads = Math.random() > 0.4 ? Math.floor(Math.random() * 4 + 1) : 0;
+      const addSales = addLeads > 0 && Math.random() > 0.6 ? Math.floor(Math.random() * 2 + 1) : 0;
+      return {
+        ...c,
+        cost: c.cost + addCost,
+        clicks: c.clicks + addClicks,
+        leads: c.leads + addLeads,
+        sales: c.sales + Math.min(addLeads, addSales),
+        isWiggling: true
+      };
+    }));
+    setTimeout(() => {
+      setBoardCards(prev => prev.map(c => ({ ...c, isWiggling: false })));
+    }, 400);
+  };
+
+  const handleSaveCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cardForm.title.trim()) return;
+    if (editCardId === 'new') {
+      const newCard: WhiteboardCard = {
+        id: 'node-' + Date.now(),
+        title: cardForm.title,
+        type: cardForm.type,
+        desc: cardForm.desc,
+        cost: Number(cardForm.cost),
+        clicks: Number(cardForm.clicks),
+        leads: Number(cardForm.leads),
+        sales: Number(cardForm.sales),
+        color: cardForm.color,
+        shape: cardForm.shape,
+        avatarUrl: cardForm.avatarUrl || undefined,
+        date: cardForm.date || format(new Date(), 'yyyy-MM-dd'),
+        // Centered coordinates relative to double-clicked position or default pan placement
+        x: newCardCoords ? newCardCoords.x : Math.round(250 - boardPan.x),
+        y: newCardCoords ? newCardCoords.y : Math.round(200 - boardPan.y)
+      };
+      setBoardCards(prev => [...prev, newCard]);
+    } else {
+      setBoardCards(prev => prev.map(c => {
+        if (c.id === editCardId) {
+          return {
+            ...c,
+            title: cardForm.title,
+            type: cardForm.type,
+            desc: cardForm.desc,
+            cost: Number(cardForm.cost),
+            clicks: Number(cardForm.clicks),
+            leads: Number(cardForm.leads),
+            sales: Number(cardForm.sales),
+            color: cardForm.color,
+            shape: cardForm.shape,
+            avatarUrl: cardForm.avatarUrl || undefined,
+            date: cardForm.date || format(new Date(), 'yyyy-MM-dd')
+          };
+        }
+        return c;
+      }));
+    }
+    setNewCardCoords(null);
+    setEditCardId(null);
+  };
+
+  const handleToggleFlowStatus = (id: string) => {
+    setTiktokFlows(prev => prev.map(f => {
+      if (f.id === id) {
+        return { ...f, status: f.status === 'active' ? 'paused' : 'active' };
+      }
+      return f;
+    }));
+  };
+
+  const handleDeleteFlow = (id: string) => {
+    setTiktokFlows(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleSimulateFlowEvent = (id: string) => {
+    setTiktokFlows(prev => prev.map(f => {
+      if (f.id === id) {
+        const rand = Math.random();
+        let addSpend = parseFloat((Math.random() * 5 + 2).toFixed(2));
+        let addClicks = Math.floor(Math.random() * 15 + 5);
+        let addLeads = 0;
+        let addSales = 0;
+
+        if (rand > 0.3) {
+          addLeads = Math.floor(Math.random() * 3 + 1);
+        }
+        if (rand > 0.65 && addLeads > 0) {
+          addSales = Math.min(addLeads, Math.floor(Math.random() * 2 + 1));
+        }
+
+        return {
+          ...f,
+          spend: f.spend + addSpend,
+          clicks: f.clicks + addClicks,
+          leads: f.leads + addLeads,
+          sales: f.sales + addSales
+        };
+      }
+      return f;
+    }));
+  };
+
+  const handleSaveFlow = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!flowForm.name.trim()) return;
+
+    if (editingFlowId) {
+      setTiktokFlows(prev => prev.map(f => {
+        if (f.id === editingFlowId) {
+          return {
+            ...f,
+            name: flowForm.name,
+            objective: flowForm.objective,
+            nodes: {
+              creative: {
+                videoUrl: flowForm.creativeVideo,
+                caption: flowForm.creativeCaption
+              },
+              target: {
+                locations: flowForm.targetLocations.split(',').map(s => s.trim()),
+                ageGroup: flowForm.targetAge,
+                gender: flowForm.targetGender,
+                interests: flowForm.targetInterests.split(',').map(s => s.trim())
+              },
+              offer: {
+                type: flowForm.offerType,
+                productName: flowForm.offerProduct
+              },
+              destination: flowForm.destinationType
+            }
+          };
+        }
+        return f;
+      }));
+    } else {
+      const newFlow: TikTokAdFlow = {
+        id: 'flow-' + Date.now(),
+        name: flowForm.name,
+        objective: flowForm.objective,
+        status: 'active',
+        spend: 0,
+        clicks: 0,
+        leads: 0,
+        sales: 0,
+        dateCreated: new Date().toISOString().split('T')[0],
+        nodes: {
+          creative: {
+            videoUrl: flowForm.creativeVideo,
+            caption: flowForm.creativeCaption
+          },
+          target: {
+            locations: flowForm.targetLocations.split(',').map(s => s.trim()),
+            ageGroup: flowForm.targetAge,
+            gender: flowForm.targetGender,
+            interests: flowForm.targetInterests.split(',').map(s => s.trim())
+          },
+          offer: {
+            type: flowForm.offerType,
+            productName: flowForm.offerProduct
+          },
+          destination: flowForm.destinationType
+        }
+      };
+      setTiktokFlows(prev => [newFlow, ...prev]);
+    }
+
+    setIsEditingFlow(false);
+    setEditingFlowId(null);
+  };
+
+  const handleStartEditFlow = (flow: TikTokAdFlow) => {
+    setEditingFlowId(flow.id);
+    setFlowForm({
+      name: flow.name,
+      objective: flow.objective,
+      creativeVideo: flow.nodes.creative.videoUrl,
+      creativeCaption: flow.nodes.creative.caption,
+      targetLocations: flow.nodes.target.locations.join(', '),
+      targetAge: flow.nodes.target.ageGroup,
+      targetGender: flow.nodes.target.gender,
+      targetInterests: flow.nodes.target.interests.join(', '),
+      offerType: flow.nodes.offer.type,
+      offerProduct: flow.nodes.offer.productName,
+      destinationType: flow.nodes.destination
+    });
+    setActiveFlowStep(0);
+    setIsEditingFlow(true);
+  };
+
+  const handleStartCreateFlow = () => {
+    setEditingFlowId(null);
+    setFlowForm({
+      name: '',
+      objective: 'conversions',
+      creativeVideo: 'faja_reductora_promocion.mp4',
+      creativeCaption: '¡Aprovecha esta promoción exclusiva de TikTok! ⚡️ Envío contra entrega gratis.',
+      targetLocations: 'Colombia, Bogotá, Medellín, Cali',
+      targetAge: '21-45',
+      targetGender: 'female',
+      targetInterests: 'Compras online, Ofertas calientes, Moda, Cuidado de la piel',
+      offerType: 'bogo',
+      offerProduct: 'Faja Moldeadora de Silueta',
+      destinationType: 'instant_page'
+    });
+    setActiveFlowStep(0);
+    setIsEditingFlow(true);
+  };
 
   const localFormatCurrency = (amount: number) => {
     const isUSD = !isConversionActive;
@@ -841,7 +1474,24 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         { id: 'direccion', label: 'DIRECCIÓN', value: (o: Order) => o.direccion, className: 'text-xs text-slate-400 truncate max-w-[150px]' },
         { id: 'price', label: 'VALOR PRODUCTO', value: (o: Order) => (o.price || 0) - (o.priorityShipping || 0), isMoney: true, className: 'text-emerald-400 font-bold' },
         { id: 'priorityShipping', label: 'ENVÍO PRIORITARIO', value: (o: Order) => o.priorityShipping || 0, isMoney: true, className: 'text-amber-400 font-bold' },
-        { id: 'status', label: 'ESTATUS', value: (o: Order) => o.status, render: (o: Order) => <StatusBadge status={o.status} /> },
+        { 
+          id: 'status', 
+          label: 'ESTATUS DE LA ORDEN', 
+          value: (o: Order) => o.status, 
+          render: (o: Order) => (
+            <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
+              <StatusBadge status={o.status} />
+              {o.trackingId && (
+                <span className="text-[12px] font-mono font-bold text-sky-500 hover:underline cursor-pointer block tracking-wider mt-1 status-tracking-id">
+                  {o.trackingId}
+                </span>
+              )}
+              <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
+                {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
+              </span>
+            </div>
+          ) 
+        },
         { 
           id: 'actions', 
           label: 'ACCIONES', 
@@ -870,7 +1520,24 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       { id: 'nombreCliente', label: 'NOMBRE CLIENTE', value: (o: Order) => o.nombreCliente, className: 'text-white font-black text-[15px]' },
       { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono, className: 'text-slate-300' },
       { id: 'trackingId', label: 'NÚMERO GUIA', value: (o: Order) => o.trackingId || 'SIN GUÍA', className: 'text-slate-400 font-medium' },
-      { id: 'status', label: 'ESTATUS', value: (o: Order) => o.status, render: (o: Order) => <StatusBadge status={o.status} /> },
+      { 
+        id: 'status', 
+        label: 'ESTATUS DE LA ORDEN', 
+        value: (o: Order) => o.status, 
+        render: (o: Order) => (
+          <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
+            <StatusBadge status={o.status} />
+            {o.trackingId && (
+              <span className="text-[12px] font-mono font-bold text-sky-500 hover:underline cursor-pointer block tracking-wider mt-1 status-tracking-id">
+                {o.trackingId}
+              </span>
+            )}
+            <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
+              {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
+            </span>
+          </div>
+        ) 
+      },
       { id: 'product', label: 'PRODUCTO', value: (o: Order) => o.product },
       { 
         id: 'valorFacturado', 
@@ -1069,100 +1736,131 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             </div>
             <div>
               <h2 className="text-4xl font-display font-black text-white tracking-tighter uppercase leading-none">
-                {viewMode === 'SHOPIFY' ? 'Panel Shopify' : viewMode === 'TIKTOK' ? <>TIKTOK <span className="text-[#00df9a]">PANEL</span></> : 'Gestión Dropi'}
+                {viewMode === 'SHOPIFY' ? 'Panel Shopify' : viewMode === 'TIKTOK' ? <>FLUJOS <span className="text-[#00df9a]">ADS</span></> : 'Gestión Dropi'}
               </h2>
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-[10px] font-black text-slate-500 tracking-[0.2em] uppercase">
-                  {viewMode === 'SHOPIFY' ? 'Ventas e Ingresos' : viewMode === 'TIKTOK' ? 'Pedidos Dropi fuera de Shopify' : 'Logística y Despachos'}
+                  {viewMode === 'SHOPIFY' ? 'Ventas e Ingresos' : viewMode === 'TIKTOK' ? 'Pizarra de Acuerdos & Cuerdas de Pauta' : 'Logística y Despachos'}
                 </span>
                 <div className="w-1.5 h-1.5 rounded-full bg-[#00df9a] animate-pulse" />
               </div>
             </div>
           </div>
-          
-          {isReconciliationMode && (
-            <div className="flex gap-2 p-1 bg-[#111] border border-white/5 rounded-xl w-fit">
-              {(['all', 'shopify', 'dropi', 'tiktok', 'reconciliation'] as const).map(tab => (
-                <button 
-                  key={tab}
-                  onClick={() => setActiveSource(tab)}
-                  className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-[0.1em] transition-all duration-300 whitespace-nowrap ${
-                    activeSource === tab 
-                      ? 'bg-white text-black shadow-md' 
-                      : 'text-slate-500 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  {tab === 'all' ? 'VISTA GLOBAL' : tab === 'shopify' ? 'SHOPIFY' : tab === 'dropi' ? 'DROPI' : tab === 'tiktok' ? 'TIKTOK' : 'ALERTAS'}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
+        {viewMode !== 'TIKTOK' && (
           <div className="flex flex-wrap items-center gap-4 bg-[#111] p-2 rounded-2xl border border-white/5 shadow-2xl">
-          <div className="flex items-center gap-4 px-4 py-1 border-r border-white/5">
-            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">Importar</span>
-            <div className="flex gap-2">
-              {viewMode === 'SHOPIFY' && (
-                <>
-                  <input 
-                    type="file" 
-                    onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Shopify')}
-                    className="hidden" id="shopify-upload-clean"
-                  />
-                  <label 
-                    htmlFor="shopify-upload-clean"
-                    className="px-6 py-2.5 bg-[#00df9a]/5 border-2 border-[#00df9a]/60 rounded-xl font-black text-[11px] text-[#00df9a] cursor-pointer hover:bg-[#00df9a]/20 hover:border-[#00df9a] transition-all tracking-[0.15em] uppercase shadow-lg shadow-[#00df9a]/10 active:scale-95"
-                  >
-                    Importar Shopify
-                  </label>
-                </>
-              )}
+            <div className="flex items-center gap-4 px-4 py-1 border-r border-white/5">
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">Importar</span>
+              <div className="flex gap-2">
+                {viewMode === 'SHOPIFY' && (
+                  <>
+                    <input 
+                      type="file" 
+                      onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Shopify')}
+                      className="hidden" id="shopify-upload-clean"
+                    />
+                    <label 
+                      htmlFor="shopify-upload-clean"
+                      className="px-6 py-2.5 bg-[#00df9a]/5 border-2 border-[#00df9a]/60 rounded-xl font-black text-[11px] text-[#00df9a] cursor-pointer hover:bg-[#00df9a]/20 hover:border-[#00df9a] transition-all tracking-[0.15em] uppercase shadow-lg shadow-[#00df9a]/10 active:scale-95"
+                    >
+                      Importar Shopify
+                    </label>
+                  </>
+                )}
 
-              {(viewMode === 'DROPI' || viewMode === 'TIKTOK') && (
-                <>
-                  <input 
-                    type="file" 
-                    onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Dropi')}
-                    className="hidden" id="dropi-upload-clean"
-                  />
-                  <label 
-                    htmlFor="dropi-upload-clean"
-                    className="px-6 py-2.5 bg-[#ff9100]/5 border-2 border-[#ff9100]/60 rounded-xl font-black text-[11px] text-[#ff9100] cursor-pointer hover:bg-[#ff9100]/20 hover:border-[#ff9100] transition-all tracking-[0.15em] uppercase shadow-lg shadow-orange-500/10 active:scale-95"
-                  >
-                    Importar Dropi
-                  </label>
-                </>
-              )}
+                {viewMode === 'DROPI' && (
+                  <>
+                    <input 
+                      type="file" 
+                      onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Dropi')}
+                      className="hidden" id="dropi-upload-clean"
+                    />
+                    <label 
+                      htmlFor="dropi-upload-clean"
+                      className="px-6 py-2.5 bg-[#ff9100]/5 border-2 border-[#ff9100]/60 rounded-xl font-black text-[11px] text-[#ff9100] cursor-pointer hover:bg-[#ff9100]/20 hover:border-[#ff9100] transition-all tracking-[0.15em] uppercase shadow-lg shadow-orange-500/10 active:scale-95"
+                    >
+                      Importar Dropi
+                    </label>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {isReconciliationMode && (
+              <button 
+                onClick={reconcile}
+                disabled={shopifyOrders.length === 0 || dropiOrders.length === 0}
+                className={`flex items-center gap-3 px-8 py-3 rounded-lg font-black text-[11px] tracking-[0.1em] transition-all uppercase shadow-lg active:scale-95 ${
+                  shopifyOrders.length > 0 && dropiOrders.length > 0
+                    ? 'bg-[#00df9a] text-black hover:bg-[#00c589] shadow-[#00df9a]/20'
+                    : 'bg-slate-900 border border-white/5 text-slate-700 cursor-not-allowed'
+                }`}
+              >
+                <Zap size={16} fill="currentColor" /> 
+                PROCESAR INTELIGENCIA
+              </button>
+            )}
+
+            <div className="flex bg-background/50 rounded-lg p-0.5 border border-border">
+              <div className={`px-3 py-1.5 flex items-center gap-2 text-[10px] font-black tracking-widest ${isConversionActive ? 'text-neon' : 'text-slate-500'}`}>
+                <Globe size={14} />
+                {isConversionActive ? `MONEDA: ${currentCurrency}` : 'MODO USD'}
+              </div>
             </div>
           </div>
-
-          {isReconciliationMode && (
-            <button 
-              onClick={reconcile}
-              disabled={shopifyOrders.length === 0 || dropiOrders.length === 0}
-              className={`flex items-center gap-3 px-8 py-3 rounded-lg font-black text-[11px] tracking-[0.1em] transition-all uppercase shadow-lg active:scale-95 ${
-                shopifyOrders.length > 0 && dropiOrders.length > 0
-                  ? 'bg-[#00df9a] text-black hover:bg-[#00c589] shadow-[#00df9a]/20'
-                  : 'bg-slate-900 border border-white/5 text-slate-700 cursor-not-allowed'
-              }`}
-            >
-              <Zap size={16} fill="currentColor" /> 
-              PROCESAR INTELIGENCIA
-            </button>
-          )}
-
-          <div className="flex bg-background/50 rounded-lg p-0.5 border border-border">
-            <div className={`px-3 py-1.5 flex items-center gap-2 text-[10px] font-black tracking-widest ${isConversionActive ? 'text-neon' : 'text-slate-500'}`}>
-              <Globe size={14} />
-              {isConversionActive ? `MONEDA: ${currentCurrency}` : 'MODO USD'}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-        {activeSource === 'reconciliation' ? (
+      {viewMode !== 'TIKTOK' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
+        {activeSource === 'flows' ? (
+          <>
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl relative overflow-hidden">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-[#00df9a] rounded-xl"><GitMerge size={24} /></div>
+                <span className="text-[10px] font-black text-[#00df9a]/50 tracking-widest px-2.5 py-1.5 bg-[#00df9a]/5 rounded-lg border border-[#00df9a]/10 uppercase font-sans">Eslabones</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {boardCards.length}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Nodos en Pizarra</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl relative overflow-hidden">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-[#00df9a]/10 text-emerald-400 rounded-xl"><DollarSign size={24} /></div>
+                <span className="text-[10px] font-black text-emerald-400/50 tracking-widest px-2.5 py-1.5 bg-emerald-400/5 rounded-lg border border-[#00df9a]/10 uppercase font-sans">Inversión</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {localFormatCurrency(boardCards.reduce((sum, c) => sum + c.cost, 0))}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Inversión asignada</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-[#00df9a]/50 transition-all duration-300 shadow-xl relative overflow-hidden">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><Users size={24} /></div>
+                <span className="text-[10px] font-black text-blue-400/50 tracking-widest px-2.5 py-1.5 bg-blue-400/5 rounded-lg border border-blue-400/10 uppercase font-sans">Leads / Clics</span>
+              </div>
+              <p className="text-2xl font-display font-black text-white leading-none mb-2 tabular-nums">
+                {boardCards.reduce((sum, c) => sum + c.clicks, 0)} <span className="text-xs text-slate-500 font-sans">/ {boardCards.reduce((sum, c) => sum + c.leads, 0)}</span>
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Clics / Prospectos</p>
+            </div>
+
+            <div className="bg-[#0f0f0f] border border-white/5 rounded-2xl p-6 group hover:border-orange-500/50 transition-all duration-300 shadow-xl relative overflow-hidden">
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-orange-500/10 text-orange-400 rounded-xl"><Zap size={24} /></div>
+                <span className="text-[10px] font-black text-orange-400/50 tracking-widest px-2.5 py-1.5 bg-orange-400/5 rounded-lg border border-orange-400/10 uppercase font-sans">Ventas Totales</span>
+              </div>
+              <p className="text-2xl font-display font-black text-[#ff9100] leading-none mb-2 tabular-nums">
+                {boardCards.reduce((sum, c) => sum + c.sales, 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic">Conversiones del mapa</p>
+            </div>
+          </>
+        ) : activeSource === 'reconciliation' ? (
           <>
             <div className="bg-gradient-to-br from-card/50 to-card/20 border border-white/5 rounded-3xl p-6 group hover:border-red-500/50 transition-all duration-500 shadow-xl overflow-hidden relative">
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-red-500/10 rounded-full blur-3xl group-hover:bg-red-500/20 transition-all"></div>
@@ -1403,25 +2101,638 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           </>
         )}
       </div>
+      )}
 
-      <div className="flex flex-wrap items-center gap-4 mb-8">
-        {selectedOrderIds.length > 0 && (
-          <button 
-            onClick={handleDeleteSelected}
-            className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+      {activeSource === 'flows' ? (
+        <div className="space-y-6">
+          {/* Header Action Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/40 p-6 rounded-3xl border border-white/5 backdrop-blur-md">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-[#ff9100]/10 text-[#ff9100] border border-[#ff9100]/25 text-[9px] font-black uppercase tracking-wider">MODO CREATIVO</span>
+                <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/25 text-[9px] font-black uppercase tracking-wider font-mono">PIZARRA INFINITA</span>
+              </div>
+              <h2 className="text-xl font-display font-black text-white flex items-center gap-2 mt-1.5 uppercase font-sans">
+                <Layout className="text-[#ff9100]" size={22} />
+                Pizarra de Flujos Ads
+              </h2>
+              <p className="text-xs text-slate-400 mt-1 font-sans">
+                Una pizarra casi infinita para arrastrar acuerdos, enlazar ganchos mediante cuerdas y simular métricas de TikTok Ads.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setCardForm({
+                    title: '',
+                    type: 'creative',
+                    desc: '',
+                    cost: 100,
+                    clicks: 1000,
+                    leads: 200,
+                    sales: 40,
+                    color: 'orange',
+                    shape: 'card',
+                    avatarUrl: '',
+                    date: ''
+                  });
+                  setEditCardId('new');
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-[#ff9100] hover:scale-[1.02] active:scale-[0.98] text-white rounded-xl font-black text-[11px] uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-orange-500/20"
+              >
+                <Plus size={14} /> Crear Acuerdo / Nodo
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Whiteboard Container */}
+          <div 
+            className={isFullscreen 
+              ? "fixed inset-0 w-screen h-screen z-[150] bg-[#070912] overflow-hidden select-none"
+              : "relative w-full h-[720px] bg-[#070a13] rounded-3xl border border-white/5 overflow-hidden select-none"
+            }
+            onMouseMove={onWhiteboardMouseMove}
+            onMouseUp={onWhiteboardMouseUp}
+            onMouseLeave={onWhiteboardMouseUp}
+            onMouseDown={onCanvasMouseDown}
+            onDoubleClick={onWhiteboardDoubleClick}
           >
-            <Trash2 size={16} /> Borrar Registros ({selectedOrderIds.length})
-          </button>
-        )}
-        <button 
-          onClick={exportToCSV}
-          className="flex items-center gap-2 px-6 py-3 bg-white text-black rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-slate-200 transition-all shadow-xl"
-        >
-          <Download size={16} /> Exportar Reporte
-        </button>
-      </div>
+            {/* Infinite grid background translated and scaled */}
+            <div 
+              className="absolute w-[6000px] h-[6000px] top-[-3000px] left-[-3000px] bg-[radial-gradient(#1e293b_1.5px,transparent_1.5px)] [background-size:24px_24px] pointer-events-none"
+              style={{
+                transform: `translate(${boardPan.x}px, ${boardPan.y}px) scale(${boardZoom})`,
+                transformOrigin: 'center',
+                backgroundColor: '#070912',
+              }}
+            />
 
-      <div className="bg-slate-900/60 backdrop-blur-2xl border border-white/5 rounded-3xl overflow-hidden shadow-2xl relative">
+            {/* Board Info Overlay */}
+            <div className="absolute top-4 left-4 z-20 flex flex-col gap-1.5 bg-slate-950/90 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-xs text-slate-300 shadow-xl pointer-events-auto select-none">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="font-bold text-[10px] text-white uppercase tracking-wider">Controles de Pizarra</span>
+              </div>
+              <p className="text-[10px] text-slate-400">🖱️ Arrastra el fondo para desplazarte de manera infinita</p>
+              <p className="text-[10px] text-slate-400">⚡ Haz doble click en el fondo para crear un nodo/acuerdo</p>
+              <p className="text-[10px] text-slate-400">☝️ Sostén y arrastra los acuerdos con el cursor</p>
+              <p className="text-[10px] text-slate-400">🔗 Haz click en <span className="text-[#ff9100]">➕ Cuerda</span> para trazar conexiones</p>
+            </div>
+
+            {/* Floating Top-Right Controls */}
+            <div className="absolute top-4 right-4 z-20 flex gap-2 pointer-events-auto">
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="px-4 py-2.5 bg-slate-950/90 hover:bg-slate-900 text-white rounded-xl border border-white/10 backdrop-blur-md shadow-xl transition-all active:scale-95 text-[10px] font-black uppercase flex items-center gap-1.5 cursor-pointer"
+                title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+              >
+                {isFullscreen ? <Minimize2 size={13} className="text-orange-400" /> : <Maximize2 size={13} className="text-orange-400" />}
+                <span>{isFullscreen ? "Salir Pantalla Completa" : "Pantalla Completa"}</span>
+              </button>
+            </div>
+
+            {/* Floating Control Gizmos */}
+            <div className="absolute bottom-4 right-4 z-20 flex flex-wrap gap-2 pointer-events-auto">
+              <button
+                onClick={handleShakeAll}
+                title="Dar impulso impulsivo de vibración a todos los nodos"
+                className="p-3 bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-white/10 backdrop-blur-md shadow-lg transition-all active:scale-95 text-[10px] font-black uppercase flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sliders size={12} /> ¡Agitar Pizarra!
+              </button>
+              
+              <button
+                onClick={handleSimulateBoardKPIs}
+                title="Generar leads y ventas simuladas instantáneas"
+                className="p-3 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/35 hover:to-teal-500/35 text-emerald-400 rounded-xl border border-emerald-500/30 backdrop-blur-md shadow-lg transition-all active:scale-95 text-[10px] font-black uppercase flex items-center gap-1.5 cursor-pointer"
+              >
+                <Zap size={12} className="animate-bounce" /> Simular Ventas / Clics
+              </button>
+
+              <button
+                onClick={() => {
+                  setBoardPan({ x: 0, y: 0 });
+                  setBoardZoom(1);
+                }}
+                title="Centrar de vuelta el cuadrante inicial de la pizarra"
+                className="p-3 bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-white/10 backdrop-blur-md shadow-lg transition-all active:scale-95 text-[10px] font-black uppercase flex items-center cursor-pointer"
+              >
+                Re-centrar
+              </button>
+
+              <div className="flex items-center gap-1 bg-slate-900/95 p-1 rounded-xl border border-white/10 backdrop-blur-md shadow-lg text-xs font-bold font-sans">
+                <button
+                  onClick={() => setBoardZoom(z => Math.max(0.6, z - 0.1))}
+                  className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg text-white font-black cursor-pointer"
+                >
+                  -
+                </button>
+                <span className="px-2 text-slate-300 w-12 text-center text-[10px] font-black">{Math.round(boardZoom * 100)}%</span>
+                <button
+                  onClick={() => setBoardZoom(z => Math.min(1.5, z + 0.1))}
+                  className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg text-white font-black cursor-pointer"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* Infinite Canvas containing SVG links layer and cards */}
+            <div 
+              className="absolute w-[6000px] h-[6000px] top-[-3000px] left-[-3000px] pointer-events-none"
+              style={{
+                transform: `translate(${boardPan.x}px, ${boardPan.y}px) scale(${boardZoom})`,
+                transformOrigin: 'center'
+              }}
+            >
+              <style>{`
+                @keyframes cuerda-flow {
+                  0% { stroke-dashoffset: 0; }
+                  100% { stroke-dashoffset: -36px; }
+                }
+                .cuerda-path-glow {
+                  animation: cuerda-flow 2.5s linear infinite;
+                }
+              `}</style>
+
+              {/* SVG Cuerdas Canvas */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                {boardConnections.map(conn => {
+                  const fromNode = boardCards.find(n => n.id === conn.fromId);
+                  const toNode = boardCards.find(n => n.id === conn.toId);
+                  if (!fromNode || !toNode) return null;
+
+                  const getNodeSize = (sh?: string) => {
+                    switch (sh) {
+                      case 'rectangle': return { w: 220, h: 100 };
+                      case 'oval': return { w: 200, h: 100 };
+                      case 'diamond': return { w: 140, h: 140 };
+                      case 'sticky': return { w: 160, h: 160 };
+                      case 'avatar': return { w: 100, h: 130 };
+                      case 'card':
+                      default: return { w: 260, h: 180 };
+                    }
+                  };
+
+                  const fromSize = getNodeSize(fromNode.shape);
+                  const toSize = getNodeSize(toNode.shape);
+
+                  // Start coordinate center-right of source node
+                  const x1 = fromNode.x + fromSize.w;
+                  const y1 = fromNode.y + fromSize.h / 2;
+                  // End coordinate center-left of target node
+                  const x2 = toNode.x;
+                  const y2 = toNode.y + toSize.h / 2;
+
+                  // Droop down like a hanging cord/string
+                  const midX = (x1 + x2) / 2;
+                  const midY = (y1 + y2) / 2 + 75; // drooping factor
+
+                  return (
+                    <g key={conn.id}>
+                      {/* Glow layer */}
+                      <path 
+                        d={`M ${x1} ${y1} Q ${midX} ${midY} ${x2} ${y2}`}
+                        fill="none"
+                        stroke={conn.color || '#ff9100'}
+                        strokeWidth="7"
+                        strokeLinecap="round"
+                        className="opacity-15 blur-[4px]"
+                      />
+                      {/* Thick Rope */}
+                      <path 
+                        d={`M ${x1} ${y1} Q ${midX} ${midY} ${x2} ${y2}`}
+                        fill="none"
+                        stroke={conn.color || '#ff9100'}
+                        strokeWidth="2.8"
+                        strokeLinecap="round"
+                      />
+                      {/* Flowing electric dash pulse */}
+                      <path 
+                        d={`M ${x1} ${y1} Q ${midX} ${midY} ${x2} ${y2}`}
+                        fill="none"
+                        stroke="#ffffff"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeDasharray="8, 28"
+                        className="cuerda-path-glow opacity-85"
+                      />
+                      {/* Delete link trigger overlay button in SVG space at the lowest droop point */}
+                      <foreignObject 
+                        x={midX - 12} 
+                        y={midY - 12} 
+                        width="24" 
+                        height="24"
+                        className="pointer-events-auto"
+                      >
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBoardConnections(prev => prev.filter(c => c.id !== conn.id));
+                          }}
+                          title="Cortar cuerda"
+                          className="w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 border border-white/20 text-white flex items-center justify-center text-[10px] font-black cursor-pointer shadow-md transition-all active:scale-75"
+                        >
+                          ✕
+                        </button>
+                      </foreignObject>
+                    </g>
+                  );
+                })}
+              </svg>
+
+              {/* Blackboard Cards Nodes Layer */}
+              <div className="absolute inset-0 pointer-events-none">
+                {boardCards.map(node => {
+                  const colors = {
+                    orange: { border: 'border-orange-500/50 hover:border-orange-400 group-hover:shadow-orange-500/10', title: 'text-orange-400', badge: 'bg-orange-500/10 text-orange-400 border-orange-500/20' },
+                    blue: { border: 'border-blue-500/50 hover:border-blue-400 group-hover:shadow-blue-500/10', title: 'text-blue-400', badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+                    emerald: { border: 'border-emerald-500/50 hover:border-emerald-400 group-hover:shadow-emerald-500/10', title: 'text-emerald-400', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+                    rose: { border: 'border-rose-500/50 hover:border-rose-400 group-hover:shadow-rose-500/10', title: 'text-rose-400', badge: 'bg-rose-500/10 text-rose-400 border-rose-500/20' },
+                    violet: { border: 'border-violet-500/50 hover:border-violet-400 group-hover:shadow-violet-500/10', title: 'text-violet-400', badge: 'bg-violet-500/10 text-violet-400 border-violet-500/20' }
+                  };
+
+                  const activeStyle = colors[node.color] || colors.orange;
+                  const isBeingConnectedTarget = connectFromId !== null && connectFromId !== node.id;
+
+                  const getNodeSize = (sh?: string) => {
+                    return { w: 260, h: 200 };
+                  };
+                  const currentSize = getNodeSize(node.shape);
+                  const isSelected = connectFromId === node.id;
+
+                  const wrapperClass = `whiteboard-card group flex flex-col justify-between bg-slate-950/95 border-2 shadow-xl select-none relative transition-all duration-200 cursor-grab active:cursor-grabbing rounded-2xl p-4.5 ${activeStyle.border} ${
+                    isSelected ? 'ring-2 ring-white/30 border-white text-white' : ''
+                  } ${isBeingConnectedTarget ? 'animate-pulse ring-2 ring-emerald-500 border-emerald-500' : ''}`;
+
+                  const renderShapeContent = () => {
+                    return (
+                      <div className="flex flex-col justify-between h-full pointer-events-none font-sans">
+                        <div>
+                          {/* Top Row: Date Badge */}
+                          <div className="flex justify-between items-center mb-2.5">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[8.5px] font-black border uppercase tracking-wider font-mono ${activeStyle.badge}`}>
+                              📅 {node.date || format(new Date(), 'yyyy-MM-dd')}
+                            </span>
+                          </div>
+
+                          {/* Central Title */}
+                          <h4 className="text-[13px] font-black leading-snug text-white pr-2 truncate">
+                            {node.title}
+                          </h4>
+
+                          {/* Notes Section */}
+                          <p className="text-[10px] text-slate-404 mt-1.5 line-clamp-3 leading-relaxed">
+                            {node.desc || 'Sin notas adicionales.'}
+                          </p>
+                        </div>
+
+                        {/* Bottom Row: Presupuesto Badge */}
+                        <div className="flex items-center gap-1.5 mt-2 bg-white/[0.03] border border-white/5 rounded-xl px-2.5 py-2">
+                          <span className="text-[8px] text-slate-500 font-bold uppercase tracking-wider">Presupuesto:</span>
+                          <span className="text-[12.5px] text-emerald-400 font-black tabular-nums">
+                            ${node.cost ? node.cost.toLocaleString('en-US') : '0'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <div 
+                      key={node.id}
+                      className="absolute pointer-events-auto select-none font-sans"
+                      style={{ left: `${node.x}px`, top: `${node.y}px`, width: `${currentSize.w}px` }}
+                    >
+                      <motion.div
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.96 }}
+                        animate={node.isWiggling ? { 
+                          rotate: [-3, 3, -3, 3, 0],
+                          y: [0, -8, 2, -1, 0] 
+                        } : {}}
+                        transition={{ duration: 0.35, ease: 'easeInOut' }}
+                        onMouseDown={(e) => onNodeMouseDown(node.id, e)}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setCardForm({
+                            title: node.title,
+                            type: node.type,
+                            desc: node.desc,
+                            cost: node.cost,
+                            clicks: node.clicks,
+                            leads: node.leads,
+                            sales: node.sales,
+                            color: node.color as any,
+                            shape: node.shape || 'card',
+                            avatarUrl: node.avatarUrl || '',
+                            date: node.date || format(new Date(), 'yyyy-MM-dd')
+                          });
+                          setEditCardId(node.id);
+                        }}
+                        className={wrapperClass}
+                      >
+                        {/* Hover action toolbar floating above the node */}
+                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-slate-900/95 border border-white/10 p-1.5 rounded-xl shadow-2xl transition-opacity z-50 pointer-events-auto">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCardForm({
+                                title: node.title,
+                                type: node.type,
+                                desc: node.desc,
+                                cost: node.cost,
+                                clicks: node.clicks,
+                                leads: node.leads,
+                                sales: node.sales,
+                                color: node.color as any,
+                                shape: node.shape || 'card',
+                                avatarUrl: node.avatarUrl || '',
+                                date: node.date || format(new Date(), 'yyyy-MM-dd')
+                              });
+                              setEditCardId(node.id);
+                            }}
+                            title="Editar propiedades de este nodo"
+                            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConnectFromId(connectFromId === node.id ? null : node.id);
+                            }}
+                            title="Conectar cuerda"
+                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                              connectFromId === node.id 
+                                ? 'bg-orange-500 text-slate-950 font-bold' 
+                                : 'bg-white/5 text-slate-300 hover:bg-orange-500/20 hover:text-orange-400'
+                            }`}
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBoardCards(prev => prev.filter(c => c.id !== node.id));
+                              setBoardConnections(prev => prev.filter(conn => conn.fromId !== node.id && conn.toId !== node.id));
+                            }}
+                            title="Borrar nodo"
+                            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Connect handle indicators visual overlay */}
+                        {isBeingConnectedTarget && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleConnectNodes(node.id);
+                            }}
+                            className="absolute -left-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-emerald-500 text-white border-2 border-slate-950 hover:bg-emerald-600 font-bold text-xs flex items-center justify-center cursor-pointer shadow-lg animate-bounce z-30 font-sans animate-pulse"
+                            title="Amarrar cuerda en este nodo"
+                          >
+                            ✔
+                          </button>
+                        )}
+
+                        {renderShapeContent()}
+
+                      </motion.div>
+                    </div>
+                  );
+                })}
+              </div>
+
+            </div>
+          </div>
+
+          {/* Reset Board Button below pizarra */}
+          <div className="flex justify-between items-center bg-slate-900/40 p-4 rounded-2xl border border-white/5 backdrop-blur-md">
+            <p className="text-[10px] text-slate-404 font-sans italic">⭐ Cambia la posición arrastrando el fondo o los acuerdos para moldear la pizarra de acuerdos.</p>
+            <button
+              onClick={() => {
+                if (confirm('¿Estás seguro de que deseas reiniciar la pizarra a la plantilla por defecto? Perderás los acuerdos creados.')) {
+                  localStorage.removeItem('profit_os_whiteboard_cards');
+                  localStorage.removeItem('profit_os_whiteboard_connections');
+                  setBoardCards([
+                    {
+                      id: 'node-1',
+                      title: '🎬 Anuncio Gancho Slender',
+                      type: 'creative',
+                      desc: 'Faja Reductora Verano.mp4 (Primeros 3 seg: "Cuerpo moldeado hoy")',
+                      cost: 150,
+                      clicks: 1200,
+                      leads: 350,
+                      sales: 84,
+                      x: 2400,
+                      y: 2900,
+                      color: 'orange'
+                    },
+                    {
+                      id: 'node-2',
+                      title: '🎯 Segmentación: Mujeres Fit',
+                      type: 'target',
+                      desc: 'Edad 22-45 | Intereses: Belleza, Compras Online (Comportamiento digital)',
+                      cost: 80,
+                      clicks: 850,
+                      leads: 190,
+                      sales: 45,
+                      x: 2750,
+                      y: 2820,
+                      color: 'blue'
+                    },
+                    {
+                      id: 'node-3',
+                      title: '🎁 Oferta Paga 1 Lleva 2',
+                      type: 'offer',
+                      desc: 'Gancho Ganador: Envío Premium gratis + Faja de Silicona de Regalo.',
+                      cost: 60,
+                      clicks: 720,
+                      leads: 140,
+                      sales: 32,
+                      x: 3100,
+                      y: 2940,
+                      color: 'emerald'
+                    },
+                    {
+                      id: 'node-4',
+                      title: '📲 Shopify Cash-On-Delivery Landing',
+                      type: 'landing',
+                      desc: 'Formulario simplificado de 1 clic para aumentar conversiones locales.',
+                      cost: 40,
+                      clicks: 450,
+                      leads: 95,
+                      sales: 22,
+                      x: 3450,
+                      y: 2860,
+                      color: 'rose'
+                    }
+                  ]);
+                  setBoardConnections([
+                    { id: 'conn-1', fromId: 'node-1', toId: 'node-2', color: '#ff9100' },
+                    { id: 'conn-2', fromId: 'node-2', toId: 'node-3', color: '#38bdf8' },
+                    { id: 'conn-3', fromId: 'node-3', toId: 'node-4', color: '#10b981' }
+                  ]);
+                  setBoardPan({ x: 0, y: 0 });
+                  setBoardZoom(1);
+                }
+              }}
+              className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 hover:text-red-300 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest cursor-pointer font-sans"
+            >
+              Reiniciar Pizarra
+            </button>
+          </div>
+
+          {/* Edit Modal / Add New popup panel inside the pizarra */}
+          {editCardId !== null && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl relative font-sans text-white text-left"
+              >
+                <button
+                  type="button"
+                  onClick={() => setEditCardId(null)}
+                  className="absolute top-4 right-4 text-slate-400 hover:text-white text-sm"
+                >
+                  ✕
+                </button>
+                <h3 className="text-md font-display font-black text-white uppercase mb-4 tracking-wider">
+                  {editCardId === 'new' ? 'Crear Nuevo Acuerdo' : 'Editar Propiedades'}
+                </h3>
+                <form onSubmit={handleSaveCard} className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-404 uppercase tracking-widest block mb-1">Nombre / Título</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={cardForm.title}
+                      onChange={e => setCardForm({...cardForm, title: e.target.value})}
+                      placeholder="Ej: Acuerdo de Ventas"
+                      className="w-full bg-[#111] border border-white/10 rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-orange-500 font-sans"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block mb-1">Presupuesto ($)</label>
+                      <input 
+                        type="number" 
+                        required
+                        value={cardForm.cost}
+                        onChange={e => setCardForm({...cardForm, cost: Number(e.target.value)})}
+                        className="w-full bg-[#111] border border-white/10 rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-orange-500 font-sans"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest block mb-1">Fecha</label>
+                      <input 
+                        type="date" 
+                        required
+                        value={cardForm.date}
+                        onChange={e => setCardForm({...cardForm, date: e.target.value})}
+                        className="w-full bg-[#111] border border-white/10 rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-orange-500 font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-404 uppercase tracking-widest block mb-1">Notas / Detalles</label>
+                    <textarea
+                      value={cardForm.desc}
+                      onChange={e => setCardForm({...cardForm, desc: e.target.value})}
+                      placeholder="Escribe aquí los comentarios, detalles o notas..."
+                      rows={4}
+                      className="w-full bg-[#111] border border-white/10 rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-orange-500 font-sans"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-404 uppercase tracking-widest block mb-1">Color del Borde Neón</label>
+                    <div className="flex gap-2 mt-1">
+                      {(['orange', 'emerald', 'blue', 'rose', 'violet'] as const).map((cColor) => {
+                        const colorNames = {
+                          orange: 'Naranja',
+                          emerald: 'Esmeralda',
+                          blue: 'Cyan',
+                          rose: 'Rosa',
+                          violet: 'Violeta'
+                        };
+                        const colorBorders = {
+                          orange: 'border-orange-500 bg-orange-500/20 text-orange-400',
+                          emerald: 'border-emerald-500 bg-emerald-500/20 text-emerald-400',
+                          blue: 'border-blue-500 bg-blue-500/20 text-blue-400',
+                          rose: 'border-rose-500 bg-rose-500/20 text-rose-400',
+                          violet: 'border-violet-500 bg-violet-500/20 text-violet-400'
+                        };
+                        return (
+                          <button
+                            key={cColor}
+                            type="button"
+                            onClick={() => setCardForm({...cardForm, color: cColor})}
+                            className={`px-2.5 py-1.5 rounded-lg text-[9px] font-bold border transition-all active:scale-95 ${
+                              cardForm.color === cColor 
+                                ? `${colorBorders[cColor]} ring-1 ring-white/50 scale-105` 
+                                : 'border-white/10 bg-white/5 text-slate-400'
+                            }`}
+                          >
+                            {colorNames[cColor]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 justify-end pt-4 border-t border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => setEditCardId(null)}
+                      className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-350 rounded-xl text-xs font-bold uppercase transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-black uppercase tracking-wider transition shadow-lg shadow-orange-500/20"
+                    >
+                      Guardar Acuerdo
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-4 mb-8">
+          {selectedOrderIds.length > 0 && (
+            <button 
+              onClick={handleDeleteSelected}
+              className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+            >
+              <Trash2 size={16} /> Borrar Registros ({selectedOrderIds.length})
+            </button>
+          )}
+          <button 
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-6 py-3 bg-white text-black rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-slate-200 transition-all shadow-xl"
+          >
+            <Download size={16} /> Exportar Reporte
+          </button>
+        </div>
+      )}
+
+      {activeSource !== 'flows' && (
+        <div className="bg-slate-900/60 backdrop-blur-2xl border border-white/5 rounded-3xl overflow-hidden shadow-2xl relative">
         <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent pointer-events-none"></div>
         {/* Filters Bar */}
         <div className="flex flex-col relative z-10">
@@ -1729,6 +3040,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           </div>
         )}
       </div>
+      )}
 
       {/* Detail Modal */}
       <AnimatePresence>
