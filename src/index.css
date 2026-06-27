@@ -391,6 +391,24 @@
   color: #0f172a !important;
 }
 
+/* Force pure white background, soft shadow, elegant border and exactly 15px font size for these filter cards in Light Theme */
+.theme-light-white .custom-filter-card-wrapper {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.03) !important;
+}
+
+.theme-light-white .custom-filter-card-wrapper input {
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  font-size: 15px !important;
+  color: #0f172a !important;
+  padding: 0 !important;
+}
+
 /* =========================================================================
    PRECISE STATUS BADGE STYLES (MATCHES THE PROVIDED IMAGE)
    ========================================================================= */

@@ -477,7 +477,13 @@ export default function AdvertisingExpenses({
                     type="date"
                     required
                     value={formData.date}
-                    onClick={(e) => (e.target as any).showPicker?.()}
+                    onClick={(e) => {
+                      try {
+                        (e.target as any).showPicker?.();
+                      } catch (err) {
+                        console.warn('showPicker restricted in this environment:', err);
+                      }
+                    }}
                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                     className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-[15px] text-white focus:border-primary outline-none transition-all [color-scheme:dark] cursor-pointer"
                   />
@@ -673,7 +679,13 @@ export default function AdvertisingExpenses({
                 <input 
                   type="date"
                   value={dateFilter}
-                  onClick={(e) => (e.target as any).showPicker?.()}
+                  onClick={(e) => {
+                    try {
+                      (e.target as any).showPicker?.();
+                    } catch (err) {
+                      console.warn('showPicker restricted in this environment:', err);
+                    }
+                  }}
                   onChange={(e) => setDateFilter(e.target.value)}
                   className="bg-background border border-border rounded-xl py-1.5 pl-9 pr-4 text-xs text-white focus:border-primary outline-none [color-scheme:dark] cursor-pointer"
                 />
@@ -728,7 +740,13 @@ export default function AdvertisingExpenses({
                           <input 
                             type="date"
                             value={tempEdit?.date || ''}
-                            onClick={(e) => (e.target as any).showPicker?.()}
+                            onClick={(e) => {
+                              try {
+                                (e.target as any).showPicker?.();
+                              } catch (err) {
+                                console.warn('showPicker restricted in this environment:', err);
+                              }
+                            }}
                             onChange={(e) => setTempEdit({ ...tempEdit, date: e.target.value })}
                             className="bg-background border border-border rounded-lg py-1 px-2 text-sm text-white focus:border-primary outline-none [color-scheme:dark] w-full cursor-pointer"
                           />

@@ -40,6 +40,7 @@ interface ReturnsAnalysisProps {
   currency?: CurrencyCode;
   currencies?: any;
   isConversionActive?: boolean;
+  theme?: string;
 }
 
 const MONTHS_SPANISH = [
@@ -59,8 +60,10 @@ const getMonthFromDate = (dateStr: string): string => {
   return '';
 };
 
-const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrency, currency = 'USD', currencies = {}, isConversionActive = false }) => {
+const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrency, currency = 'USD', currencies = {}, isConversionActive = false, theme }) => {
   const { user, isDemoMode } = useAuth();
+  
+  const isLightWhite = theme === 'theme-light-white';
   
   // Local overrides for order cancellation reasons
   const [localCancellationReasons, setLocalCancellationReasons] = useState<Record<string, string>>(() => {
@@ -699,11 +702,11 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
           </div>
         </div>
 
-        <div className="lg:col-span-2 glass-card p-8 !bg-black border border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)] flex flex-col justify-between">
+        <div className={`lg:col-span-2 glass-card p-8 border ${isLightWhite ? 'bg-white border-slate-200 shadow-sm' : '!bg-black border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)]'} flex flex-col justify-between`}>
           <div>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
-                <h3 className="text-xl font-display font-bold text-white">Análisis de Cancelaciones</h3>
+                <h3 className={`text-xl font-display font-bold ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>Análisis de Cancelaciones</h3>
                 <p className="text-xs text-slate-500 mt-1">Identifica y registra por qué se cancelaron los pedidos antes del envío para mejorar tu conversión e inventario.</p>
               </div>
               <div className="px-3 py-1 bg-red-500/10 border border-red-500/20 text-red-400 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider h-fit w-fit">
@@ -729,17 +732,25 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                       ))}
                     </Pie>
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                      itemStyle={{ color: '#fff', fontSize: '15px', fontFamily: 'DM Mono' }}
+                      contentStyle={{ 
+                        backgroundColor: isLightWhite ? '#ffffff' : '#000000', 
+                        border: isLightWhite ? '1px solid #e2e8f0' : '1px solid #1f1f2e', 
+                        borderRadius: '8px' 
+                      }}
+                      itemStyle={{ 
+                        color: isLightWhite ? '#1e293b' : '#fff', 
+                        fontSize: '15px', 
+                        fontFamily: 'DM Mono' 
+                      }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
               
-              <div className="overflow-hidden border border-border rounded-xl">
+              <div className={`overflow-hidden border rounded-xl ${isLightWhite ? 'border-slate-100 bg-slate-50/50' : 'border-border bg-transparent'}`}>
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-background border-b border-border">
+                    <tr className={`border-b ${isLightWhite ? 'bg-slate-50 border-slate-100' : 'bg-background border-border'}`}>
                       <th className="px-4 py-3 text-[15px] uppercase tracking-widest text-slate-500 font-display">Motivo</th>
                       <th className="px-4 py-3 text-[15px] uppercase tracking-widest text-slate-500 font-display text-right">Pedidos</th>
                       <th className="px-4 py-3 text-[15px] uppercase tracking-widest text-slate-500 font-display text-right">%</th>
@@ -747,12 +758,12 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                   </thead>
                   <tbody>
                     {stats.pieData.map((entry, index) => (
-                      <tr key={entry.name} className="border-b border-border/50 hover:bg-white/5 transition-colors">
+                      <tr key={entry.name} className={`border-b transition-colors ${isLightWhite ? 'border-slate-100/50 hover:bg-slate-100' : 'border-border/50 hover:bg-white/5'}`}>
                         <td className="px-4 py-3 flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                          <span className="text-base text-slate-300 truncate">{entry.name}</span>
+                          <span className={`text-base truncate ${isLightWhite ? 'text-slate-700' : 'text-slate-300'}`}>{entry.name}</span>
                         </td>
-                        <td className="px-4 py-3 text-base font-mono font-bold text-white text-right">{entry.value}</td>
+                        <td className={`px-4 py-3 text-base font-mono font-bold text-right ${isLightWhite ? 'text-slate-900' : 'text-white'}`}>{entry.value}</td>
                         <td className="px-4 py-3 text-base font-mono text-slate-500 text-right">
                           {(stats.cancellationsCount > 0 ? (entry.value / stats.cancellationsCount) * 100 : 0).toFixed(1)}%
                         </td>
@@ -786,7 +797,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             </div>
             
             {orders.filter(o => o.status === 'Cancelado').length === 0 ? (
-              <div className="py-4 text-center rounded-xl bg-slate-950/30 border border-slate-900">
+              <div className={`py-4 text-center rounded-xl border ${isLightWhite ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/30 border-slate-900'}`}>
                 <p className="text-xs text-slate-500 font-medium">No hay pedidos cancelados registrados en este periodo.</p>
               </div>
             ) : (
@@ -794,14 +805,18 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 {orders.filter(o => o.status === 'Cancelado').map(order => {
                   const currentReason = localCancellationReasons[order.id] || order.cancellationReason || "";
                   return (
-                    <div key={order.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-950/40 border border-slate-900/60 rounded-xl hover:border-slate-800 transition-colors">
+                    <div key={order.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl transition-colors border ${
+                      isLightWhite 
+                        ? 'bg-slate-50/60 border-slate-200/60 hover:border-slate-300' 
+                        : 'bg-slate-950/40 border-slate-900/60 hover:border-slate-800'
+                    }`}>
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-white uppercase">{order.orderId || order.id.substring(0, 8)}</span>
+                          <span className={`text-xs font-mono font-bold uppercase ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>{order.orderId || order.id.substring(0, 8)}</span>
                           <span className="text-[9px] bg-red-500/10 text-red-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Cancelado</span>
                         </div>
                         <span className="text-[11px] text-slate-400 mt-1">
-                          Cliente: <strong className="text-slate-300">{order.nombreCliente || "Manual"}</strong> | Producto: <strong className="text-slate-400">{order.product || "No especificado"}</strong>
+                          Cliente: <strong className={isLightWhite ? 'text-slate-700' : 'text-slate-300'}>{order.nombreCliente || "Manual"}</strong> | Producto: <strong className={isLightWhite ? 'text-slate-600' : 'text-slate-400'}>{order.product || "No especificado"}</strong>
                         </span>
                       </div>
 
@@ -809,14 +824,18 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                         <select
                           value={currentReason}
                           onChange={(e) => handleAssignCancellationReason(order.id, e.target.value)}
-                          className="bg-black border border-slate-800 rounded-lg text-[11px] py-1 px-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition-colors min-w-[160px] cursor-pointer"
+                          className={`rounded-lg text-[11px] py-1 px-2 focus:outline-none focus:border-emerald-500 transition-colors min-w-[160px] cursor-pointer border ${
+                            isLightWhite 
+                              ? 'bg-white border-slate-200 text-slate-800' 
+                              : 'bg-black border-slate-800 text-slate-200'
+                          }`}
                         >
-                          <option value="">-- Sin motivo --</option>
-                          <option value="Cambio de opinión">Cambio de opinión</option>
-                          <option value="Error en dirección">Error en dirección</option>
-                          <option value="Precio alto">Precio alto</option>
-                          <option value="Tiempo de entrega">Tiempo de entrega</option>
-                          <option value="Duplicado">Duplicado</option>
+                          <option value="" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>-- Sin motivo --</option>
+                          <option value="Cambio de opinión" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>Cambio de opinión</option>
+                          <option value="Error en dirección" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>Error en dirección</option>
+                          <option value="Precio alto" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>Precio alto</option>
+                          <option value="Tiempo de entrega" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>Tiempo de entrega</option>
+                          <option value="Duplicado" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>Duplicado</option>
                         </select>
                       </div>
                     </div>
@@ -908,10 +927,12 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
         {/* Formulario de registro/edición de Novedades (Inline & Animado) */}
         {isFormOpen && (
-          <form onSubmit={handleSubmitNovelty} className="p-6 bg-black/40 rounded-2xl border border-border/80 space-y-6 animate-fade-in">
+          <form onSubmit={handleSubmitNovelty} className={`p-6 rounded-2xl border space-y-6 animate-fade-in ${
+            isLightWhite ? 'bg-white border-slate-200 shadow-sm text-slate-800' : 'bg-black/40 border-border/80 text-white'
+          }`}>
             <div className="flex items-center gap-2 mb-2">
               <FileText size={16} className="text-gold" />
-              <h4 className="text-lg font-bold text-white uppercase tracking-wider font-display">
+              <h4 className={`text-lg font-bold uppercase tracking-wider font-display ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>
                 {editingNovelty ? 'Editar Registro de Novedad' : 'Ingresar Nueva Novedad de Pedido'}
               </h4>
             </div>
@@ -919,27 +940,35 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Fecha */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Fecha del Suceso</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[13px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Fecha del Suceso</label>
                 <input
                   type="date"
                   required
                   value={formFecha}
                   onChange={(e) => setFormFecha(e.target.value)}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white font-mono text-[14px] focus:outline-none focus:ring-1 focus:ring-gold"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 font-mono focus:outline-none focus:ring-1 focus:ring-gold ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 />
               </div>
 
               {/* Mes de Registro */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Mes de Registro</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Mes de Registro</label>
                 <select
                   value={formMes}
                   onChange={(e) => setFormMes(e.target.value)}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 >
-                  <option value="" className="bg-[#111]">-- Seleccionar Mes --</option>
+                  <option value="" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>-- Seleccionar Mes --</option>
                   {MONTHS_SPANISH.map((m) => (
-                    <option key={m} value={m} className="bg-[#111] text-white">
+                    <option key={m} value={m} className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>
                       {m}
                     </option>
                   ))}
@@ -948,15 +977,19 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
               {/* Pedido de referencia (Drop-down de pedidos con estado Devuelto/Incidencia) */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Vincular con Devolución</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Vincular con Devolución</label>
                 <select
                   value={selectedOrderId}
                   onChange={handleSelectOrderChange}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 >
-                  <option value="manual">-- INGRESO MANUAL (Sin Vincular) --</option>
+                  <option value="manual" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>-- INGRESO MANUAL (Sin Vincular) --</option>
                   {returnedOrdersDropdown.map((o) => (
-                    <option key={o.id || o.orderId} value={o.id || o.orderId}>
+                    <option key={o.id || o.orderId} value={o.id || o.orderId} className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>
                       {o.orderId} - {o.nombreCliente} ({o.product})
                     </option>
                   ))}
@@ -965,32 +998,40 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
               {/* ID Pedido */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">ID Pedido</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>ID Pedido</label>
                 <input
                   type="text"
                   required
                   placeholder="Ej. DROP0123"
                   value={formOrderId}
                   onChange={(e) => setFormOrderId(e.target.value)}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-mono"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 font-mono focus:outline-none focus:ring-1 focus:ring-gold ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 />
               </div>
 
               {/* Guía de Transporte de retorno */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Guía de Transporte</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Guía de Transporte</label>
                 <input
                   type="text"
                   placeholder="Ej. 10020439294"
                   value={formGuia}
                   onChange={(e) => setFormGuia(e.target.value)}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-mono"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 font-mono focus:outline-none focus:ring-1 focus:ring-gold ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 />
               </div>
 
               {/* Transportadora */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Transportadora</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Transportadora</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -998,7 +1039,11 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                     value={formTransportadora}
                     onChange={(e) => setFormTransportadora(e.target.value)}
                     list="carriers-list"
-                    className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                    className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                      isLightWhite 
+                        ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                        : 'bg-[#111] border-border text-white text-[14px]'
+                    }`}
                   />
                   <datalist id="carriers-list">
                     <option value="Servientrega" />
@@ -1014,7 +1059,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
               {/* Producto */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Producto Relacionado</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Producto Relacionado</label>
                 {savedProducts.length > 0 && !showManualProductInput ? (
                   <div className="relative">
                     <select
@@ -1028,15 +1073,19 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                           setFormProductName(val);
                         }
                       }}
-                      className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                      className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                        isLightWhite 
+                          ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                          : 'bg-[#111] border-border text-white text-[14px]'
+                      }`}
                     >
-                      <option value="">-- Seleccione un Producto --</option>
+                      <option value="" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111]'}>-- Seleccione un Producto --</option>
                       {savedProducts.map((p) => (
-                        <option key={p.id} value={p.name} className="bg-[#111] text-white">
+                        <option key={p.id} value={p.name} className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>
                           {p.name}
                         </option>
                       ))}
-                      <option value="__MANUAL_INPUT__" className="bg-[#111] text-gold font-bold">
+                      <option value="__MANUAL_INPUT__" className={isLightWhite ? 'bg-white text-gold font-bold' : 'bg-[#111] text-gold font-bold'}>
                         ✍️ Ingresar manualmente...
                       </option>
                     </select>
@@ -1050,7 +1099,11 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                         placeholder="Ej. Mini Proyector"
                         value={formProductName}
                         onChange={(e) => setFormProductName(e.target.value)}
-                        className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                        className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                          isLightWhite 
+                            ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                            : 'bg-[#111] border-border text-white text-[14px]'
+                        }`}
                       />
                       {savedProducts.length > 0 && (
                         <button
@@ -1073,36 +1126,44 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
               {/* Nombre Cliente */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Nombre del Cliente</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Nombre del Cliente</label>
                 <input
                   type="text"
                   required
                   placeholder="Ej. Fray Rojas"
                   value={formNombreCliente}
                   onChange={(e) => setFormNombreCliente(e.target.value)}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 />
               </div>
 
               {/* Origen/Causa de Novedad */}
               <div className="space-y-2">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Causa / Origen de Incidencia</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Causa / Origen de Incidencia</label>
                 <div className="space-y-2">
                   <select
                     value={formOrigenNovedad}
                     onChange={(e) => setFormOrigenNovedad(e.target.value)}
-                    className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                    className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                      isLightWhite 
+                        ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                        : 'bg-[#111] border-border text-white text-[14px]'
+                    }`}
                   >
-                    <option value="Cliente no responde / Apagado / No contestó" className="bg-[#111] text-white">Cliente no responde / Apagado</option>
-                    <option value="Dirección incorrecta / incompleta / Sin cobertura" className="bg-[#111] text-white">Dirección incorrecta / Sin cobertura</option>
-                    <option value="Rechazado por precio / Falta de dinero" className="bg-[#111] text-white">Rechazado por precio / Falta de dinero</option>
-                    <option value="Paquete dañado / averiado por transportadora" className="bg-[#111] text-white">Paquete dañado por transportadora</option>
-                    <option value="Error en producto (Mala calidad, talla, color incorrecto)" className="bg-[#111] text-white">Error en producto (Fallas, color, talla)</option>
-                    <option value="Rechazado porque demoró mucho en llegar" className="bg-[#111] text-white">Demora excesiva en entrega</option>
-                    <option value="Estafa de entrega / Cliente arrepentido / No pidió" className="bg-[#111] text-white">Estafa de entrega / Cliente arrepentido / No pidió</option>
-                    <option value="Otro motivo de logística" className="bg-[#111] text-white">Otro motivo de logística</option>
+                    <option value="Cliente no responde / Apagado / No contestó" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Cliente no responde / Apagado</option>
+                    <option value="Dirección incorrecta / incompleta / Sin cobertura" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Dirección incorrecta / Sin cobertura</option>
+                    <option value="Rechazado por precio / Falta de dinero" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Rechazado por precio / Falta de dinero</option>
+                    <option value="Paquete dañado / averiado por transportadora" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Paquete dañado por transportadora</option>
+                    <option value="Error en producto (Mala calidad, talla, color incorrecto)" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Error en producto (Fallas, color, talla)</option>
+                    <option value="Rechazado porque demoró mucho en llegar" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Demora excesiva en entrega</option>
+                    <option value="Estafa de entrega / Cliente arrepentido / No pidió" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Estafa de entrega / Cliente arrepentido / No pidió</option>
+                    <option value="Otro motivo de logística" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Otro motivo de logística</option>
                     {customOrigines.map((cause, idx) => (
-                      <option key={idx} value={cause} className="bg-[#111] text-cyan-400 font-sans">
+                      <option key={idx} value={cause} className={isLightWhite ? 'bg-white text-cyan-600 font-sans' : 'bg-[#111] text-cyan-400 font-sans'}>
                         {cause}
                       </option>
                     ))}
@@ -1125,7 +1186,11 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                           }
                         }
                       }}
-                      className="w-full bg-[#151522] border border-border/85 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-gold font-sans"
+                      className={`w-full border rounded-xl px-3 py-1.5 focus:outline-none focus:border-gold font-sans ${
+                        isLightWhite 
+                          ? 'bg-white border-slate-200 text-slate-800 text-[14px] placeholder-slate-400' 
+                          : 'bg-[#151522] border-border/85 text-white text-xs placeholder-slate-500'
+                      }`}
                     />
                     <button
                       type="button"
@@ -1148,51 +1213,63 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
               {/* Estado / Acción actual */}
               <div className="space-y-2 md:col-span-1">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Estado del Proceso (Acción)</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Estado del Proceso (Acción)</label>
                 <select
                   value={formResolucion}
                   onChange={(e) => setFormResolucion(e.target.value)}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 >
-                  <option value="🟡 En Proceso de Retorno / Bodega" className="bg-[#111] text-white">🟡 En Proceso de Retorno / Bodega</option>
-                  <option value="🔄 Devolución" className="bg-[#111] text-orange-400">🔄 Devolución</option>
-                  <option value="⚡ Devolución Express Center" className="bg-[#111] text-amber-400">⚡ Devolución Express Center</option>
-                  <option value="🔴 Pérdida Total (Paquete destruido/hurtado)" className="bg-[#111] text-red-500">🔴 Pérdida Total (Paquete destruido/hurtado)</option>
-                  <option value="🟢 Re-despachado con éxito (Segundo intento)" className="bg-[#111] text-[#22c55e]">🟢 Re-despachado con éxito (Segundo intento)</option>
-                  <option value="🔵 Entregado con descuento / Acuerdo de precio" className="bg-[#111] text-blue-400">🔵 Entregado con descuento / Acuerdo de precio</option>
-                  <option value="📦 Retorno recibido y verificado en bodega" className="bg-[#111] text-cyan-400 font-sans">📦 Retorno recibido y verificado en bodega</option>
-                  <option value="⚙️ En gestión con transporte / Reclamo" className="bg-[#111] text-slate-400 font-sans">⚙️ En gestión con transporte / Reclamo</option>
+                  <option value="🟡 En Proceso de Retorno / Bodega" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>🟡 En Proceso de Retorno / Bodega</option>
+                  <option value="🔄 Devolución" className={isLightWhite ? 'bg-white text-orange-600' : 'bg-[#111] text-orange-400'}>🔄 Devolución</option>
+                  <option value="⚡ Devolución Express Center" className={isLightWhite ? 'bg-white text-amber-600' : 'bg-[#111] text-amber-400'}>⚡ Devolución Express Center</option>
+                  <option value="🔴 Pérdida Total (Paquete destruido/hurtado)" className={isLightWhite ? 'bg-white text-red-600' : 'bg-[#111] text-red-500'}>🔴 Pérdida Total (Paquete destruido/hurtado)</option>
+                  <option value="🟢 Re-despachado con éxito (Segundo intento)" className={isLightWhite ? 'bg-white text-[#16a34a]' : 'bg-[#111] text-[#22c55e]'}>🟢 Re-despachado con éxito (Segundo intento)</option>
+                  <option value="🔵 Entregado con descuento / Acuerdo de precio" className={isLightWhite ? 'bg-white text-blue-600' : 'bg-[#111] text-blue-400'}>🔵 Entregado con descuento / Acuerdo de precio</option>
+                  <option value="📦 Retorno recibido y verificado en bodega" className={isLightWhite ? 'bg-white text-cyan-600 font-sans' : 'bg-[#111] text-cyan-400 font-sans'}>📦 Retorno recibido y verificado en bodega</option>
+                  <option value="⚙️ En gestión con transporte / Reclamo" className={isLightWhite ? 'bg-white text-slate-600 font-sans' : 'bg-[#111] text-slate-400 font-sans'}>⚙️ En gestión con transporte / Reclamo</option>
                 </select>
               </div>
 
               {/* Etiqueta por Devolución */}
               <div className="space-y-2 md:col-span-1">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Etiqueta por Devolución</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Etiqueta por Devolución</label>
                 <select
                   value={formEtiquetaDevolucion}
                   onChange={(e) => setFormEtiquetaDevolucion(e.target.value)}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold font-sans"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 >
-                  <option value="" className="bg-[#111] text-slate-500">-- Ninguna / Sin Etiqueta --</option>
-                  <option value="TIK TOK ORGANICO" className="bg-[#111] text-neon font-bold">TIK TOK ORGANICO</option>
-                  <option value="RECORDAR EXPRES CENT" className="bg-[#111] text-sky-450 font-bold">RECORDAR EXPRES CENT</option>
-                  <option value="PEDIR BIEN DEPAR-CIU" className="bg-[#111] text-pink-450 font-bold">PEDIR BIEN DEPAR-CIU</option>
-                  <option value="PRUEBA" className="bg-[#111] text-yellow-450 font-bold">PRUEBA</option>
-                  <option value="DATOS INCORR-BUZON" className="bg-[#111] text-purple-450 font-bold">DATOS INCORR-BUZON</option>
-                  <option value="CLIENTE NO CONTESTA" className="bg-[#111] text-red-455 font-bold">CLIENTE NO CONTESTA</option>
+                  <option value="" className={isLightWhite ? 'bg-white text-slate-500' : 'bg-[#111] text-slate-500'}>-- Ninguna / Sin Etiqueta --</option>
+                  <option value="TIK TOK ORGANICO" className={isLightWhite ? 'bg-white text-emerald-600 font-bold' : 'bg-[#111] text-neon font-bold'}>TIK TOK ORGANICO</option>
+                  <option value="RECORDAR EXPRES CENT" className={isLightWhite ? 'bg-white text-sky-600 font-bold' : 'bg-[#111] text-sky-450 font-bold'}>RECORDAR EXPRES CENT</option>
+                  <option value="PEDIR BIEN DEPAR-CIU" className={isLightWhite ? 'bg-white text-pink-600 font-bold' : 'bg-[#111] text-pink-450 font-bold'}>PEDIR BIEN DEPAR-CIU</option>
+                  <option value="PRUEBA" className={isLightWhite ? 'bg-white text-yellow-600 font-bold' : 'bg-[#111] text-yellow-450 font-bold'}>PRUEBA</option>
+                  <option value="DATOS INCORR-BUZON" className={isLightWhite ? 'bg-white text-purple-600 font-bold' : 'bg-[#111] text-purple-450 font-bold'}>DATOS INCORR-BUZON</option>
+                  <option value="CLIENTE NO CONTESTA" className={isLightWhite ? 'bg-white text-red-600 font-bold' : 'bg-[#111] text-red-455 font-bold'}>CLIENTE NO CONTESTA</option>
                 </select>
               </div>
 
               {/* Descripción detallada */}
               <div className="space-y-2 md:col-span-3">
-                <label className="block text-[14px] uppercase tracking-widest text-slate-300 font-extrabold font-display">Explicación por qué surgió la novedad (Copia chat o detalle)</label>
+                <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Explicación por qué surgió la novedad (Copia chat o detalle)</label>
                 <textarea
                   required
                   placeholder="Detalla detalladamente qué causó la novedad. Ej: La transportadora reprogramó la entrega 2 veces..."
                   value={formDescripcion}
                   onChange={(e) => setFormDescripcion(e.target.value)}
                   rows={2.5}
-                  className="w-full bg-[#111] border border-border focus:border-gold rounded-xl px-4 py-2.5 text-white text-[14px] focus:outline-none focus:ring-1 focus:ring-gold resize-none"
+                  className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold resize-none ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800 text-[15px] placeholder-slate-400' 
+                      : 'bg-[#111] border-border text-white text-[14px]'
+                  }`}
                 />
               </div>
             </div>
@@ -1224,12 +1301,12 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
               {/* Filtro de ETIQUETAS */}
-              <div className="flex items-center gap-2 bg-[#0c0c14] border border-border rounded-xl px-3 py-1.5 h-8">
-                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Etiqueta de Pedido:</span>
+              <div className={`flex items-center gap-2 border rounded-xl px-3 py-1.5 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
+                <span className={`uppercase font-black tracking-widest text-slate-500 ${isLightWhite ? 'text-[12px]' : 'text-[10px]'}`}>Etiqueta de Pedido:</span>
                 <select 
                   value={noveltyTagFilter}
                   onChange={(e) => setNoveltyTagFilter(e.target.value)}
-                  className="bg-transparent border-none p-0 text-xs font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full"
+                  className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[14px]' : 'text-xs'} font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full`}
                 >
                   <optgroup label="PRINCIPALES" className="bg-[#111] text-slate-500 font-bold uppercase text-[9px] tracking-wider">
                     <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
@@ -1249,12 +1326,12 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
               </div>
 
               {/* Filtro de ETIQUETA POR DEVOLUCION */}
-              <div className="flex items-center gap-2 bg-[#0c0c14] border border-border rounded-xl px-3 py-1.5 h-8">
-                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Etiqueta Devolución:</span>
+              <div className={`flex items-center gap-2 border rounded-xl px-3 py-1.5 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
+                <span className={`uppercase font-black tracking-widest text-slate-500 ${isLightWhite ? 'text-[12px]' : 'text-[10px]'}`}>Etiqueta Devolución:</span>
                 <select 
                   value={noveltyDevolucionFilter}
                   onChange={(e) => setNoveltyDevolucionFilter(e.target.value)}
-                  className="bg-transparent border-none p-0 text-xs font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full"
+                  className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[13px]' : 'text-xs'} font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full`}
                 >
                   <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
                   <option value="SIN_ETIQUETA" className="bg-[#111] text-[#ef4444]">SIN ETIQUETA</option>
@@ -1268,8 +1345,8 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
               </div>
 
               {/* Búsqueda de novedad */}
-              <div className="relative w-full sm:w-64 h-8 flex items-center">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 pointer-events-none">
+              <div className={`relative w-full sm:w-64 h-8 flex items-center rounded-xl ${isLightWhite ? 'bg-[#edf2f8] border border-slate-200' : ''}`}>
+                <span className={`absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 pointer-events-none ${isLightWhite ? 'text-[12px]' : ''}`}>
                   <Search size={15} />
                 </span>
                 <input
@@ -1277,7 +1354,11 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                   placeholder="Buscar novedad..."
                   value={noveltySearch}
                   onChange={(e) => setNoveltySearch(e.target.value)}
-                  className="w-full bg-background/60 border border-border rounded-xl pl-9 pr-4 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-gold font-sans h-full"
+                  className={`w-full bg-transparent border-none pl-9 pr-4 py-1.5 font-sans h-full focus:outline-none ${
+                    isLightWhite 
+                      ? 'text-slate-800 text-[14px] placeholder-slate-400' 
+                      : 'text-white text-xs placeholder-slate-500'
+                  }`}
                 />
               </div>
             </div>
@@ -1308,73 +1389,95 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto border border-border rounded-2xl bg-[#08080f]/50">
+            <div className={`overflow-x-auto border rounded-2xl ${isLightWhite ? 'bg-white border-slate-200' : 'border-border bg-[#08080f]/50'}`}>
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-background border-b border-border/80 text-[14px]">
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Fecha</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Mes</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">ID Pedido</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Guía / Tracking</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Cliente / Producto</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Etiqueta Devolución</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Transportadora</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Incidencia / Causa</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Explicación Suceso</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display">Estado Acción</th>
-                    <th className="px-5 py-4 text-[14px] uppercase tracking-widest text-slate-400 font-extrabold font-display text-right w-24">Acciones</th>
+                  <tr className={`border-b text-[14px] ${isLightWhite ? 'bg-slate-50 border-slate-200' : 'bg-background border-b border-border/80'}`}>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Fecha</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Mes</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>ID Pedido</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Guía / Tracking</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Cliente / Producto</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Etiqueta Devolución</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Transportadora</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Incidencia / Causa</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Explicación Suceso</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Estado Acción</th>
+                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display text-right w-24 ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/40">
+                <tbody className={`divide-y ${isLightWhite ? 'divide-slate-100' : 'divide-border/40'}`}>
                   {filteredNovelties.map((item) => {
                     // Pre-generate nice tag styling based on causes
-                    let causeStyle = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+                    let causeStyle = isLightWhite 
+                      ? 'bg-orange-50 text-orange-700 border-orange-200' 
+                      : 'bg-orange-500/10 text-orange-400 border-orange-500/20';
                     if (item.origenNovedad.includes('Transporte') || item.origenNovedad.includes('transportadora')) {
-                      causeStyle = 'bg-red-500/10 text-red-400 border-red-500/20';
+                      causeStyle = isLightWhite 
+                        ? 'bg-red-50 text-red-700 border-red-200' 
+                        : 'bg-red-500/10 text-red-400 border-red-500/20';
                     } else if (item.origenNovedad.includes('Error en producto')) {
-                      causeStyle = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                      causeStyle = isLightWhite 
+                        ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20';
                     } else if (item.origenNovedad.includes('Cliente no responde')) {
-                      causeStyle = 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
+                      causeStyle = isLightWhite 
+                        ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
+                        : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
                     }
 
                     // Resolution status labels
-                    let resStyle = 'bg-slate-500/10 text-slate-400 border border-slate-500/20';
+                    let resStyle = isLightWhite 
+                      ? 'bg-slate-50 text-slate-600 border border-slate-200' 
+                      : 'bg-slate-500/10 text-slate-400 border border-slate-500/20';
                     if (item.resolucion.includes('🟢')) {
-                      resStyle = 'bg-emerald-500/10 text-[#22c55e] border border-emerald-500/20';
+                      resStyle = isLightWhite 
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                        : 'bg-emerald-500/10 text-[#22c55e] border border-emerald-500/20';
                     } else if (item.resolucion.includes('🟡')) {
-                      resStyle = 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20';
+                      resStyle = isLightWhite 
+                        ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' 
+                        : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
                     } else if (item.resolucion.includes('🔴')) {
-                      resStyle = 'bg-red-500/10 text-red-500 border border-red-500/20';
+                      resStyle = isLightWhite 
+                        ? 'bg-red-50 text-red-700 border border-red-200' 
+                        : 'bg-red-500/10 text-red-500 border-red-500/20';
                     } else if (item.resolucion.includes('📦')) {
-                      resStyle = 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+                      resStyle = isLightWhite 
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200' 
+                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20';
                     } else if (item.resolucion.includes('🔄') || item.resolucion === 'Devolución') {
-                      resStyle = 'bg-orange-500/10 text-orange-400 border border-orange-500/20';
+                      resStyle = isLightWhite 
+                        ? 'bg-orange-50 text-orange-700 border border-orange-200' 
+                        : 'bg-orange-500/10 text-orange-400 border-orange-500/20';
                     } else if (item.resolucion.includes('⚡') || item.resolucion === 'Devolución Express Center') {
-                      resStyle = 'bg-amber-500/10 text-gold border border-gold/20';
+                      resStyle = isLightWhite 
+                        ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                        : 'bg-amber-500/10 text-gold border border-gold/20';
                     }
 
                     return (
-                      <tr key={item.id} className="hover:bg-white/5 transition-colors group">
+                      <tr key={item.id} className={`transition-colors group ${isLightWhite ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}>
                         <td className="px-5 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <Calendar size={15} className="text-slate-500" />
-                            <span className="text-[14px] text-slate-300 font-mono">{item.fecha}</span>
+                            <span className={`font-mono ${isLightWhite ? 'text-slate-700 text-[15px]' : 'text-slate-300 text-[14px]'}`}>{item.fecha}</span>
                           </div>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className="text-[14px] text-amber-400 font-semibold font-display">
+                          <span className={`font-semibold font-display ${isLightWhite ? 'text-[18px] text-amber-600' : 'text-[14px] text-amber-400'}`}>
                             {item.mes || getMonthFromDate(item.fecha) || 'Sin Mes'}
                           </span>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className="text-[14px] font-mono font-bold text-white block truncate">{item.orderId || "M-MANUAL"}</span>
+                          <span className={`font-mono font-bold block truncate ${isLightWhite ? 'text-slate-800 text-[14px]' : 'text-white text-[14px]'}`}>{item.orderId || "M-MANUAL"}</span>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className="text-[14px] font-mono font-medium text-cyan-300 block truncate">{item.guia || "Sin Guía"}</span>
+                          <span className={`font-mono font-medium block truncate ${isLightWhite ? 'text-cyan-700 text-[14px]' : 'text-cyan-300 text-[14px]'}`}>{item.guia || "Sin Guía"}</span>
                         </td>
                         <td className="px-5 py-4 max-w-[200px]">
                           <div>
-                            <span className="text-[14px] text-slate-300 block truncate font-medium">{item.nombreCliente}</span>
+                            <span className={`block truncate font-medium ${isLightWhite ? 'text-slate-800 text-[14px]' : 'text-slate-300 text-[14px]'}`}>{item.nombreCliente}</span>
                             {item.productName && (
                               <span className="text-[13px] text-slate-500 block italic truncate">{item.productName}</span>
                             )}
@@ -1385,26 +1488,30 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                             <span 
                               className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
                                 item.etiquetaDevolucion === 'TIK TOK ORGANICO'
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                  ? (isLightWhite ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20')
                                   : item.etiquetaDevolucion === 'RECORDAR EXPRES CENT'
-                                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                  ? (isLightWhite ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-sky-500/10 text-sky-400 border-sky-500/20')
                                   : item.etiquetaDevolucion === 'PEDIR BIEN DEPAR-CIU'
-                                  ? 'bg-pink-500/10 text-pink-400 border-pink-500/20'
+                                  ? (isLightWhite ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-pink-500/10 text-pink-400 border-pink-500/20')
                                   : item.etiquetaDevolucion === 'PRUEBA'
-                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  ? (isLightWhite ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-amber-500/10 text-amber-400 border-amber-500/20')
                                   : item.etiquetaDevolucion === 'DATOS INCORR-BUZON'
-                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                  : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                  ? (isLightWhite ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-purple-500/10 text-purple-400 border-purple-500/20')
+                                  : (isLightWhite ? 'bg-red-50 text-red-700 border-red-200' : 'bg-red-500/10 text-red-400 border-red-500/20')
                               }`}
                             >
                               {item.etiquetaDevolucion}
                             </span>
                           ) : (
-                            <span className="text-slate-600 text-xs italic font-sans">— Sin Etiqueta —</span>
+                            <span className="text-slate-400 text-xs italic font-sans">— Sin Etiqueta —</span>
                           )}
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className="text-[14px] text-cyan-400 font-semibold bg-cyan-950/20 px-2.5 py-1 rounded-lg border border-cyan-500/10 block text-center max-w-[150px] truncate">
+                          <span className={`font-semibold px-2.5 py-1 rounded-lg border block text-center max-w-[150px] truncate ${
+                            isLightWhite 
+                              ? 'text-cyan-700 bg-cyan-50 border-cyan-100 text-[14px]' 
+                              : 'text-cyan-400 bg-cyan-950/20 border-cyan-500/10 text-[14px]'
+                          }`}>
                             {item.transportadora || 'No especificada'}
                           </span>
                         </td>
@@ -1414,7 +1521,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                           </span>
                         </td>
                         <td className="px-5 py-4 max-w-[320px]">
-                          <p className="text-[14px] text-slate-300 whitespace-pre-wrap break-words leading-relaxed">{item.descripcion}</p>
+                          <p className={`whitespace-pre-wrap break-words leading-relaxed ${isLightWhite ? 'text-slate-700 text-[14px]' : 'text-slate-300 text-[14px]'}`}>{item.descripcion}</p>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
                           <span className={`px-2.5 py-1 rounded-lg text-[13px] uppercase tracking-wider font-semibold ${resStyle}`}>
@@ -1426,14 +1533,14 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                             <button
                               onClick={() => handleEditNovelty(item)}
                               title="Editar Novedad"
-                              className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                              className={`p-1.5 transition-colors cursor-pointer ${isLightWhite ? 'text-slate-400 hover:text-slate-800' : 'text-slate-400 hover:text-white'}`}
                             >
                               <Edit2 size={16} />
                             </button>
                             <button
                               onClick={() => handleDeleteNovelty(item.id)}
                               title="Eliminar Novedad"
-                              className="p-1.5 text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
+                              className={`p-1.5 transition-colors cursor-pointer ${isLightWhite ? 'text-slate-400 hover:text-red-500' : 'text-slate-400 hover:text-red-400'}`}
                             >
                               <Trash2 size={16} />
                             </button>
@@ -1450,19 +1557,23 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
       </div>
 
       {/* AI PRO LOGISTICS ANALYST DASHBOARD SECTOR (DEBAJO DE TODO) */}
-      <div id="ai-logistics-analyst-panel" className="border border-emerald-500/20 bg-emerald-500/5 rounded-2xl overflow-hidden p-8 space-y-6 shadow-2xl relative">
+      <div id="ai-logistics-analyst-panel" className={`rounded-2xl overflow-hidden p-8 space-y-6 shadow-2xl relative border ${
+        isLightWhite 
+          ? 'bg-emerald-50/40 border-emerald-500/20 shadow-sm' 
+          : 'border-emerald-500/20 bg-emerald-500/5'
+      }`}>
         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
           <Brain size={180} className="text-emerald-400" />
         </div>
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div>
-            <div className="flex items-center gap-2 text-emerald-400 font-bold mb-1">
+            <div className="flex items-center gap-2 text-emerald-600 font-bold mb-1">
               <Sparkles size={16} className="animate-spin" style={{ animationDuration: '6s' }} />
               <span className="text-xs tracking-wider uppercase font-mono">IA PRO Inteligencia Logística</span>
             </div>
-            <h3 className="text-2xl font-display font-extrabold text-white">Análisis Avanzado con Gemini PRO</h3>
-            <p className="text-[15px] text-slate-400">Analiza en profundidad causas raíces de cancelaciones, devoluciones e incidencias por demografía (direcciones, ciudades y departamentos) de inmediato.</p>
+            <h3 className={`text-2xl font-display font-extrabold ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>Análisis Avanzado con Gemini PRO</h3>
+            <p className="text-[15px] text-slate-500">Analiza en profundidad causas raíces de cancelaciones, devoluciones e incidencias por demografía (direcciones, ciudades y departamentos) de inmediato.</p>
           </div>
           
           <button
@@ -1482,15 +1593,17 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
         {/* Loading Indicator with Reassurance Steps */}
         {aiLoading && (
-          <div className="mt-6 p-8 bg-black/60 rounded-xl border border-emerald-500/25 flex flex-col items-center justify-center text-center space-y-4">
-            <Loader2 size={40} className="text-emerald-400 animate-spin" />
+          <div className={`mt-6 p-8 rounded-xl border flex flex-col items-center justify-center text-center space-y-4 ${
+            isLightWhite ? 'bg-white border-emerald-500/25' : 'bg-black/60 border-emerald-500/25'
+          }`}>
+            <Loader2 size={40} className="text-emerald-600 animate-spin" />
             <div>
-              <p className="text-[17px] font-semibold text-white tracking-wide">Analizando comportamiento logístico...</p>
-              <p className="text-sm text-slate-400 mt-1 italic animate-pulse">"{loadingMessages[loadingStep]}"</p>
+              <p className={`text-[17px] font-semibold tracking-wide ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>Analizando comportamiento logístico...</p>
+              <p className="text-sm text-slate-500 mt-1 italic animate-pulse">"{loadingMessages[loadingStep]}"</p>
             </div>
-            <div className="w-1/3 bg-slate-800 h-1.5 rounded-full overflow-hidden">
+            <div className={`w-1/3 h-1.5 rounded-full overflow-hidden ${isLightWhite ? 'bg-slate-100' : 'bg-slate-800'}`}>
               <div 
-                className="bg-emerald-400 h-full transition-all duration-500" 
+                className="bg-emerald-500 h-full transition-all duration-500" 
                 style={{ width: `${((loadingStep + 1) / loadingMessages.length) * 100}%` }}
               />
             </div>
@@ -1499,8 +1612,8 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
         {/* Error State */}
         {aiError && (
-          <div className="mt-6 p-6 bg-red-950/40 border border-red-500/20 rounded-xl text-red-200">
-            <div className="flex items-center gap-3 mb-2 font-bold text-red-400">
+          <div className={`mt-6 p-6 border rounded-xl ${isLightWhite ? 'bg-red-50 border-red-200 text-red-800' : 'bg-red-950/40 border-red-500/20 text-red-200'}`}>
+            <div className="flex items-center gap-3 mb-2 font-bold text-red-600">
               <AlertTriangle size={20} />
               <span>Ocurrió un inconveniente</span>
             </div>
@@ -1515,25 +1628,27 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             
             {/* Markdown Report Panel */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4">
-              <div className="glass-card p-8 bg-black/30 border-emerald-500/10 flex flex-col h-full justify-between">
+              <div className={`glass-card p-8 flex flex-col h-full justify-between border ${
+                isLightWhite ? 'bg-white border-slate-200' : 'bg-black/30 border-emerald-500/10'
+              }`}>
                 <div>
-                  <div className="flex items-center gap-2 text-emerald-400 font-bold mb-4">
+                  <div className="flex items-center gap-2 text-emerald-600 font-bold mb-4">
                     <Brain size={18} />
                     <span className="text-sm tracking-wider uppercase font-mono">Reporte Analítico Copiloto</span>
                   </div>
                   
-                  <div className="prose prose-invert max-w-none text-slate-300 text-[15px] leading-relaxed space-y-4">
+                  <div className={`prose max-w-none text-[15px] leading-relaxed space-y-4 ${isLightWhite ? 'text-slate-700' : 'prose-invert text-slate-300'}`}>
                     {parsedSections.length > 0 ? (
                       <div className="space-y-6">
                         {/* Interactive Tab Selectors */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 border-b border-white/5 pb-4">
+                        <div className={`grid grid-cols-2 md:grid-cols-4 gap-2 border-b pb-4 ${isLightWhite ? 'border-slate-100' : 'border-white/5'}`}>
                           {parsedSections.map((section, idx) => {
                             const isSelected = activeTab === idx;
                             const icons = [
-                              <TrendingUp size={14} className="text-emerald-400 shrink-0" />,
-                              <BarChart3 size={14} className="text-emerald-400 shrink-0" />,
-                              <Brain size={14} className="text-emerald-400 shrink-0" />,
-                              <Sparkles size={14} className="text-emerald-400 shrink-0" />
+                              <TrendingUp size={14} className="text-emerald-600 shrink-0" />,
+                              <BarChart3 size={14} className="text-emerald-600 shrink-0" />,
+                              <Brain size={14} className="text-emerald-600 shrink-0" />,
+                              <Sparkles size={14} className="text-emerald-600 shrink-0" />
                             ];
                             const icon = icons[idx % icons.length];
                             
@@ -1543,8 +1658,10 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                                 onClick={() => setActiveTab(idx)}
                                 className={`flex items-center gap-1.5 justify-center py-2 px-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300 border cursor-pointer ${
                                   isSelected 
-                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.08)]' 
-                                    : 'bg-black/50 border-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-950/60'
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.08)]' 
+                                    : (isLightWhite 
+                                        ? 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100' 
+                                        : 'bg-black/50 border-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-950/60')
                                 }`}
                               >
                                 {icon}
@@ -1555,19 +1672,23 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                         </div>
 
                         {/* Active Section Content Container */}
-                        <div className="bg-black/40 p-5 rounded-xl border border-slate-900 prose prose-invert max-w-none text-slate-300 text-[15px] leading-relaxed min-h-[220px]">
+                        <div className={`p-5 rounded-xl border prose max-w-none text-[15px] leading-relaxed min-h-[220px] ${
+                          isLightWhite 
+                            ? 'bg-slate-50 border-slate-150 text-slate-700' 
+                            : 'bg-black/40 border-slate-900 prose-invert text-slate-300'
+                        }`}>
                           <Markdown
                             components={{
-                              h1: ({ ...props }) => <h3 className="text-base font-extrabold font-display text-white mt-1 mb-3 border-l-4 border-emerald-500 pl-3 uppercase tracking-wider" {...props} />,
-                              h2: ({ ...props }) => <h4 className="text-sm font-bold font-display text-emerald-400 mt-4 mb-2 uppercase tracking-wide" {...props} />,
-                              h3: ({ ...props }) => <h5 className="text-xs font-bold font-display text-emerald-400 mt-3 mb-1 uppercase tracking-wider" {...props} />,
-                              p: ({ ...props }) => <p className="text-[13px] text-slate-300 leading-relaxed mb-3" {...props} />,
-                              ul: ({ ...props }) => <ul className="list-disc pl-5 space-y-1.5 my-3 text-slate-300 marker:text-emerald-400" {...props} />,
-                              ol: ({ ...props }) => <ol className="list-decimal pl-5 space-y-1.5 my-3 text-slate-300 marker:text-emerald-400" {...props} />,
-                              li: ({ ...props }) => <li className="text-[13px] leading-relaxed text-slate-300 pl-1" {...props} />,
-                              strong: ({ ...props }) => <strong className="font-semibold text-emerald-300 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/10" {...props} />,
-                              code: ({ ...props }) => <code className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-xs font-mono text-emerald-400" {...props} />,
-                              hr: () => <hr className="my-4 border-slate-900" />,
+                              h1: ({ ...props }) => <h3 className={`text-base font-extrabold font-display mt-1 mb-3 border-l-4 border-emerald-500 pl-3 uppercase tracking-wider ${isLightWhite ? 'text-slate-900' : 'text-white'}`} {...props} />,
+                              h2: ({ ...props }) => <h4 className="text-sm font-bold font-display text-emerald-600 mt-4 mb-2 uppercase tracking-wide" {...props} />,
+                              h3: ({ ...props }) => <h5 className="text-xs font-bold font-display text-emerald-600 mt-3 mb-1 uppercase tracking-wider" {...props} />,
+                              p: ({ ...props }) => <p className={`text-[13px] leading-relaxed mb-3 ${isLightWhite ? 'text-slate-600' : 'text-slate-300'}`} {...props} />,
+                              ul: ({ ...props }) => <ul className="list-disc pl-5 space-y-1.5 my-3 marker:text-emerald-500" {...props} />,
+                              ol: ({ ...props }) => <ol className="list-decimal pl-5 space-y-1.5 my-3 marker:text-emerald-500" {...props} />,
+                              li: ({ ...props }) => <li className={`text-[13px] leading-relaxed pl-1 ${isLightWhite ? 'text-slate-600' : 'text-slate-300'}`} {...props} />,
+                              strong: ({ ...props }) => <strong className="font-semibold text-emerald-600 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/10" {...props} />,
+                              code: ({ ...props }) => <code className={`rounded px-1.5 py-0.5 text-xs font-mono text-emerald-600 ${isLightWhite ? 'bg-slate-100 border border-slate-200' : 'bg-slate-900 border border-slate-800'}`} {...props} />,
+                              hr: () => <hr className={isLightWhite ? 'my-4 border-slate-200' : 'my-4 border-slate-900'} />,
                             }}
                           >
                             {parsedSections[activeTab]?.rawContent || ""}
@@ -1577,16 +1698,16 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                     ) : (
                       <Markdown
                         components={{
-                          h1: ({ ...props }) => <h3 className="text-lg font-extrabold font-display text-white mt-6 mb-3 border-l-4 border-emerald-500 pl-3 uppercase tracking-wider" {...props} />,
-                          h2: ({ ...props }) => <h4 className="text-base font-bold font-display text-emerald-400 mt-5 mb-2 uppercase tracking-wide" {...props} />,
-                          h3: ({ ...props }) => <h5 className="text-[15px] font-bold font-display text-emerald-400 mt-4 mb-2 uppercase tracking-wider" {...props} />,
-                          p: ({ ...props }) => <p className="text-[14px] text-slate-300 leading-relaxed mb-4" {...props} />,
-                          ul: ({ ...props }) => <ul className="list-disc pl-5 space-y-2 my-4 text-slate-300 marker:text-emerald-400" {...props} />,
-                          ol: ({ ...props }) => <ol className="list-decimal pl-5 space-y-2 my-4 text-slate-300 marker:text-emerald-400" {...props} />,
-                          li: ({ ...props }) => <li className="text-[14px] leading-relaxed text-slate-300 pl-1" {...props} />,
-                          strong: ({ ...props }) => <strong className="font-semibold text-emerald-300 bg-emerald-500/5 px-1 py-0.5 rounded border border-emerald-500/10" {...props} />,
-                          code: ({ ...props }) => <code className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-xs font-mono text-emerald-400" {...props} />,
-                          hr: () => <hr className="my-6 border-slate-800" />,
+                          h1: ({ ...props }) => <h3 className={`text-lg font-extrabold font-display mt-6 mb-3 border-l-4 border-emerald-500 pl-3 uppercase tracking-wider ${isLightWhite ? 'text-slate-900' : 'text-white'}`} {...props} />,
+                          h2: ({ ...props }) => <h4 className="text-base font-bold font-display text-emerald-600 mt-5 mb-2 uppercase tracking-wide" {...props} />,
+                          h3: ({ ...props }) => <h5 className="text-[15px] font-bold font-display text-emerald-600 mt-4 mb-2 uppercase tracking-wider" {...props} />,
+                          p: ({ ...props }) => <p className={`text-[14px] leading-relaxed mb-4 ${isLightWhite ? 'text-slate-600' : 'text-slate-300'}`} {...props} />,
+                          ul: ({ ...props }) => <ul className="list-disc pl-5 space-y-2 my-4 marker:text-emerald-500" {...props} />,
+                          ol: ({ ...props }) => <ol className="list-decimal pl-5 space-y-2 my-4 marker:text-emerald-500" {...props} />,
+                          li: ({ ...props }) => <li className={`text-[14px] leading-relaxed pl-1 ${isLightWhite ? 'text-slate-600' : 'text-slate-300'}`} {...props} />,
+                          strong: ({ ...props }) => <strong className="font-semibold text-emerald-600 bg-emerald-500/5 px-1 py-0.5 rounded border border-emerald-500/10" {...props} />,
+                          code: ({ ...props }) => <code className={`rounded px-1.5 py-0.5 text-xs font-mono text-emerald-600 ${isLightWhite ? 'bg-slate-100 border border-slate-200' : 'bg-slate-900 border border-slate-800'}`} {...props} />,
+                          hr: () => <hr className={isLightWhite ? 'my-6 border-slate-200' : 'my-6 border-slate-800'} />,
                         }}
                       >
                         {aiResult.analysisText}
@@ -1602,9 +1723,11 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
               </div>
 
               {/* Recommendations Score Dashboard */}
-              <div className="glass-card p-8 bg-black/30 border-emerald-500/10 space-y-6">
+              <div className={`glass-card p-8 space-y-6 border ${
+                isLightWhite ? 'bg-white border-slate-200' : 'bg-black/30 border-emerald-500/10'
+              }`}>
                 <div>
-                  <div className="flex items-center gap-2 text-emerald-400 font-bold mb-1">
+                  <div className="flex items-center gap-2 text-emerald-600 font-bold mb-1">
                     <CheckCircle size={18} />
                     <span className="text-sm tracking-wider uppercase font-mono">Plan de Acción & Urgencia</span>
                   </div>
@@ -1616,15 +1739,19 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                     const barColors = ['bg-emerald-500', 'bg-orange-500', 'bg-sky-500', 'bg-teal-500', 'bg-amber-500'];
                     const colorClass = barColors[idx % barColors.length];
                     return (
-                      <div key={idx} className="space-y-1.5 p-3 rounded-lg border border-border bg-black/20 hover:border-emerald-500/20 transition-all">
+                      <div key={idx} className={`space-y-1.5 p-3 rounded-lg border transition-all ${
+                        isLightWhite 
+                          ? 'bg-slate-50 border-slate-200/85 hover:border-emerald-500/20' 
+                          : 'bg-black/20 border-border hover:border-emerald-500/20'
+                      }`}>
                         <div className="flex items-center justify-between">
-                          <span className="text-base font-medium text-white">{rec.aspect}</span>
-                          <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                          <span className={`text-base font-medium ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>{rec.aspect}</span>
+                          <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
                             Impacto: {rec.score}%
                           </span>
                         </div>
                         <p className="text-[13px] text-slate-500 italic">Estrategia: {rec.label}</p>
-                        <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
+                        <div className={`w-full h-2 rounded-full overflow-hidden ${isLightWhite ? 'bg-slate-200' : 'bg-slate-900'}`}>
                           <div className={`h-full ${colorClass}`} style={{ width: `${rec.score}%` }} />
                         </div>
                       </div>
@@ -1641,28 +1768,32 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             {/* REAL GRAPHICS DEBAJO DE TODO */}
             <div className="pt-8 space-y-8">
               <div>
-                <h4 className="text-xl font-display font-medium text-white">Visualizaciones Logísticas Estructuradas por IA</h4>
+                <h4 className={`text-xl font-display font-medium ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>Visualizaciones Logísticas Estructuradas por IA</h4>
                 <p className="text-sm text-slate-500">Representaciones gráficas basadas en el cruce de datos de la sección de devoluciones analizada por la Inteligencia Artificial.</p>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 
                 {/* Chart 1: Carrier Incidents */}
-                <div className="glass-card p-6 !bg-black border border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)]">
+                <div className={`glass-card p-6 border ${isLightWhite ? 'bg-white border-slate-200 shadow-sm' : '!bg-black border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)]'}`}>
                   <div className="flex items-center justify-between mb-4">
-                    <h5 className="text-[15px] font-bold text-white uppercase tracking-wider font-display">Tasa de Incidencias por Transportadora</h5>
-                    <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">Transportadoras</span>
+                    <h5 className={`text-[15px] font-bold uppercase tracking-wider font-display ${isLightWhite ? 'text-slate-700' : 'text-white'}`}>Tasa de Incidencias por Transportadora</h5>
+                    <span className="text-[11px] font-mono text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">Transportadoras</span>
                   </div>
                   <div className="h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={aiResult.charts?.carriers || []}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#222" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={isLightWhite ? "#e2e8f0" : "#222"} />
                         <XAxis dataKey="name" stroke="#888" fontSize={12} tickLine={false} />
                         <YAxis stroke="#888" fontSize={12} tickLine={false} />
                         <Tooltip 
-                          contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                          labelStyle={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
-                          cursor={{ fill: 'rgba(0, 0, 0, 0.5)' }}
+                          contentStyle={{ 
+                            backgroundColor: isLightWhite ? '#ffffff' : '#000000', 
+                            border: isLightWhite ? '1px solid #e2e8f0' : '1px solid #1f1f2e', 
+                            borderRadius: '8px' 
+                          }}
+                          labelStyle={{ color: isLightWhite ? '#1e293b' : '#fff', fontSize: '14px', fontWeight: 'bold' }}
+                          cursor={{ fill: isLightWhite ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.5)' }}
                         />
                         <Legend />
                         <Bar dataKey="total" fill="#3b82f6" name="Total Incidencias" radius={[4, 4, 0, 0]} />
@@ -1675,21 +1806,25 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 </div>
 
                 {/* Chart 2: Monthly Incidents */}
-                <div className="glass-card p-6 !bg-black border border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)]">
+                <div className={`glass-card p-6 border ${isLightWhite ? 'bg-white border-slate-200 shadow-sm' : '!bg-black border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)]'}`}>
                   <div className="flex items-center justify-between mb-4">
-                    <h5 className="text-[15px] font-bold text-white uppercase tracking-wider font-display">Distribución Temporal de Novedades por Mes</h5>
-                    <span className="text-[11px] font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">Historial Mensual</span>
+                    <h5 className={`text-[15px] font-bold uppercase tracking-wider font-display ${isLightWhite ? 'text-slate-700' : 'text-white'}`}>Distribución Temporal de Novedades por Mes</h5>
+                    <span className="text-[11px] font-mono text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">Historial Mensual</span>
                   </div>
                   <div className="h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={aiResult.charts?.months || []}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#222" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={isLightWhite ? "#e2e8f0" : "#222"} />
                         <XAxis dataKey="name" stroke="#888" fontSize={12} tickLine={false} />
                         <YAxis stroke="#888" fontSize={12} tickLine={false} />
                         <Tooltip 
-                          contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                          labelStyle={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
-                          cursor={{ fill: 'rgba(0, 0, 0, 0.5)' }}
+                          contentStyle={{ 
+                            backgroundColor: isLightWhite ? '#ffffff' : '#000000', 
+                            border: isLightWhite ? '1px solid #e2e8f0' : '1px solid #1f1f2e', 
+                            borderRadius: '8px' 
+                          }}
+                          labelStyle={{ color: isLightWhite ? '#1e293b' : '#fff', fontSize: '14px', fontWeight: 'bold' }}
+                          cursor={{ fill: isLightWhite ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.5)' }}
                         />
                         <Legend />
                         <Bar dataKey="total" fill="#3b82f6" name="Total Novedades" radius={[4, 4, 0, 0]} />
@@ -1701,21 +1836,25 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 </div>
 
                 {/* Chart 3: Frequent Causes (Causales) */}
-                <div className="glass-card p-6 !bg-black border border-slate-900 lg:col-span-2 shadow-[0_0_25px_rgba(0,0,0,0.9)]">
+                <div className={`glass-card p-6 border lg:col-span-2 ${isLightWhite ? 'bg-white border-slate-200 shadow-sm' : '!bg-black border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)]'}`}>
                   <div className="flex items-center justify-between mb-4">
-                    <h5 className="text-[15px] font-bold text-white uppercase tracking-wider font-display">Principales Causales de Retorno / Novedad</h5>
-                    <span className="text-[11px] font-mono text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full">Causas Frecuentes</span>
+                    <h5 className={`text-[15px] font-bold uppercase tracking-wider font-display ${isLightWhite ? 'text-slate-700' : 'text-white'}`}>Principales Causales de Retorno / Novedad</h5>
+                    <span className="text-[11px] font-mono text-red-600 bg-red-400/10 px-2 py-0.5 rounded-full">Causas Frecuentes</span>
                   </div>
                   <div className="h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={aiResult.charts?.causes || []} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" stroke="#222" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={isLightWhite ? "#e2e8f0" : "#222"} />
                         <XAxis type="number" stroke="#888" fontSize={12} tickLine={false} />
                         <YAxis dataKey="name" type="category" stroke="#888" fontSize={12} tickLine={false} width={180} />
                         <Tooltip 
-                          contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                          labelStyle={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
-                          cursor={{ fill: 'rgba(0, 0, 0, 0.5)' }}
+                          contentStyle={{ 
+                            backgroundColor: isLightWhite ? '#ffffff' : '#000000', 
+                            border: isLightWhite ? '1px solid #e2e8f0' : '1px solid #1f1f2e', 
+                            borderRadius: '8px' 
+                          }}
+                          labelStyle={{ color: isLightWhite ? '#1e293b' : '#fff', fontSize: '14px', fontWeight: 'bold' }}
+                          cursor={{ fill: isLightWhite ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.5)' }}
                         />
                         <Legend />
                         <Bar dataKey="cantidad" fill="#f5c842" name="Volumen de Casos" radius={[0, 4, 4, 0]} />
@@ -1725,21 +1864,25 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 </div>
 
                 {/* Chart 4: Explanations of Noveltity/Success event descriptions */}
-                <div className="glass-card p-6 !bg-black border border-slate-900 lg:col-span-2 shadow-[0_0_25px_rgba(0,0,0,0.9)]">
+                <div className={`glass-card p-6 border lg:col-span-2 ${isLightWhite ? 'bg-white border-slate-200 shadow-sm' : '!bg-black border-slate-900 shadow-[0_0_25px_rgba(0,0,0,0.9)]'}`}>
                   <div className="flex items-center justify-between mb-4">
-                    <h5 className="text-[15px] font-bold text-white uppercase tracking-wider font-display">Incidencias por Explicación del Suceso</h5>
-                    <span className="text-[11px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">Explicación Detallada (IA NLP)</span>
+                    <h5 className={`text-[15px] font-bold uppercase tracking-wider font-display ${isLightWhite ? 'text-slate-700' : 'text-white'}`}>Incidencias por Explicación del Suceso</h5>
+                    <span className="text-[11px] font-mono text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded-full">Explicación Detallada (IA NLP)</span>
                   </div>
                   <div className="h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={aiResult.charts?.explanations || []} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" stroke="#222" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={isLightWhite ? "#e2e8f0" : "#222"} />
                         <XAxis type="number" stroke="#888" fontSize={12} tickLine={false} />
                         <YAxis dataKey="name" type="category" stroke="#888" fontSize={11} tickLine={false} width={200} />
                         <Tooltip 
-                          contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
-                          labelStyle={{ color: '#fff', fontSize: '13px', fontWeight: 'bold' }}
-                          cursor={{ fill: 'rgba(0, 0, 0, 0.5)' }}
+                          contentStyle={{ 
+                            backgroundColor: isLightWhite ? '#ffffff' : '#000000', 
+                            border: isLightWhite ? '1px solid #e2e8f0' : '1px solid #1f1f2e', 
+                            borderRadius: '8px' 
+                          }}
+                          labelStyle={{ color: isLightWhite ? '#1e293b' : '#fff', fontSize: '13px', fontWeight: 'bold' }}
+                          cursor={{ fill: isLightWhite ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.5)' }}
                         />
                         <Legend />
                         <Bar dataKey="cantidad" fill="#a855f7" name="Casos por Explicación" radius={[0, 4, 4, 0]} />

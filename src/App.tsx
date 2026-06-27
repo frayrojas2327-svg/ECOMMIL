@@ -869,7 +869,7 @@ function AppContent() {
                   currentCurrency={currency}
                   exchangeRate={currencyInfo.rate}
                   isConversionActive={isConversionActive}
-                  viewMode="DROPI"
+                  viewMode="DROPI" theme={theme}
                 />
               )}
               {activeTab === 'shopify' && (
@@ -882,7 +882,7 @@ function AppContent() {
                   currentCurrency={currency}
                   exchangeRate={currencyInfo.rate}
                   isConversionActive={isConversionActive}
-                  viewMode="SHOPIFY"
+                  viewMode="SHOPIFY" theme={theme}
                 />
               )}
               {activeTab === 'consiliador-pro' && (
@@ -895,7 +895,7 @@ function AppContent() {
                   currentCurrency={currency}
                   exchangeRate={currencyInfo.rate}
                   isConversionActive={isConversionActive}
-                  viewMode="TIKTOK"
+                  viewMode="TIKTOK" theme={theme}
                 />
               )}
               {activeTab === 'calculator' && (
@@ -917,7 +917,7 @@ function AppContent() {
                 />
               )}
               {activeTab === 'research' && <MarketResearch />}
-              {activeTab === 'ad-panel' && <AdPanel />}
+              {activeTab === 'ad-panel' && <AdPanel theme={theme} />}
               {activeTab === 'returns' && (
                 <ReturnsAnalysis 
                   orders={orders} 
@@ -925,6 +925,7 @@ function AppContent() {
                   currency={currency}
                   currencies={dynamicCurrencies}
                   isConversionActive={isConversionActive}
+                  theme={theme}
                 />
               )}
               {activeTab === 'ads' && (

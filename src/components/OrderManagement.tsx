@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Download, ChevronDown, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp } from 'lucide-react';
+import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp } from 'lucide-react';
 import { Order, calculateOrderProfit, OrderStatus } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,6 +15,7 @@ interface OrderManagementProps {
   exchangeRate?: number;
   isConversionActive?: boolean;
   viewMode?: 'SHOPIFY' | 'DROPI' | 'TIKTOK';
+  theme?: string;
 }
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
@@ -117,9 +118,22 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   currentCurrency = 'USD',
   exchangeRate = 1,
   isConversionActive = false,
-  viewMode = 'DROPI'
+  viewMode = 'DROPI',
+  theme = 'theme-light-white'
 }) => {
+  const isLightWhite = theme === 'theme-light-white';
   const isReconciliationMode = viewMode === 'TIKTOK';
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollTable = (direction: 'left' | 'right') => {
+    if (tableScrollRef.current) {
+      const scrollAmount = 400;
+      tableScrollRef.current.scrollBy({
+        left: direction === 'right' ? scrollAmount : -scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
   const [activeSource, setActiveSource] = useState<'all' | 'shopify' | 'dropi' | 'tiktok' | 'reconciliation' | 'flows'>(
     viewMode === 'TIKTOK' ? 'flows' : 'all'
   );
@@ -1481,11 +1495,6 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           render: (o: Order) => (
             <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
               <StatusBadge status={o.status} />
-              {o.trackingId && (
-                <span className="text-[12px] font-mono font-bold text-sky-500 hover:underline cursor-pointer block tracking-wider mt-1 status-tracking-id">
-                  {o.trackingId}
-                </span>
-              )}
               <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
                 {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
               </span>
@@ -1527,11 +1536,6 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         render: (o: Order) => (
           <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
             <StatusBadge status={o.status} />
-            {o.trackingId && (
-              <span className="text-[12px] font-mono font-bold text-sky-500 hover:underline cursor-pointer block tracking-wider mt-1 status-tracking-id">
-                {o.trackingId}
-              </span>
-            )}
             <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
               {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
             </span>
@@ -2827,50 +2831,98 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
           <div className="p-4 border-b border-white/5 flex flex-wrap items-center gap-6 bg-white/[0.005]">
             <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-3 bg-slate-800/40 p-2.5 rounded-2xl border border-white/5 min-w-[200px] hover:bg-slate-800/60 transition-colors">
-                <div className="p-2 bg-white/5 rounded-xl text-slate-400">
+              <div className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all custom-filter-card-wrapper ${
+                isLightWhite 
+                  ? 'bg-white border-slate-200 shadow-sm hover:bg-slate-50' 
+                  : 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60'
+              } min-w-[200px]`}>
+                <div className={`p-2 rounded-xl ${
+                  isLightWhite ? 'bg-slate-100 text-slate-500' : 'bg-white/5 text-slate-400'
+                }`}>
                   <Clock size={16} />
                 </div>
                 <div className="flex flex-col flex-1">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1.5">F. Solicitado</span>
+                  <span className={`font-black uppercase tracking-widest leading-none mb-1.5 ${
+                    isLightWhite ? 'text-[12px] text-slate-500' : 'text-[9px] text-slate-500'
+                  }`}>F. Solicitado</span>
                   <input 
                     type="date"
                     value={reqDate}
-                    onClick={(e) => (e.target as any).showPicker?.()}
+                    onClick={(e) => {
+                      try {
+                        (e.target as any).showPicker?.();
+                      } catch (err) {
+                        console.warn('showPicker restricted in this environment:', err);
+                      }
+                    }}
                     onChange={(e) => setReqDate(e.target.value)}
-                    className="bg-transparent border-none p-0 text-[11px] font-bold text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
+                    className={`bg-transparent border-none p-0 font-bold focus:outline-none focus:ring-0 w-full cursor-pointer ${
+                      isLightWhite 
+                        ? 'text-slate-800 text-[15px] [color-scheme:light]' 
+                        : 'text-white text-[11px] [color-scheme:dark]'
+                    }`}
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 bg-slate-800/40 p-2.5 rounded-2xl border border-white/5 min-w-[200px] hover:bg-slate-800/60 transition-colors">
-                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400 shadow-sm">
+              <div className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all custom-filter-card-wrapper ${
+                isLightWhite 
+                  ? 'bg-white border-slate-200 shadow-sm hover:bg-slate-50' 
+                  : 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60'
+              } min-w-[200px]`}>
+                <div className={`p-2 rounded-xl ${
+                  isLightWhite ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-500/10 text-emerald-400 shadow-sm'
+                }`}>
                   <CheckCircle2 size={16} />
                 </div>
                 <div className="flex flex-col flex-1">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1.5">F. Entregado</span>
+                  <span className={`font-black uppercase tracking-widest leading-none mb-1.5 ${
+                    isLightWhite ? 'text-[12px] text-slate-500' : 'text-[9px] text-slate-500'
+                  }`}>F. Entregado</span>
                   <input 
                     type="date"
                     value={delDate}
-                    onClick={(e) => (e.target as any).showPicker?.()}
+                    onClick={(e) => {
+                      try {
+                        (e.target as any).showPicker?.();
+                      } catch (err) {
+                        console.warn('showPicker restricted in this environment:', err);
+                      }
+                    }}
                     onChange={(e) => setDelDate(e.target.value)}
-                    className="bg-transparent border-none p-0 text-[11px] font-bold text-white focus:outline-none focus:ring-0 [color-scheme:dark] w-full cursor-pointer"
+                    className={`bg-transparent border-none p-0 font-bold focus:outline-none focus:ring-0 w-full cursor-pointer ${
+                      isLightWhite 
+                        ? 'text-slate-800 text-[15px] [color-scheme:light]' 
+                        : 'text-white text-[11px] [color-scheme:dark]'
+                    }`}
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 bg-slate-800/40 p-2.5 rounded-2xl border border-white/5 min-w-[160px] hover:bg-slate-800/60 transition-colors">
-                <div className="p-2 bg-blue-500/10 rounded-xl text-blue-400">
+              <div className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all custom-filter-card-wrapper ${
+                isLightWhite 
+                  ? 'bg-white border-slate-200 shadow-sm hover:bg-slate-50' 
+                  : 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60'
+              } min-w-[160px]`}>
+                <div className={`p-2 rounded-xl ${
+                  isLightWhite ? 'bg-blue-50 text-blue-600' : 'bg-blue-500/10 text-blue-400'
+                }`}>
                   <MapPin size={16} />
                 </div>
                 <div className="flex flex-col flex-1">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1.5">Ubicación</span>
+                  <span className={`font-black uppercase tracking-widest leading-none mb-1.5 ${
+                    isLightWhite ? 'text-[12px] text-slate-500' : 'text-[9px] text-slate-500'
+                  }`}>Ubicación</span>
                   <input 
                     type="text" 
                     placeholder="Ciudad/Depto"
                     value={cityFilter}
                     onChange={(e) => setCityFilter(e.target.value)}
-                    className="bg-transparent border-none p-0 text-[11px] font-bold text-white focus:outline-none placeholder:text-slate-700 w-full"
+                    className={`bg-transparent border-none p-0 font-bold focus:outline-none w-full ${
+                      isLightWhite 
+                        ? 'text-slate-800 text-[15px] placeholder:text-slate-400' 
+                        : 'text-white text-[11px] placeholder:text-slate-700'
+                    }`}
                   />
                 </div>
               </div>
@@ -2893,8 +2945,42 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           </div>
         </div>
 
+        {/* Controles de Desplazamiento (Scroll) */}
+        <div className="flex items-center justify-between mb-4 mt-2 px-1">
+          <div className="flex items-center gap-3">
+            <span className={`text-[11px] font-black uppercase tracking-[0.15em] ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+              Desplazar Tabla:
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => scrollTable('left')}
+                className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
+                  isLightWhite
+                    ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm active:bg-slate-100'
+                    : 'bg-slate-800/40 border-white/5 text-slate-400 hover:text-white hover:bg-slate-800/60 active:bg-slate-800'
+                }`}
+                title="Desplazar a la izquierda"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() => scrollTable('right')}
+                className={`flex items-center gap-2 py-2 px-4 rounded-xl border font-black text-[11px] uppercase tracking-wider transition-all ${
+                  isLightWhite
+                    ? 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600 shadow-sm active:bg-emerald-700'
+                    : 'bg-[#00df9a]/10 border-[#00df9a]/20 text-[#00df9a] hover:bg-[#00df9a]/20 active:bg-[#00df9a]/30'
+                }`}
+                title="Avanzar a la derecha"
+              >
+                <span>Avanzar a la derecha</span>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Table */}
-        <div className="overflow-x-auto custom-scrollbar relative border border-white/5 rounded-2xl bg-black">
+        <div ref={tableScrollRef} className="overflow-x-auto custom-scrollbar relative border border-white/5 rounded-2xl bg-black">
           <table className="w-full text-left border-collapse whitespace-nowrap min-w-[3000px]">
             <thead>
               <tr className="bg-[#111] border-b border-white/5">

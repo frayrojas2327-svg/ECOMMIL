@@ -296,7 +296,13 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
               <input 
                 type="date" 
                 value={newFixed.startDate}
-                onClick={(e) => (e.target as any).showPicker?.()}
+                onClick={(e) => {
+                  try {
+                    (e.target as any).showPicker?.();
+                  } catch (err) {
+                    console.warn('showPicker restricted in this environment:', err);
+                  }
+                }}
                 onChange={(e) => setNewFixed({...newFixed, startDate: e.target.value})}
                 className="w-full bg-background border border-border rounded-xl py-2 px-3 text-white text-xs focus:outline-none focus:border-neon [color-scheme:dark]"
               />
@@ -306,7 +312,13 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
               <input 
                 type="date" 
                 value={newFixed.endDate}
-                onClick={(e) => (e.target as any).showPicker?.()}
+                onClick={(e) => {
+                  try {
+                    (e.target as any).showPicker?.();
+                  } catch (err) {
+                    console.warn('showPicker restricted in this environment:', err);
+                  }
+                }}
                 onChange={(e) => setNewFixed({...newFixed, endDate: e.target.value})}
                 className="w-full bg-background border border-border rounded-xl py-2 px-3 text-white text-xs focus:outline-none focus:border-neon [color-scheme:dark]"
               />
@@ -503,14 +515,26 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                         <input 
                           type="date"
                           value={expense.startDate}
-                          onClick={(e) => (e.target as any).showPicker?.()}
+                          onClick={(e) => {
+                            try {
+                              (e.target as any).showPicker?.();
+                            } catch (err) {
+                              console.warn('showPicker restricted in this environment:', err);
+                            }
+                          }}
                           onChange={(e) => updateExpense(expense.id, 'startDate', e.target.value)}
                           className="bg-background border border-border rounded-lg py-1 px-2 text-[11px] text-white focus:outline-none focus:border-neon [color-scheme:dark]"
                         />
                         <input 
                           type="date"
                           value={expense.endDate}
-                          onClick={(e) => (e.target as any).showPicker?.()}
+                          onClick={(e) => {
+                            try {
+                              (e.target as any).showPicker?.();
+                            } catch (err) {
+                              console.warn('showPicker restricted in this environment:', err);
+                            }
+                          }}
                           onChange={(e) => updateExpense(expense.id, 'endDate', e.target.value)}
                           className="bg-background border border-border rounded-lg py-1 px-2 text-[11px] text-white focus:outline-none focus:border-neon [color-scheme:dark]"
                         />
