@@ -1,4 +1,4 @@
-import { subDays, format, startOfDay, isSameDay } from 'date-fns';
+import { subDays, addDays, format, startOfDay, isSameDay } from 'date-fns';
 
 export type OrderStatus = 'Entregado' | 'En tránsito' | 'Devuelto' | 'Cancelado' | 'Pendiente' | 'Guía Generada' | 'Recolectado' | 'Incidencia';
 
@@ -7,6 +7,7 @@ export interface Order {
   orderId: string; // Document External ID
   uid: string;
   date: Date;
+  originalDate?: Date;
   product: string;
   cost: number;
   price: number;
@@ -84,6 +85,8 @@ export interface Order {
   feImpuesto?: string;
   sourceCurrency?: CurrencyCode;
   priorityShipping?: number;
+  fechaSolicitud?: string;
+  fechaEntregaDevolucion?: string;
 }
 
 const PRODUCTS = [
@@ -116,12 +119,12 @@ export const generateMockData = (): Order[] => {
     
     // Weighted status
     const rand = Math.random();
-    let status: OrderStatus = 'Entregado';
-    if (rand < 0.1) status = 'Devuelto';
-    else if (rand < 0.2) status = 'Cancelado';
-    else if (rand < 0.4) status = 'Pendiente';
-    else if (rand < 0.6) status = 'En tránsito';
-    else if (rand < 0.8) status = 'Guía Generada';
+    let status: OrderStatus = 'Pendiente';
+    if (rand < 0.5) status = 'Entregado';
+    else if (rand < 0.6) status = 'Devuelto';
+    else if (rand < 0.7) status = 'Cancelado';
+    else if (rand < 0.8) status = 'En tránsito';
+    else if (rand < 0.85) status = 'Guía Generada';
     else if (rand < 0.9) status = 'Recolectado';
     else status = 'Incidencia';
 
@@ -162,7 +165,9 @@ export const generateMockData = (): Order[] => {
       direccion: 'Calle ' + Math.floor(Math.random() * 100) + ' # ' + Math.floor(Math.random() * 50),
       numeroFactura: 'FE-' + (5000 + i),
       fueSolucionadaNovedad: 'No',
-      tags: Math.random() < 0.25 ? 'tik tok organico' : Math.random() < 0.15 ? 'facebook ads' : undefined
+      tags: Math.random() < 0.25 ? 'tik tok organico' : Math.random() < 0.15 ? 'facebook ads' : undefined,
+      fechaSolicitud: format(date, 'yyyy-MM-dd'),
+      fechaEntregaDevolucion: (status === 'Entregado' || status === 'Devuelto') ? format(addDays(date, 3), 'yyyy-MM-dd') : '---'
     });
   }
 

@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis
 import { 
   AlertTriangle, RotateCcw, XCircle, TrendingDown, Globe, Brain, Sparkles, Cpu, Loader2, 
   BarChart3, TrendingUp, CheckCircle, ArrowRight, Plus, Trash2, Edit2, Calendar, FileText, 
-  Search, Info, AlertCircle, RefreshCw
+  Search, Info, AlertCircle, RefreshCw, Palette, Tag, Check
 } from 'lucide-react';
 import { Order, calculateOrderProfit, CurrencyCode } from '../mockData';
 import Markdown from 'react-markdown';
@@ -41,7 +41,148 @@ interface ReturnsAnalysisProps {
   currencies?: any;
   isConversionActive?: boolean;
   theme?: string;
+  onDeleteOrders?: (ids: string[]) => Promise<void> | void;
 }
+
+export interface CustomLabel {
+  name: string;
+  colorId: string; // references COLOR_PRESETS id
+}
+
+export interface ColorPreset {
+  id: string;
+  name: string;
+  dotBg: string; // CSS style background color
+  lightBg: string; // Tailwind class
+  lightText: string;
+  lightBorder: string;
+  darkBg: string;
+  darkText: string;
+  darkBorder: string;
+}
+
+export const COLOR_PRESETS: ColorPreset[] = [
+  {
+    id: 'gray',
+    name: 'Gris Carbón',
+    dotBg: '#374151',
+    lightBg: 'bg-slate-100',
+    lightText: 'text-slate-800',
+    lightBorder: 'border-slate-300',
+    darkBg: 'bg-slate-800/40',
+    darkText: 'text-slate-300',
+    darkBorder: 'border-slate-700/60'
+  },
+  {
+    id: 'red',
+    name: 'Rojo',
+    dotBg: '#ef4444',
+    lightBg: 'bg-red-50',
+    lightText: 'text-red-700',
+    lightBorder: 'border-red-200',
+    darkBg: 'bg-red-500/15',
+    darkText: 'text-red-400',
+    darkBorder: 'border-red-500/20'
+  },
+  {
+    id: 'brown',
+    name: 'Marrón Ocre',
+    dotBg: '#b45309',
+    lightBg: 'bg-amber-100/70',
+    lightText: 'text-amber-800',
+    lightBorder: 'border-amber-300',
+    darkBg: 'bg-amber-700/20',
+    darkText: 'text-amber-400',
+    darkBorder: 'border-amber-700/30'
+  },
+  {
+    id: 'navy',
+    name: 'Azul Marino',
+    dotBg: '#1e3a8a',
+    lightBg: 'bg-blue-50',
+    lightText: 'text-blue-800',
+    lightBorder: 'border-blue-200',
+    darkBg: 'bg-blue-500/15',
+    darkText: 'text-blue-400',
+    darkBorder: 'border-blue-500/20'
+  },
+  {
+    id: 'maroon',
+    name: 'Guinda / Maroon',
+    dotBg: '#831843',
+    lightBg: 'bg-purple-50',
+    lightText: 'text-purple-800',
+    lightBorder: 'border-purple-200',
+    darkBg: 'bg-purple-500/15',
+    darkText: 'text-purple-400',
+    darkBorder: 'border-purple-500/20'
+  },
+  {
+    id: 'orange',
+    name: 'Naranja',
+    dotBg: '#ea580c',
+    lightBg: 'bg-orange-50',
+    lightText: 'text-orange-700',
+    lightBorder: 'border-orange-200',
+    darkBg: 'bg-orange-500/15',
+    darkText: 'text-orange-400',
+    darkBorder: 'border-orange-500/20'
+  },
+  {
+    id: 'yellow',
+    name: 'Amarillo / Oro',
+    dotBg: '#eab308',
+    lightBg: 'bg-yellow-50',
+    lightText: 'text-yellow-700',
+    lightBorder: 'border-yellow-200',
+    darkBg: 'bg-yellow-500/15',
+    darkText: 'text-yellow-400',
+    darkBorder: 'border-yellow-500/20'
+  },
+  {
+    id: 'green',
+    name: 'Verde',
+    dotBg: '#10b981',
+    lightBg: 'bg-emerald-50',
+    lightText: 'text-emerald-700',
+    lightBorder: 'border-emerald-200',
+    darkBg: 'bg-emerald-500/15',
+    darkText: 'text-emerald-400',
+    darkBorder: 'border-emerald-500/20'
+  },
+  {
+    id: 'pink',
+    name: 'Rosa',
+    dotBg: '#ec4899',
+    lightBg: 'bg-pink-50',
+    lightText: 'text-pink-700',
+    lightBorder: 'border-pink-200',
+    darkBg: 'bg-pink-500/15',
+    darkText: 'text-pink-400',
+    darkBorder: 'bg-pink-500/20'
+  },
+  {
+    id: 'cyan',
+    name: 'Celeste / Cian',
+    dotBg: '#06b6d4',
+    lightBg: 'bg-cyan-50',
+    lightText: 'text-cyan-700',
+    lightBorder: 'border-cyan-200',
+    darkBg: 'bg-cyan-500/15',
+    darkText: 'text-cyan-400',
+    darkBorder: 'border-cyan-500/20'
+  }
+];
+
+export const DEFAULT_LABELS: CustomLabel[] = [
+  { name: 'TIK TOK ORGANICO', colorId: 'gray' },
+  { name: 'RECORDAR EXPRES CENT', colorId: 'red' },
+  { name: 'PEDIR BIEN DEPAR-CIU', colorId: 'brown' },
+  { name: 'PRUEBA', colorId: 'navy' },
+  { name: 'DATOS INCORR-BUZON', colorId: 'maroon' },
+  { name: 'CLIENTE NO CONTESTA', colorId: 'orange' },
+  { name: 'POSTERGACION', colorId: 'yellow' }
+];
 
 const MONTHS_SPANISH = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -60,7 +201,7 @@ const getMonthFromDate = (dateStr: string): string => {
   return '';
 };
 
-const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrency, currency = 'USD', currencies = {}, isConversionActive = false, theme }) => {
+const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrency, currency = 'USD', currencies = {}, isConversionActive = false, theme, onDeleteOrders }) => {
   const { user, isDemoMode } = useAuth();
   
   const isLightWhite = theme === 'theme-light-white';
@@ -117,6 +258,95 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
   const [noveltiesLoading, setNoveltiesLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingNovelty, setEditingNovelty] = useState<ReturnNovelty | null>(null);
+
+  // Custom Labels States
+  const [customLabels, setCustomLabels] = useState<CustomLabel[]>(() => {
+    const saved = localStorage.getItem('ecommil_custom_return_tags');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return DEFAULT_LABELS;
+  });
+
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColorId, setNewTagColorId] = useState('gray');
+
+  // Load custom tags from Firestore if logged in
+  useEffect(() => {
+    if (!user || !isFirebaseConfigValid || isDemoMode || !db) {
+      return;
+    }
+
+    const docRef = doc(db, 'custom_return_tags', user.uid);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.labels)) {
+          setCustomLabels(data.labels);
+          localStorage.setItem('ecommil_custom_return_tags', JSON.stringify(data.labels));
+        }
+      } else {
+        // Seed database
+        const initialLabels = localStorage.getItem('ecommil_custom_return_tags')
+          ? JSON.parse(localStorage.getItem('ecommil_custom_return_tags')!)
+          : DEFAULT_LABELS;
+          
+        setDoc(docRef, {
+          uid: user.uid,
+          labels: initialLabels
+        }).catch(err => console.error("Error seeding initial tags in Firestore:", err));
+      }
+    }, (error) => {
+      console.error("Error listening to custom tags in Firestore:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user, isDemoMode]);
+
+  // Save tags helper
+  const saveCustomLabels = async (newLabels: CustomLabel[]) => {
+    setCustomLabels(newLabels);
+    localStorage.setItem('ecommil_custom_return_tags', JSON.stringify(newLabels));
+
+    if (user && isFirebaseConfigValid && !isDemoMode && db) {
+      try {
+        await setDoc(doc(db, 'custom_return_tags', user.uid), {
+          uid: user.uid,
+          labels: newLabels
+        });
+      } catch (err) {
+        console.error("Error saving custom tags to Firestore:", err);
+      }
+    }
+  };
+
+  const getLabelPreset = (labelName: string) => {
+    const cleanName = labelName.trim().toUpperCase();
+    const foundLabel = customLabels.find(l => l.name.toUpperCase() === cleanName);
+    const colorId = foundLabel ? foundLabel.colorId : 'gray';
+    return COLOR_PRESETS.find(p => p.id === colorId) || COLOR_PRESETS[0];
+  };
+
+  const renderEtiquetaDevolucion = (labelName: string | undefined) => {
+    if (!labelName || labelName.trim() === '') {
+      return <span className="text-slate-400 text-[15px] italic font-sans">— Sin Etiqueta —</span>;
+    }
+    const preset = getLabelPreset(labelName);
+    const colorClass = isLightWhite 
+      ? `${preset.lightBg} ${preset.lightText} ${preset.lightBorder}` 
+      : `${preset.darkBg} ${preset.darkText} ${preset.darkBorder}`;
+      
+    return (
+      <span className={`px-2.5 py-1 rounded-lg text-[15px] font-bold uppercase tracking-wider border ${colorClass}`}>
+        {labelName}
+      </span>
+    );
+  };
   
   // Saved product list from price calculator
   const [savedProducts, setSavedProducts] = useState<SavedProduct[]>([]);
@@ -161,6 +391,15 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
   const [noveltyTagFilter, setNoveltyTagFilter] = useState<string>('TODOS');
   const [noveltyDevolucionFilter, setNoveltyDevolucionFilter] = useState<string>('TODOS');
   const [formEtiquetaDevolucion, setFormEtiquetaDevolucion] = useState<string>('');
+
+  // Tab state for professional return list vs novelties control
+  const [activeSubTab, setActiveSubTab] = useState<'novelties' | 'all-returns'>('all-returns');
+  const [allReturnsSearch, setAllReturnsSearch] = useState<string>('');
+  const [allReturnsTagFilter, setAllReturnsTagFilter] = useState<string>('TODOS');
+
+  // Selection and Deletion states for returned orders list
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [deletingIds, setDeletingIds] = useState<string[] | null>(null);
 
   // Auto-sync month when fecha changes
   useEffect(() => {
@@ -381,9 +620,191 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
     return map;
   }, [orders]);
 
+  // Find minimum and maximum dates from orders to get the current selected date range
+  const dateRange = useMemo(() => {
+    if (orders.length === 0) return null;
+    let minDate = '';
+    let maxDate = '';
+    orders.forEach(o => {
+      const d = o.date || o.fechaSolicitud || o.fechaEntregaDevolucion;
+      if (d) {
+        const dStr = d instanceof Date ? d.toISOString().split('T')[0] : String(d);
+        if (!minDate || dStr < minDate) minDate = dStr;
+        if (!maxDate || dStr > maxDate) maxDate = dStr;
+      }
+    });
+    return { minDate, maxDate };
+  }, [orders]);
+
+  // Filter novelties based on the active date range / matching active orders
+  const noveltiesInDateRange = useMemo(() => {
+    return novelties.filter(n => {
+      // If it's linked to an order, and that order is in the current orders list, keep it!
+      if (n.orderId) {
+        const hasOrderInActiveList = orderLookupMap.has(n.orderId.toLowerCase());
+        if (hasOrderInActiveList) return true;
+      }
+      
+      // Otherwise, filter by the date range computed from the active orders
+      if (dateRange && n.fecha) {
+        return n.fecha >= dateRange.minDate && n.fecha <= dateRange.maxDate;
+      }
+      
+      // Default fallback: keep it if no date range is set
+      return !dateRange;
+    });
+  }, [novelties, dateRange, orderLookupMap]);
+
+  // List of all returned orders
+  const returnedOrders = useMemo(() => {
+    return orders.filter(o => o.status === 'Devuelto');
+  }, [orders]);
+
+  // Compute unique tags from all returned orders for filter select dropdown
+  const allReturnedOrdersTags = useMemo(() => {
+    const tagsSet = new Set<string>();
+    returnedOrders.forEach(o => {
+      if (o.tags) {
+        o.tags.split(',').forEach(t => {
+          const trimmed = t.trim().toLowerCase();
+          if (trimmed) {
+            tagsSet.add(trimmed);
+          }
+        });
+      }
+    });
+    return Array.from(tagsSet).sort();
+  }, [returnedOrders]);
+
+  // Filter returned orders for the "Todos los Pedidos Devueltos" list
+  const filteredReturnedOrders = useMemo(() => {
+    return returnedOrders.filter(o => {
+      // Filter by tag
+      if (allReturnsTagFilter !== 'TODOS') {
+        if (!o.tags) return false;
+        const oTagsLower = o.tags.toLowerCase();
+        const targetLower = allReturnsTagFilter.toLowerCase();
+        
+        if (allReturnsTagFilter === 'SIN_ETIQUETA') {
+          if (o.tags.trim() !== '') return false;
+        } else {
+          const individualTags = oTagsLower.split(',').map(t => t.trim());
+          const hasTag = individualTags.includes(targetLower) || oTagsLower.includes(targetLower);
+          if (!hasTag) return false;
+        }
+      }
+      
+      // Filter by search query
+      const queryLower = allReturnsSearch.toLowerCase();
+      if (!queryLower) return true;
+      return (
+        o.orderId?.toLowerCase().includes(queryLower) ||
+        o.nombreCliente?.toLowerCase().includes(queryLower) ||
+        o.product?.toLowerCase().includes(queryLower) ||
+        o.trackingId?.toLowerCase().includes(queryLower) ||
+        o.tags?.toLowerCase().includes(queryLower) ||
+        o.transportadora?.toLowerCase().includes(queryLower)
+      );
+    });
+  }, [returnedOrders, allReturnsSearch, allReturnsTagFilter]);
+
+  const handleToggleSelectOrder = (id: string) => {
+    setSelectedOrderIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    const allFilteredIds = filteredReturnedOrders.map(o => o.id);
+    const allSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedOrderIds.includes(id));
+    
+    if (allSelected) {
+      setSelectedOrderIds(prev => prev.filter(id => !allFilteredIds.includes(id)));
+    } else {
+      setSelectedOrderIds(prev => {
+        const newSelection = [...prev];
+        allFilteredIds.forEach(id => {
+          if (!newSelection.includes(id)) {
+            newSelection.push(id);
+          }
+        });
+        return newSelection;
+      });
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingIds || deletingIds.length === 0) return;
+    if (onDeleteOrders) {
+      await onDeleteOrders(deletingIds);
+    }
+    setSelectedOrderIds(prev => prev.filter(id => !deletingIds.includes(id)));
+    setDeletingIds(null);
+  };
+
+  const findAssociatedNovelty = (order: Order) => {
+    return novelties.find(n => 
+      (n.orderId && order.orderId && n.orderId.toLowerCase() === order.orderId.toLowerCase()) || 
+      (n.orderId && order.id && n.orderId.toLowerCase() === order.id.toLowerCase())
+    );
+  };
+
+  const handleCreateNoveltyFromOrder = (order: Order) => {
+    // Open the form
+    setIsFormOpen(true);
+    // Select editing/creating from order
+    setSelectedOrderId(order.id || order.orderId);
+    // Pre-fill the form values
+    setFormOrderId(order.orderId || '');
+    setFormGuia(order.trackingId || '');
+    setFormProductName(order.product || '');
+    setFormNombreCliente(order.nombreCliente || '');
+    setFormTransportadora(order.transportadora || '');
+    if (order.date) {
+      const formattedDate = new Date(order.date).toISOString().split('T')[0];
+      setFormFecha(formattedDate);
+    }
+    // Set a default description
+    setFormDescripcion(`Creado automáticamente desde el pedido devuelto.`);
+    setFormResolucion('🔄 Devolución');
+    
+    // Switch sub-tab to novelties so they see the form
+    setActiveSubTab('novelties');
+    
+    // Scroll to form or focus after transition
+    setTimeout(() => {
+      const formElement = document.querySelector('form');
+      if (formElement) {
+        formElement.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 100);
+  };
+
+  const renderOrderTags = (tagsString: string | undefined) => {
+    if (!tagsString || tagsString.trim() === '') {
+      return <span className="text-slate-500 text-[15px] italic">Sin etiquetas</span>;
+    }
+    const tagsList = tagsString.split(',').map(t => t.trim()).filter(Boolean);
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {tagsList.map((tag, idx) => {
+          const preset = getLabelPreset(tag);
+          const colorClass = isLightWhite 
+            ? `${preset.lightBg} ${preset.lightText} ${preset.lightBorder}` 
+            : `${preset.darkBg} ${preset.darkText} ${preset.darkBorder}`;
+          return (
+            <span key={idx} className={`text-[14px] font-black px-2.5 py-1 rounded-full border uppercase tracking-wider ${colorClass}`}>
+              {tag}
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   // Filter return novelties for listing
   const filteredNovelties = useMemo(() => {
-    return novelties.filter(n => {
+    return noveltiesInDateRange.filter(n => {
       // Tag filter
       if (noveltyTagFilter !== 'TODOS') {
         const orderIdKey = n.orderId?.toLowerCase() || '';
@@ -427,7 +848,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
         n.mes?.toLowerCase().includes(queryLower)
       );
     });
-  }, [novelties, noveltySearch, noveltyTagFilter, noveltyDevolucionFilter, orderLookupMap]);
+  }, [noveltiesInDateRange, noveltySearch, noveltyTagFilter, noveltyDevolucionFilter, orderLookupMap]);
 
   const localFormatCurrency = (amount: number) => {
     const isUSD = !isConversionActive;
@@ -564,11 +985,11 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
   // Consolidate dataset on client-side to only analyze returns & incidents (Novedades de Devoluciones)
   const aiPreparedData = useMemo(() => {
-    const totalNovelties = novelties.length;
+    const totalNovelties = noveltiesInDateRange.length;
 
     // Carrier distribution (Distribución de Transportadoras)
     const carrierMap: Record<string, { name: string, total: number, devuelto: number, reintento: number, solucionado: number }> = {};
-    novelties.forEach(n => {
+    noveltiesInDateRange.forEach(n => {
       const carrier = n.transportadora || "No especificada";
       if (!carrierMap[carrier]) {
         carrierMap[carrier] = { name: carrier, total: 0, devuelto: 0, reintento: 0, solucionado: 0 };
@@ -587,7 +1008,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
     // Monthly distribution (Distribución por Mes de Registro)
     const monthlyMap: Record<string, { name: string, total: number, devuelto: number, solucionado: number }> = {};
-    novelties.forEach(n => {
+    noveltiesInDateRange.forEach(n => {
       let month = n.mes;
       if (!month && n.fecha) {
         month = getMonthFromDate(n.fecha);
@@ -606,7 +1027,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
       }
     });
 
-    const detailedNoveltiesList = novelties.map(n => ({
+    const detailedNoveltiesList = noveltiesInDateRange.map(n => ({
       fecha: n.fecha,
       mes: n.mes || getMonthFromDate(n.fecha) || "Sin registrar",
       orderId: n.orderId || "MANUAL",
@@ -625,7 +1046,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
       monthlyData: Object.values(monthlyMap),
       detailedNoveltiesList
     };
-  }, [novelties]);
+  }, [noveltiesInDateRange]);
 
   const handleAIAnalysis = async () => {
     setAiLoading(true);
@@ -887,45 +1308,75 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
       {/* Historial y Gestión de Novedades de Devoluciones */}
       <div className="glass-card p-8 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/60 pb-6">
-          <div>
-            <div className="flex items-center gap-2 text-orange-400 font-bold mb-1">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-border/60 pb-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-orange-400 font-bold">
               <RotateCcw size={16} />
-              <span className="text-xs tracking-wider uppercase font-mono">Control Operativo</span>
+              <span className="text-xs tracking-wider uppercase font-mono">Control y Seguimiento</span>
             </div>
-            <h3 className="text-2xl font-display font-extrabold text-white">Gestión de Novedades de Devoluciones</h3>
-            <p className="text-sm text-slate-400">Registra, edita y elimina explicaciones de novedades o incidencias presentadas por transportadoras o clientes.</p>
+            <h3 className="text-2xl font-display font-extrabold text-white">Análisis y Gestión de Devoluciones</h3>
+            <p className="text-sm text-slate-400">Inspecciona todos los pedidos devueltos en Dropi con sus etiquetas o registra fichas de novedades operativas.</p>
           </div>
 
-          <button
-            onClick={() => {
-              if (isFormOpen) {
-                handleResetForm();
-              } else {
-                setIsFormOpen(true);
-              }
-            }}
-            className={`px-5 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              isFormOpen 
-                ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' 
-                : 'bg-gold hover:bg-gold/80 text-black shadow-lg shadow-gold/10'
-            }`}
-          >
-            {isFormOpen ? (
-              <>
-                <XCircle size={16} />
-                <span>Cancelar Registro</span>
-              </>
-            ) : (
-              <>
-                <Plus size={16} />
-                <span>Registrar Nueva Novedad</span>
-              </>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 self-start lg:self-center">
+            {/* Sub-tab selection controls */}
+            <div className="flex items-center p-1 bg-background/80 border border-border/60 rounded-xl">
+              <button
+                onClick={() => setActiveSubTab('all-returns')}
+                className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                  activeSubTab === 'all-returns'
+                    ? 'bg-neon/15 text-neon shadow-[0_0_15px_rgba(34,197,94,0.1)] border border-neon/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📦 Pedidos Devueltos ({returnedOrders.length})
+              </button>
+              <button
+                onClick={() => setActiveSubTab('novelties')}
+                className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                  activeSubTab === 'novelties'
+                    ? 'bg-neon/15 text-neon shadow-[0_0_15px_rgba(34,197,94,0.1)] border border-neon/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                ✍️ Gestión de Novedades ({novelties.length})
+              </button>
+            </div>
+
+            {activeSubTab === 'novelties' && (
+              <button
+                onClick={() => {
+                  if (isFormOpen) {
+                    handleResetForm();
+                  } else {
+                    setIsFormOpen(true);
+                  }
+                }}
+                className={`px-5 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  isFormOpen 
+                    ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' 
+                    : 'bg-gold hover:bg-gold/80 text-black shadow-lg shadow-gold/10'
+                }`}
+              >
+                {isFormOpen ? (
+                  <>
+                    <XCircle size={16} />
+                    <span>Cancelar Registro</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus size={16} />
+                    <span>Registrar Nueva Novedad</span>
+                  </>
+                )}
+              </button>
             )}
-          </button>
+          </div>
         </div>
 
-        {/* Formulario de registro/edición de Novedades (Inline & Animado) */}
+        {activeSubTab === 'novelties' && (
+          <div className="space-y-6">
+            {/* Formulario de registro/edición de Novedades (Inline & Animado) */}
         {isFormOpen && (
           <form onSubmit={handleSubmitNovelty} className={`p-6 rounded-2xl border space-y-6 animate-fade-in ${
             isLightWhite ? 'bg-white border-slate-200 shadow-sm text-slate-800' : 'bg-black/40 border-border/80 text-white'
@@ -1247,13 +1698,29 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                   }`}
                 >
                   <option value="" className={isLightWhite ? 'bg-white text-slate-500' : 'bg-[#111] text-slate-500'}>-- Ninguna / Sin Etiqueta --</option>
-                  <option value="TIK TOK ORGANICO" className={isLightWhite ? 'bg-white text-emerald-600 font-bold' : 'bg-[#111] text-neon font-bold'}>TIK TOK ORGANICO</option>
-                  <option value="RECORDAR EXPRES CENT" className={isLightWhite ? 'bg-white text-sky-600 font-bold' : 'bg-[#111] text-sky-450 font-bold'}>RECORDAR EXPRES CENT</option>
-                  <option value="PEDIR BIEN DEPAR-CIU" className={isLightWhite ? 'bg-white text-pink-600 font-bold' : 'bg-[#111] text-pink-450 font-bold'}>PEDIR BIEN DEPAR-CIU</option>
-                  <option value="PRUEBA" className={isLightWhite ? 'bg-white text-yellow-600 font-bold' : 'bg-[#111] text-yellow-450 font-bold'}>PRUEBA</option>
-                  <option value="DATOS INCORR-BUZON" className={isLightWhite ? 'bg-white text-purple-600 font-bold' : 'bg-[#111] text-purple-450 font-bold'}>DATOS INCORR-BUZON</option>
-                  <option value="CLIENTE NO CONTESTA" className={isLightWhite ? 'bg-white text-red-600 font-bold' : 'bg-[#111] text-red-455 font-bold'}>CLIENTE NO CONTESTA</option>
+                  {customLabels.map(lbl => {
+                    const preset = getLabelPreset(lbl.name);
+                    return (
+                      <option 
+                        key={lbl.name} 
+                        value={lbl.name} 
+                        className={isLightWhite ? 'bg-white text-slate-800 font-bold' : 'bg-[#111] text-white font-bold'}
+                        style={{ color: preset.dotBg }}
+                      >
+                        {lbl.name}
+                      </option>
+                    );
+                  })}
                 </select>
+                <div className="flex items-center justify-between mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsTagManagerOpen(true)}
+                    className="text-[14px] text-gold hover:underline font-bold flex items-center gap-1.5 cursor-pointer mt-1"
+                  >
+                    🎨 Personalizar Etiquetas y Paleta de Colores
+                  </button>
+                </div>
               </div>
 
               {/* Descripción detallada */}
@@ -1333,16 +1800,38 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                   onChange={(e) => setNoveltyDevolucionFilter(e.target.value)}
                   className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[13px]' : 'text-xs'} font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full`}
                 >
-                  <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
-                  <option value="SIN_ETIQUETA" className="bg-[#111] text-[#ef4444]">SIN ETIQUETA</option>
-                  <option value="TIK TOK ORGANICO" className="bg-[#111] text-neon">TIK TOK ORGANICO</option>
-                  <option value="RECORDAR EXPRES CENT" className="bg-[#111] text-sky-400">RECORDAR EXPRES CENT</option>
-                  <option value="PEDIR BIEN DEPAR-CIU" className="bg-[#111] text-pink-400">PEDIR BIEN DEPAR-CIU</option>
-                  <option value="PRUEBA" className="bg-[#111] text-yellow-450">PRUEBA</option>
-                  <option value="DATOS INCORR-BUZON" className="bg-[#111] text-purple-400">DATOS INCORR-BUZON</option>
-                  <option value="CLIENTE NO CONTESTA" className="bg-[#111] text-red-400">CLIENTE NO CONTESTA</option>
+                  <option value="TODOS" className="bg-[#111] text-white font-bold">TODAS</option>
+                  <option value="SIN_ETIQUETA" className="bg-[#111] text-[#ef4444] font-bold">SIN ETIQUETA</option>
+                  {customLabels.map(lbl => {
+                    const preset = getLabelPreset(lbl.name);
+                    return (
+                      <option 
+                        key={lbl.name} 
+                        value={lbl.name} 
+                        className="bg-[#111] font-bold"
+                        style={{ color: preset.dotBg }}
+                      >
+                        {lbl.name}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
+
+              {/* Botón rápido paleta */}
+              <button
+                type="button"
+                onClick={() => setIsTagManagerOpen(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  isLightWhite 
+                    ? 'bg-white border-[#f3e8e8] hover:bg-slate-50 text-slate-700' 
+                    : 'border-border bg-[#0c0c14] hover:bg-white/5 text-slate-300'
+                }`}
+                title="Personalizar etiquetas y paleta de colores"
+              >
+                <Palette size={14} className="text-gold" />
+                <span className="hidden md:inline">Colores y Etiquetas</span>
+              </button>
 
               {/* Búsqueda de novedad */}
               <div className={`relative w-full sm:w-64 h-8 flex items-center rounded-xl ${isLightWhite ? 'bg-[#edf2f8] border border-slate-200' : ''}`}>
@@ -1392,22 +1881,22 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             <div className={`overflow-x-auto border rounded-2xl ${isLightWhite ? 'bg-white border-slate-200' : 'border-border bg-[#08080f]/50'}`}>
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className={`border-b text-[14px] ${isLightWhite ? 'bg-slate-50 border-slate-200' : 'bg-background border-b border-border/80'}`}>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Fecha</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Mes</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>ID Pedido</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Guía / Tracking</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Cliente / Producto</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Etiqueta Devolución</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Transportadora</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Incidencia / Causa</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Explicación Suceso</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Estado Acción</th>
-                    <th className={`px-5 py-4 text-[14px] uppercase tracking-widest font-extrabold font-display text-right w-24 ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Acciones</th>
+                  <tr className={`border-b text-[15px] ${isLightWhite ? 'bg-slate-50 border-slate-200' : 'bg-background border-b border-border/80'}`}>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Fecha</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Mes</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>ID Pedido</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Guía / Tracking</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Cliente / Producto</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Etiqueta Devolución</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Transportadora</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Incidencia / Causa</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Explicación Suceso</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Estado Acción</th>
+                    <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display text-right w-24 ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isLightWhite ? 'divide-slate-100' : 'divide-border/40'}`}>
-                  {filteredNovelties.map((item) => {
+                  {filteredNovelties.map((item, index) => {
                     // Pre-generate nice tag styling based on causes
                     let causeStyle = isLightWhite 
                       ? 'bg-orange-50 text-orange-700 border-orange-200' 
@@ -1461,70 +1950,56 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                         <td className="px-5 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <Calendar size={15} className="text-slate-500" />
-                            <span className={`font-mono ${isLightWhite ? 'text-slate-700 text-[15px]' : 'text-slate-300 text-[14px]'}`}>{item.fecha}</span>
+                            <span className={`font-mono ${isLightWhite ? 'text-slate-700 text-[15px]' : 'text-slate-300 text-[15px]'}`}>{item.fecha}</span>
                           </div>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className={`font-semibold font-display ${isLightWhite ? 'text-[18px] text-amber-600' : 'text-[14px] text-amber-400'}`}>
+                          <span className={`font-semibold font-display ${isLightWhite ? 'text-[15px] text-amber-600' : 'text-[15px] text-amber-400'}`}>
                             {item.mes || getMonthFromDate(item.fecha) || 'Sin Mes'}
                           </span>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className={`font-mono font-bold block truncate ${isLightWhite ? 'text-slate-800 text-[14px]' : 'text-white text-[14px]'}`}>{item.orderId || "M-MANUAL"}</span>
+                          <span className={`font-mono font-bold block truncate ${isLightWhite ? 'text-slate-800 text-[15px]' : 'text-white text-[15px]'}`}>{item.orderId || "M-MANUAL"}</span>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className={`font-mono font-medium block truncate ${isLightWhite ? 'text-cyan-700 text-[14px]' : 'text-cyan-300 text-[14px]'}`}>{item.guia || "Sin Guía"}</span>
+                          <span className={`font-mono font-medium block truncate ${isLightWhite ? 'text-cyan-700 text-[15px]' : 'text-cyan-300 text-[15px]'}`}>{item.guia || "Sin Guía"}</span>
                         </td>
                         <td className="px-5 py-4 max-w-[200px]">
                           <div>
-                            <span className={`block truncate font-medium ${isLightWhite ? 'text-slate-800 text-[14px]' : 'text-slate-300 text-[14px]'}`}>{item.nombreCliente}</span>
+                            <span className={`block truncate font-medium ${isLightWhite ? 'text-slate-800 text-[15px]' : 'text-slate-300 text-[15px]'}`}>{item.nombreCliente}</span>
                             {item.productName && (
-                              <span className="text-[13px] text-slate-500 block italic truncate">{item.productName}</span>
+                              <span className="text-[15px] text-slate-500 block italic truncate">{item.productName}</span>
                             )}
                           </div>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          {item.etiquetaDevolucion ? (
-                            <span 
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
-                                item.etiquetaDevolucion === 'TIK TOK ORGANICO'
-                                  ? (isLightWhite ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20')
-                                  : item.etiquetaDevolucion === 'RECORDAR EXPRES CENT'
-                                  ? (isLightWhite ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-sky-500/10 text-sky-400 border-sky-500/20')
-                                  : item.etiquetaDevolucion === 'PEDIR BIEN DEPAR-CIU'
-                                  ? (isLightWhite ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-pink-500/10 text-pink-400 border-pink-500/20')
-                                  : item.etiquetaDevolucion === 'PRUEBA'
-                                  ? (isLightWhite ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-amber-500/10 text-amber-400 border-amber-500/20')
-                                  : item.etiquetaDevolucion === 'DATOS INCORR-BUZON'
-                                  ? (isLightWhite ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-purple-500/10 text-purple-400 border-purple-500/20')
-                                  : (isLightWhite ? 'bg-red-50 text-red-700 border-red-200' : 'bg-red-500/10 text-red-400 border-red-500/20')
-                              }`}
-                            >
-                              {item.etiquetaDevolucion}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs italic font-sans">— Sin Etiqueta —</span>
-                          )}
+                          {renderEtiquetaDevolucion(item.etiquetaDevolucion)}
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
                           <span className={`font-semibold px-2.5 py-1 rounded-lg border block text-center max-w-[150px] truncate ${
                             isLightWhite 
-                              ? 'text-cyan-700 bg-cyan-50 border-cyan-100 text-[14px]' 
-                              : 'text-cyan-400 bg-cyan-950/20 border-cyan-500/10 text-[14px]'
+                              ? 'text-cyan-700 bg-cyan-50 border-cyan-100 text-[15px]' 
+                              : 'text-cyan-400 bg-cyan-950/20 border-cyan-500/10 text-[15px]'
                           }`}>
                             {item.transportadora || 'No especificada'}
                           </span>
                         </td>
-                        <td className="px-5 py-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[13px] uppercase tracking-wider border font-semibold ${causeStyle} max-w-[180px] inline-block truncate`}>
+                        <td 
+                          className={`px-5 py-4 ${index === 0 ? 'h-[8.7109px] w-[47.5px]' : ''}`}
+                          style={index === 0 ? { height: '8.7109px', width: '47.5px' } : undefined}
+                        >
+                          <span 
+                            className={`px-2.5 py-1 rounded-full text-[15px] uppercase tracking-wider border font-semibold ${causeStyle} max-w-[180px] inline-block truncate ${index === 0 ? 'w-[246px] text-center' : ''}`}
+                            style={index === 0 ? { width: '246px', textAlign: 'center' } : undefined}
+                          >
                             {item.origenNovedad}
                           </span>
                         </td>
                         <td className="px-5 py-4 max-w-[320px]">
-                          <p className={`whitespace-pre-wrap break-words leading-relaxed ${isLightWhite ? 'text-slate-700 text-[14px]' : 'text-slate-300 text-[14px]'}`}>{item.descripcion}</p>
+                          <p className={`whitespace-pre-wrap break-words leading-relaxed ${isLightWhite ? 'text-slate-700 text-[15px]' : 'text-slate-300 text-[15px]'}`}>{item.descripcion}</p>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-lg text-[13px] uppercase tracking-wider font-semibold ${resStyle}`}>
+                          <span className={`px-2.5 py-1 rounded-lg text-[15px] uppercase tracking-wider font-semibold ${resStyle}`}>
                             {item.resolucion.replace(/[🟡🔴🟢🔵📦⚙️🔄⚡]\s*/g, '')}
                           </span>
                         </td>
@@ -1554,6 +2029,200 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             </div>
           )}
         </div>
+        </div>
+        )}
+
+        {/* All returned orders UI block */}
+        {activeSubTab === 'all-returns' && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <h4 className="text-base font-bold font-display text-white uppercase tracking-wider">
+                Pedidos Devueltos en el Sistema ({filteredReturnedOrders.length})
+              </h4>
+              
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                {/* Filter tags */}
+                <div className={`flex items-center gap-2 border rounded-xl px-3 py-1.5 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
+                  <span className={`uppercase font-black tracking-widest text-slate-500 ${isLightWhite ? 'text-[12px]' : 'text-[10px]'}`}>Etiqueta Dropi:</span>
+                  <select 
+                    value={allReturnsTagFilter}
+                    onChange={(e) => setAllReturnsTagFilter(e.target.value)}
+                    className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[14px]' : 'text-xs'} font-bold text-gold uppercase focus:outline-none focus:ring-0 cursor-pointer h-full`}
+                  >
+                    <option value="TODOS" className="bg-[#111] text-white">TODAS</option>
+                    <option value="SIN_ETIQUETA" className="bg-[#111] text-[#ef4444]">SIN ETIQUETA</option>
+                    {allReturnedOrdersTags.map(tag => (
+                      <option key={tag} value={tag} className="bg-[#111] text-sky-400">
+                        {tag.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Search returned orders */}
+                <div className={`relative w-full sm:w-64 h-8 flex items-center rounded-xl ${isLightWhite ? 'bg-[#edf2f8] border border-slate-200' : ''}`}>
+                  <span className={`absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 pointer-events-none ${isLightWhite ? 'text-[12px]' : ''}`}>
+                    <Search size={15} />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Buscar pedido devuelto..."
+                    value={allReturnsSearch}
+                    onChange={(e) => setAllReturnsSearch(e.target.value)}
+                    className={`w-full bg-transparent border-none pl-9 pr-4 py-1.5 font-sans h-full focus:outline-none ${
+                      isLightWhite 
+                        ? 'text-slate-800 text-[14px] placeholder-slate-400' 
+                        : 'text-white text-xs placeholder-slate-500'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {selectedOrderIds.length > 0 && (
+              <div className={`p-4 rounded-xl flex items-center justify-between animate-fade-in border ${
+                isLightWhite 
+                  ? 'bg-amber-50/50 border-amber-200 text-slate-800' 
+                  : 'bg-amber-500/10 border-amber-500/20 text-white'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-[15px] font-semibold">
+                    {selectedOrderIds.length} {selectedOrderIds.length === 1 ? 'pedido seleccionado' : 'pedidos seleccionados'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedOrderIds([])}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      isLightWhite ? 'hover:bg-slate-200 text-slate-500' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Desmarcar todos
+                  </button>
+                  <button
+                    onClick={() => setDeletingIds(selectedOrderIds)}
+                    className="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-black tracking-widest uppercase transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+                  >
+                    <Trash2 size={13} /> Eliminar Seleccionados
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {filteredReturnedOrders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-12 bg-[#0c0c12]/30 rounded-2xl border border-dashed border-border text-center space-y-3">
+                <AlertCircle size={36} className="text-slate-600" />
+                <div>
+                  <p className="text-base font-medium text-slate-300">No hay pedidos devueltos con estos filtros</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Prueba cambiando las fechas en el filtro general arriba o cambia el filtro de etiquetas.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className={`overflow-x-auto border rounded-2xl ${isLightWhite ? 'bg-white border-slate-200' : 'border-border bg-[#08080f]/50'}`}>
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className={`border-b text-[15px] ${isLightWhite ? 'bg-slate-50 border-slate-200' : 'bg-background border-b border-border/80'}`}>
+                      <th className="px-4 py-4 text-center w-12">
+                        <input
+                          type="checkbox"
+                          checked={filteredReturnedOrders.length > 0 && filteredReturnedOrders.every(o => selectedOrderIds.includes(o.id))}
+                          onChange={handleToggleSelectAll}
+                          className="w-4 h-4 rounded border-gray-300 text-neon focus:ring-neon accent-neon bg-[#0c0c14] border-border cursor-pointer"
+                        />
+                      </th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Fecha</th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>ID Pedido</th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Guía / Tracking</th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Cliente</th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Producto</th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Etiquetas Dropi</th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Estado Ficha</th>
+                      <th className={`px-5 py-4 text-[15px] uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y ${isLightWhite ? 'divide-slate-100' : 'divide-border/40'}`}>
+                    {filteredReturnedOrders.map((order) => {
+                      const associatedNovelty = findAssociatedNovelty(order);
+                      const hasFicha = !!associatedNovelty;
+                      const orderDateFormatted = order.date ? new Date(order.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '---';
+                      
+                      return (
+                        <tr key={order.id} className={`hover:bg-white/5 transition-colors ${isLightWhite ? 'hover:bg-slate-50' : ''} ${selectedOrderIds.includes(order.id) ? (isLightWhite ? 'bg-amber-50/25' : 'bg-amber-500/5') : ''}`}>
+                          <td className="px-4 py-4 text-center w-12">
+                            <input
+                              type="checkbox"
+                              checked={selectedOrderIds.includes(order.id)}
+                              onChange={() => handleToggleSelectOrder(order.id)}
+                              className="w-4 h-4 rounded border-gray-300 text-neon focus:ring-neon accent-neon bg-[#0c0c14] border-border cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-5 py-4 font-mono text-[15px] text-slate-400 font-medium">
+                            {orderDateFormatted}
+                          </td>
+                          <td className="px-5 py-4 font-mono text-[15px] font-bold">
+                            <span className={isLightWhite ? 'text-slate-800' : 'text-white'}>{order.orderId}</span>
+                          </td>
+                          <td className="px-5 py-4 font-mono text-[15px] text-slate-400">
+                            {order.trackingId || '---'}
+                          </td>
+                          <td className="px-5 py-4 text-[15px] font-medium">
+                            <div className={isLightWhite ? 'text-slate-800' : 'text-white'}>{order.nombreCliente || '---'}</div>
+                          </td>
+                          <td className="px-5 py-4 text-[15px] text-slate-400 font-medium">
+                            {order.product || '---'}
+                          </td>
+                          <td className="px-5 py-4">
+                            {renderOrderTags(order.tags)}
+                          </td>
+                          <td className="px-5 py-4">
+                            {hasFicha ? (
+                              <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[15px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                                <CheckCircle size={14} /> Registrada
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 bg-red-500/10 text-red-400 border border-red-500/20 text-[15px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                                <AlertCircle size={14} /> Sin Ficha
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              {hasFicha ? (
+                                <button
+                                  onClick={() => handleEditNovelty(associatedNovelty!)}
+                                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white border border-border rounded-lg text-[15px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                                >
+                                  <Edit2 size={14} /> Editar Ficha
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleCreateNoveltyFromOrder(order)}
+                                  className="px-4 py-2 bg-gold hover:bg-gold/80 text-black rounded-lg text-[15px] font-black tracking-wider uppercase transition-all shadow-md cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                                >
+                                  <Plus size={14} /> Vincular Novedad
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setDeletingIds([order.id])}
+                                className="p-2 bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 border border-red-500/20 hover:border-red-500 rounded-lg transition-all cursor-pointer flex items-center justify-center shrink-0"
+                                title="Eliminar pedido"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* AI PRO LOGISTICS ANALYST DASHBOARD SECTOR (DEBAJO DE TODO) */}
@@ -1897,6 +2566,208 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
           </div>
         )}
       </div>
+      {/* MODAL GESTOR DE ETIQUETAS Y PALETA DE COLORES */}
+      {isTagManagerOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+          <div className={`w-full max-w-lg p-6 rounded-2xl border shadow-2xl space-y-6 max-h-[85vh] overflow-y-auto ${
+            isLightWhite ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0f0f18] border-border text-white'
+          }`}>
+            <div className="flex items-center justify-between border-b border-slate-500/10 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Palette size={20} className="text-gold" />
+                <h3 className="text-lg font-black font-display uppercase tracking-wider">Gestión de Etiquetas y Colores</h3>
+              </div>
+              <button 
+                onClick={() => setIsTagManagerOpen(false)}
+                className="text-slate-400 hover:text-white font-extrabold text-sm p-1 hover:bg-white/5 rounded-lg transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* SECCIÓN CREAR NUEVA ETIQUETA */}
+            <div className={`p-4 rounded-xl border space-y-3 ${
+              isLightWhite ? 'bg-slate-50 border-slate-200/80' : 'bg-[#141422] border-border/60'
+            }`}>
+              <h4 className="text-xs font-extrabold tracking-wider uppercase text-slate-400">Crear Nueva Etiqueta Personalizada</h4>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Ej. RETORNO RECURRENTE"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value.toUpperCase())}
+                  className={`w-full border rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-gold font-sans uppercase font-bold ${
+                    isLightWhite 
+                      ? 'bg-white border-slate-200 text-slate-800' 
+                      : 'bg-[#0f0f18] border-border/80 text-white'
+                  }`}
+                />
+                
+                {/* Paleta para la nueva etiqueta */}
+                <div className="space-y-1.5">
+                  <span className="text-[14px] text-slate-500 font-bold block">Seleccionar color de paleta:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {COLOR_PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setNewTagColorId(p.id)}
+                        className={`w-7 h-7 rounded-full transition-all flex items-center justify-center relative cursor-pointer border hover:scale-110 ${
+                          newTagColorId === p.id 
+                            ? 'ring-2 ring-gold scale-110 border-white/40 shadow-lg' 
+                            : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: p.dotBg }}
+                        title={p.name}
+                      >
+                        {newTagColorId === p.id && <Check size={14} className="text-white drop-shadow-md font-bold" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={!newTagName.trim()}
+                  onClick={() => {
+                    const nameUpper = newTagName.trim().toUpperCase();
+                    if (customLabels.some(l => l.name.toUpperCase() === nameUpper)) {
+                      alert('¡Esta etiqueta ya existe!');
+                      return;
+                    }
+                    const updated = [...customLabels, { name: nameUpper, colorId: newTagColorId }];
+                    saveCustomLabels(updated);
+                    setNewTagName('');
+                    setNewTagColorId('gray');
+                  }}
+                  className={`w-full py-2 bg-gold hover:bg-gold/90 text-black font-extrabold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    !newTagName.trim() ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer active:scale-95 shadow-md shadow-gold/10'
+                  }`}
+                >
+                  <Plus size={14} /> Crear Etiqueta
+                </button>
+              </div>
+            </div>
+
+            {/* LISTADO DE ETIQUETAS ACTIVAS */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-extrabold tracking-wider uppercase text-slate-400">Paleta de Colores de Etiquetas Existentes</h4>
+              <p className="text-[14px] text-slate-500">Haz clic en cualquier círculo de color para cambiar instantáneamente la tonalidad de esa etiqueta.</p>
+              
+              <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
+                {customLabels.map((lbl) => {
+                  return (
+                    <div 
+                      key={lbl.name} 
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border ${
+                        isLightWhite ? 'bg-slate-50/50 border-slate-100' : 'bg-[#141422]/65 border-border/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {renderEtiquetaDevolucion(lbl.name)}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {/* Selector de paleta rápido */}
+                        <div className="flex gap-1">
+                          {COLOR_PRESETS.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                const updated = customLabels.map(item => {
+                                  if (item.name === lbl.name) {
+                                    return { ...item, colorId: p.id };
+                                  }
+                                  return item;
+                                });
+                                saveCustomLabels(updated);
+                              }}
+                              className={`w-4 h-4 rounded-full transition-all border hover:scale-125 cursor-pointer flex items-center justify-center ${
+                                lbl.colorId === p.id 
+                                  ? 'border-white scale-110 shadow-sm shadow-black' 
+                                  : 'border-transparent'
+                              }`}
+                              style={{ backgroundColor: p.dotBg }}
+                              title={p.name}
+                            >
+                              {lbl.colorId === p.id && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Botón borrar */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`¿Estás seguro de eliminar la etiqueta "${lbl.name}"?`)) {
+                              const updated = customLabels.filter(item => item.name !== lbl.name);
+                              saveCustomLabels(updated);
+                            }
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
+                          title="Eliminar Etiqueta"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end border-t border-slate-500/10 pt-4">
+              <button
+                onClick={() => setIsTagManagerOpen(false)}
+                className="px-5 py-2.5 bg-gold hover:bg-gold/90 text-black font-black uppercase tracking-wider rounded-xl text-xs transition-all shadow-md shadow-gold/5 cursor-pointer"
+              >
+                Listo / Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deletingIds && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl space-y-6 ${
+            isLightWhite ? 'bg-white border-slate-200 text-slate-800' : 'bg-card border-border text-white'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-500/10 text-red-500 rounded-xl">
+                <AlertTriangle size={24} className="animate-bounce" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold font-display uppercase tracking-wider">Confirmar Eliminación</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Esta acción no se puede deshacer</p>
+              </div>
+            </div>
+
+            <p className={`text-[15px] leading-relaxed ${isLightWhite ? 'text-slate-600' : 'text-slate-300'}`}>
+              ¿Estás seguro de que deseas eliminar {deletingIds.length === 1 ? 'este pedido devuelto' : `estos ${deletingIds.length} pedidos devueltos`} del sistema?
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setDeletingIds(null)}
+                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer border ${
+                  isLightWhite 
+                    ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700' 
+                    : 'bg-[#111] border-border hover:bg-white/5 text-slate-300 hover:text-white'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-red-600/10 cursor-pointer"
+              >
+                <Trash2 size={14} /> Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

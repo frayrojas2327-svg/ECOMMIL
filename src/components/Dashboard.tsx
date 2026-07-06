@@ -1,12 +1,42 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell
+  BarChart, Bar, Cell, ComposedChart, Line
 } from 'recharts';
 import { motion } from 'motion/react';
 import { TrendingUp, TrendingDown, DollarSign, Percent, Target, ShoppingBag, Globe, Megaphone, Users } from 'lucide-react';
 import { Order, calculateOrderProfit, CurrencyCode } from '../mockData';
-import { format, startOfDay, eachDayOfInterval, subDays, isSameDay } from 'date-fns';
+import { format, startOfDay, eachDayOfInterval, subDays, isSameDay, parseISO } from 'date-fns';
+
+const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
+  if (!dateStr) return null;
+  if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
+    const d = parseISO(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split(' ')[0].split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      const d = new Date(year, month, day);
+      return isNaN(d.getTime()) ? null : d;
+    }
+  }
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const getOrderTargetDate = (o: Order): Date => {
+  if (o.status === 'Entregado' || o.status === 'Devuelto') {
+    if (o.fechaEntregaDevolucion && o.fechaEntregaDevolucion !== '---') {
+      const parsed = parseFlexibleDate(o.fechaEntregaDevolucion);
+      if (parsed) return parsed;
+    }
+  }
+  return o.date;
+};
 
 interface DashboardProps {
   orders: Order[];
@@ -78,6 +108,22 @@ const Dashboard: React.FC<DashboardProps> = ({
   const cpa = totalOrders > 0 ? (stats.totalAds / totalOrders) : 0;
   const cpaDelivered = deliveredOrders > 0 ? (stats.totalAds / deliveredOrders) : 0;
 
+  // 28-day summary totals for the heatmap
+  const { totalEntregados28, totalDevueltos28, totalProfit28 } = useMemo(() => {
+    const twentyEightDaysAgo = subDays(new Date(), 27);
+    const last28DaysOrders = orders.filter(o => {
+      const targetDate = getOrderTargetDate(o);
+      return startOfDay(targetDate).getTime() >= startOfDay(twentyEightDaysAgo).getTime() && 
+             startOfDay(targetDate).getTime() <= startOfDay(new Date()).getTime();
+    });
+    
+    return {
+      totalEntregados28: last28DaysOrders.filter(o => o.status === 'Entregado').length,
+      totalDevueltos28: last28DaysOrders.filter(o => o.status === 'Devuelto').length,
+      totalProfit28: last28DaysOrders.reduce((acc, o) => acc + calculateOrderProfit(o).netProfit, 0)
+    };
+  }, [orders]);
+
   const localFormatCurrency = (amount: number) => {
     const isUSD = !isConversionActive;
     const targetCurrency = isUSD ? 'USD' : currency;
@@ -107,20 +153,29 @@ const Dashboard: React.FC<DashboardProps> = ({
     });
 
     return last30Days.map(day => {
-      const dayOrders = orders.filter(o => isSameDay(o.date, day));
+      const dayOrders = orders.filter(o => isSameDay(getOrderTargetDate(o), day));
       let dayProfit = 0;
       let dayRevenue = 0;
+      let entregadosCount = 0;
+      let devueltosCount = 0;
       
       dayOrders.forEach(o => {
         const { revenue, netProfit } = calculateOrderProfit(o);
         dayProfit += netProfit;
         dayRevenue += revenue;
+        if (o.status === 'Entregado') {
+          entregadosCount++;
+        } else if (o.status === 'Devuelto') {
+          devueltosCount++;
+        }
       });
 
       return {
         date: format(day, 'MMM dd'),
         profit: Math.round(dayProfit),
-        revenue: Math.round(dayRevenue)
+        revenue: Math.round(dayRevenue),
+        entregados: entregadosCount,
+        devueltos: devueltosCount
       };
     });
   }, [orders]);
@@ -241,25 +296,33 @@ const Dashboard: React.FC<DashboardProps> = ({
       {/* Main Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 fintech-card p-8 bg-black">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <div>
-              <h3 className="text-xl font-display font-bold text-white">Rentabilidad Diaria</h3>
-              <p className="text-[15px] text-slate-500">Histórico de ingresos vs ganancias (30 días)</p>
+              <h3 className="text-xl font-display font-bold text-white font-sans">Rentabilidad Diaria</h3>
+              <p className="text-[14px] text-slate-500">Ingresos, ganancias, entregados y devueltos agrupados por su día de entrega/devolución</p>
             </div>
-            <div className="flex gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-primary/40" />
-                <span className="text-[15px] font-mono text-slate-400">Ingresos</span>
+            <div className="flex flex-wrap gap-4">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/30" />
+                <span className="text-[13px] font-mono text-slate-400">Ingresos</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-primary" />
-                <span className="text-[15px] font-mono text-slate-400">Ganancia</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span className="text-[13px] font-mono text-slate-400">Ganancias</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-teal-400" />
+                <span className="text-[13px] font-mono text-slate-400">Entregados (u.)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                <span className="text-[13px] font-mono text-slate-400">Devueltos (u.)</span>
               </div>
             </div>
           </div>
           <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+              <ComposedChart data={chartData}>
                 <defs>
                   <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
@@ -270,26 +333,52 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <XAxis 
                   dataKey="date" 
                   stroke="#475569" 
-                  fontSize={15} 
+                  fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
                 />
                 <YAxis 
+                  yAxisId="left"
                   stroke="#475569" 
-                  fontSize={15} 
+                  fontSize={13} 
                   tickLine={false} 
                   axisLine={false}
                   tickFormatter={(value) => `$${value}`}
                 />
+                <YAxis 
+                  yAxisId="right"
+                  orientation="right"
+                  stroke="#475569" 
+                  fontSize={13} 
+                  tickLine={false} 
+                  axisLine={false}
+                  tickFormatter={(value) => `${value} u.`}
+                />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#000000', border: '1px solid #1a1a1a', borderRadius: '12px' }}
-                  itemStyle={{ color: '#22c55e', fontSize: '15px', fontFamily: 'DM Mono' }}
-                  labelStyle={{ color: '#94a3b8', marginBottom: '4px', fontSize: '15px' }}
-                  formatter={(value: number) => localFormatCurrency(value)}
+                  itemStyle={{ fontSize: '13px', fontFamily: 'DM Mono' }}
+                  labelStyle={{ color: '#94a3b8', marginBottom: '4px', fontSize: '13px' }}
+                  formatter={(value: any, name: string) => {
+                    if (name === 'revenue') {
+                      return [localFormatCurrency(Number(value)), 'Ingresos'];
+                    }
+                    if (name === 'profit') {
+                      return [localFormatCurrency(Number(value)), 'Ganancia Neta'];
+                    }
+                    if (name === 'entregados') {
+                      return [`${value} unidades`, 'Pedidos Entregados'];
+                    }
+                    if (name === 'devueltos') {
+                      return [`${value} unidades`, 'Pedidos Devueltos'];
+                    }
+                    return [value, name];
+                  }}
                 />
                 <Area 
                   type="monotone" 
                   dataKey="revenue" 
+                  name="revenue"
+                  yAxisId="left"
                   stroke="#22c55e" 
                   strokeOpacity={0.2}
                   fill="transparent" 
@@ -298,12 +387,34 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <Area 
                   type="monotone" 
                   dataKey="profit" 
+                  name="profit"
+                  yAxisId="left"
                   stroke="#22c55e" 
                   fillOpacity={1} 
                   fill="url(#colorProfit)" 
                   strokeWidth={3}
                 />
-              </AreaChart>
+                <Line
+                  type="monotone"
+                  dataKey="entregados"
+                  name="entregados"
+                  yAxisId="right"
+                  stroke="#2dd4bf"
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  activeDot={{ r: 4 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="devueltos"
+                  name="devueltos"
+                  yAxisId="right"
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  activeDot={{ r: 4 }}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -349,15 +460,33 @@ const Dashboard: React.FC<DashboardProps> = ({
       {/* Heatmap & Goal Calculator */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-3 fintech-card p-8 bg-black">
-          <h3 className="text-xl font-display font-bold text-white mb-6">Mapa de Calor de Rentabilidad</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-xl font-display font-bold text-white font-sans">Mapa de Calor de Rentabilidad</h3>
+              <p className="text-[13px] text-slate-500">Rentabilidad, entregados y devueltos agrupados por su día de entrega/devolución (últimos 28 días)</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-[13px] text-slate-500 uppercase font-display">Menos</span>
+              <div className="flex gap-1">
+                <div className="w-3 h-3 rounded-sm bg-[#0a0a0a]" />
+                <div className="w-3 h-3 rounded-sm bg-[#15803d]" />
+                <div className="w-3 h-3 rounded-sm bg-[#16a34a]" />
+                <div className="w-3 h-3 rounded-sm bg-[#22c55e]" />
+              </div>
+              <span className="text-[13px] text-slate-500 uppercase font-display">Más</span>
+            </div>
+          </div>
+          
           <div className="grid grid-cols-7 gap-2">
             {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(day => (
-              <div key={day} className="text-center text-[15px] uppercase text-slate-500 font-display">{day}</div>
+              <div key={day} className="text-center text-[14px] uppercase text-slate-500 font-display">{day}</div>
             ))}
             {Array.from({ length: 28 }).map((_, i) => {
               const day = subDays(new Date(), 27 - i);
-              const dayOrders = orders.filter(o => isSameDay(o.date, day));
+              const dayOrders = orders.filter(o => isSameDay(getOrderTargetDate(o), day));
               const dayProfit = dayOrders.reduce((acc, o) => acc + calculateOrderProfit(o).netProfit, 0);
+              const entregadosCount = dayOrders.filter(o => o.status === 'Entregado').length;
+              const devueltosCount = dayOrders.filter(o => o.status === 'Devuelto').length;
               
               const maxProfit = 500; 
               const intensity = Math.min(1, Math.max(0, dayProfit / maxProfit));
@@ -370,20 +499,31 @@ const Dashboard: React.FC<DashboardProps> = ({
                     backgroundColor: intensity > 0.8 ? '#22c55e' : intensity > 0.5 ? '#16a34a' : intensity > 0.2 ? '#15803d' : '#0a0a0a',
                     opacity: intensity + 0.2
                   }}
-                  title={`${format(day, 'MMM dd')}: ${localFormatCurrency(dayProfit)}`}
+                  title={`${format(day, 'EEEE dd/MM/yyyy')}\nRentabilidad: ${localFormatCurrency(dayProfit)}\nPedidos Entregados: ${entregadosCount}\nPedidos Devueltos: ${devueltosCount}`}
                 />
               );
             })}
           </div>
-          <div className="mt-6 flex items-center justify-end gap-4">
-            <span className="text-[15px] text-slate-500 uppercase font-display">Menos</span>
-            <div className="flex gap-1">
-              <div className="w-3 h-3 rounded-sm bg-[#0a0a0a]" />
-              <div className="w-3 h-3 rounded-sm bg-[#15803d]" />
-              <div className="w-3 h-3 rounded-sm bg-[#16a34a]" />
-              <div className="w-3 h-3 rounded-sm bg-[#22c55e]" />
+
+          <div className="mt-6 pt-4 border-t border-white/5 grid grid-cols-3 gap-4 text-center">
+            <div>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 font-display block">Rentabilidad 28d</span>
+              <span className={`text-base font-mono font-bold ${totalProfit28 >= 0 ? 'text-positive-green' : 'text-negative-red'}`}>
+                {localFormatCurrency(totalProfit28)}
+              </span>
             </div>
-            <span className="text-[15px] text-slate-500 uppercase font-display">Más</span>
+            <div>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 font-display block">Entregados 28d</span>
+              <span className="text-base font-mono font-bold text-teal-400">
+                {totalEntregados28} u.
+              </span>
+            </div>
+            <div>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 font-display block">Devueltos 28d</span>
+              <span className="text-base font-mono font-bold text-red-400">
+                {totalDevueltos28} u.
+              </span>
+            </div>
           </div>
         </div>
 

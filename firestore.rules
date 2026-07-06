@@ -96,6 +96,12 @@ service cloud.firestore {
              data.returnsLoss is number;
     }
 
+    // Helper for Custom Return Tags
+    function isValidCustomReturnTags(data) {
+      return data.get('uid', '') == request.auth.uid &&
+             data.labels is list;
+    }
+
     // 1. Orders Collection
     match /orders/{orderId} {
       allow get: if isOwner(resource.data.uid);
@@ -232,6 +238,12 @@ service cloud.firestore {
                        incoming().uid == resource.data.uid;
                         
       allow delete: if isVerified() && isOwner(resource.data.uid);
+    }
+
+    // 10. Custom Return Tags Collection
+    match /custom_return_tags/{tagId} {
+      allow read: if isSignedIn() && tagId == request.auth.uid;
+      allow write: if isVerified() && tagId == request.auth.uid && isValidCustomReturnTags(incoming());
     }
   }
 }

@@ -184,6 +184,26 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["uid", "monthKey", "revenue", "cogs", "shipping", "ads", "fees", "returnsLoss"]
+    },
+    "CustomReturnTags": {
+      "title": "Custom Return Tags",
+      "description": "User custom labels and color palette for returns",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "colorId": { "type": "string" }
+            },
+            "required": ["name", "colorId"]
+          }
+        }
+      },
+      "required": ["uid", "labels"]
     }
   },
   "firestore": {
@@ -218,6 +238,10 @@
     "financialOverrides/{overrideId}": {
       "schema": "FinancialOverride",
       "description": "Collection of customized finance ratios and overrides per month"
+    },
+    "custom_return_tags/{tagId}": {
+      "schema": "CustomReturnTags",
+      "description": "Collection of custom return labels and color assignments"
     }
   }
 }

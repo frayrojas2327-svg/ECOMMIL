@@ -21,8 +21,11 @@ import {
   Search,
   CreditCard,
   Activity,
-  Zap
+  Zap,
+  Calendar,
+  Filter
 } from 'lucide-react';
+import { parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from './firebase';
@@ -53,6 +56,26 @@ const GlowingAnalysisIcon = ({ size = 20, className = "" }: { size?: number, cla
     <Activity size={size} className="relative text-neon drop-shadow-[0_0_10px_rgba(34,197,94,0.9)]" />
   </div>
 );
+
+const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
+  if (!dateStr) return null;
+  if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
+    const d = parseISO(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split(' ')[0].split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      const d = new Date(year, month, day);
+      return isNaN(d.getTime()) ? null : d;
+    }
+  }
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+};
 
 function AppContent() {
   const { user, loading: authLoading, logout, isDemoMode } = useAuth();
@@ -139,6 +162,91 @@ function AppContent() {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  // Global Date Range Filter states
+  const [globalStartDate, setGlobalStartDate] = useState<string>(() => {
+    return localStorage.getItem('ecommil_global_start_date') || '';
+  });
+  const [globalEndDate, setGlobalEndDate] = useState<string>(() => {
+    return localStorage.getItem('ecommil_global_end_date') || '';
+  });
+  const [globalDateFilterType, setGlobalDateFilterType] = useState<'solicitud' | 'entrega_devolucion' | 'registro'>(() => {
+    return (localStorage.getItem('ecommil_global_date_type') as any) || 'solicitud';
+  });
+
+  // Pending states for manual "Filtrar" button trigger
+  const [pendingStartDate, setPendingStartDate] = useState<string>(globalStartDate);
+  const [pendingEndDate, setPendingEndDate] = useState<string>(globalEndDate);
+  const [pendingDateFilterType, setPendingDateFilterType] = useState<'solicitud' | 'entrega_devolucion' | 'registro'>(globalDateFilterType);
+
+  useEffect(() => {
+    setPendingStartDate(globalStartDate);
+  }, [globalStartDate]);
+
+  useEffect(() => {
+    setPendingEndDate(globalEndDate);
+  }, [globalEndDate]);
+
+  useEffect(() => {
+    setPendingDateFilterType(globalDateFilterType);
+  }, [globalDateFilterType]);
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_global_start_date', globalStartDate);
+  }, [globalStartDate]);
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_global_end_date', globalEndDate);
+  }, [globalEndDate]);
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_global_date_type', globalDateFilterType);
+  }, [globalDateFilterType]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      let orderDate: Date | null = null;
+      if (globalDateFilterType === 'solicitud') {
+        if (o.fechaSolicitud) {
+          const parsed = parseFlexibleDate(o.fechaSolicitud);
+          if (parsed && !isNaN(parsed.getTime())) {
+            orderDate = parsed;
+          }
+        } else {
+          orderDate = o.date; // Fallback
+        }
+      } else if (globalDateFilterType === 'entrega_devolucion') {
+        if (o.fechaEntregaDevolucion) {
+          const parsed = parseFlexibleDate(o.fechaEntregaDevolucion);
+          if (parsed && !isNaN(parsed.getTime())) {
+            orderDate = parsed;
+          }
+        } else {
+          orderDate = o.date; // Fallback
+        }
+      } else {
+        orderDate = o.date;
+      }
+
+      // If we have filters but no date could be resolved, exclude it
+      if ((globalStartDate || globalEndDate) && !orderDate) {
+        return false;
+      }
+
+      if (orderDate) {
+        const orderTime = startOfDay(orderDate).getTime();
+        if (globalStartDate) {
+          const startTime = startOfDay(new Date(globalStartDate)).getTime();
+          if (orderTime < startTime) return false;
+        }
+        if (globalEndDate) {
+          const endTime = startOfDay(new Date(globalEndDate)).getTime();
+          if (orderTime > endTime) return false;
+        }
+      }
+      return true;
+    });
+  }, [orders, globalStartDate, globalEndDate, globalDateFilterType]);
+
   const activeTabContentRef = useRef<HTMLDivElement>(null);
 
   // Scroll mobile active tab into view and reset scroll position of the content
@@ -169,11 +277,13 @@ function AppContent() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => {
         const data = doc.data();
+        const oDate = data.date ? new Date(data.date) : new Date();
         return { 
           ...data, 
           id: doc.id,
           orderId: data.orderId || doc.id.substring(0, 8).toUpperCase(),
-          date: data.date ? new Date(data.date) : new Date(),
+          date: oDate,
+          originalDate: data.originalDate ? new Date(data.originalDate) : oDate,
           price: Number(data.price || 0),
           cost: Number(data.cost || 0),
           shippingCharged: Number(data.shippingCharged || 0),
@@ -379,7 +489,7 @@ function AppContent() {
     const manualAdSpendInUSD = manualAdSpend > 0 ? (manualAdSpend / rate) : 0;
 
     // If we have manual periods and NO orders, they are the source of truth for high-level KPIs
-    if (orders.length === 0 && periods.length > 0) {
+    if (filteredOrders.length === 0 && periods.length > 0) {
       const totalRevenue = 0; // SalePeriods don't have revenue directly, usually withdrawal bank is the proxy for "money in"
       // But orders are better for revenue if they exist.
       // However, for percentages, we use periods.
@@ -398,7 +508,7 @@ function AppContent() {
       
       // Calculate revenue from orders for the dashboard card
       let ordersRevenue = 0;
-      orders.forEach(o => {
+      filteredOrders.forEach(o => {
         ordersRevenue += calculateOrderProfit(o).revenue;
       });
 
@@ -427,7 +537,7 @@ function AppContent() {
     let totalCost = 0;
     let totalShipping = 0;
     
-    orders.forEach(order => {
+    filteredOrders.forEach(order => {
       const { revenue, netProfit } = calculateOrderProfit(order);
       totalRevenue += revenue;
       totalNetProfit += netProfit;
@@ -447,7 +557,7 @@ function AppContent() {
       ? (finalNetProfit / (totalCost + totalShipping + usedAds)) * 100 
       : 0;
 
-    const returnRate = orders.length > 0 ? (orders.filter(o => o.status === 'Devuelto').length / orders.length) * 100 : 0;
+    const returnRate = filteredOrders.length > 0 ? (filteredOrders.filter(o => o.status === 'Devuelto').length / filteredOrders.length) * 100 : 0;
     const healthScore = Math.max(0, Math.min(100, 
       (margin * 2) + (roi / 2) + (100 - returnRate * 5)
     )) || 0;
@@ -463,7 +573,7 @@ function AppContent() {
       autoAds: sumAds,
       returnRate
     };
-  }, [orders, periods, manualAdSpend, currency, isConversionActive, dynamicCurrencies]);
+  }, [filteredOrders, periods, manualAdSpend, currency, isConversionActive, dynamicCurrencies]);
 
   const menuItems = [
     { id: 'dashboard', label: 'Panel Control', icon: LayoutDashboard },
@@ -814,6 +924,118 @@ function AppContent() {
           ))}
         </div>
 
+        {/* Global Date Range Filter Bar */}
+        <div className={`border-b px-4 py-3 md:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          theme === 'theme-light-white' ? 'bg-slate-50 border-slate-200' : 'bg-card/30 border-border/80'
+        }`}>
+          <div className="flex items-center gap-2">
+            <Filter size={14} className="text-neon animate-pulse" />
+            <span className={`text-[11px] font-black uppercase tracking-wider ${
+              theme === 'theme-light-white' ? 'text-slate-700' : 'text-slate-300'
+            }`}>Filtro de Fecha Dropi:</span>
+            {globalStartDate || globalEndDate ? (
+              <span className="text-[10px] bg-neon/15 text-neon px-2.5 py-0.5 rounded-full font-black">
+                Filtro Activo ({filteredOrders.length} de {orders.length} Pedidos)
+              </span>
+            ) : (
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${
+                theme === 'theme-light-white' ? 'bg-slate-200/60 text-slate-500' : 'bg-slate-800 text-slate-500'
+              }`}>
+                Todo el tiempo ({orders.length} Pedidos)
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[10px] font-bold ${
+                theme === 'theme-light-white' ? 'text-slate-500' : 'text-slate-400'
+              }`}>Filtrar por:</span>
+              <select
+                value={pendingDateFilterType}
+                onChange={(e: any) => setPendingDateFilterType(e.target.value)}
+                className={`text-[11px] font-black uppercase tracking-wider py-1.5 px-3 rounded-lg border focus:outline-none focus:ring-1 focus:ring-neon transition-all cursor-pointer ${
+                  theme === 'theme-light-white' 
+                    ? 'bg-white border-slate-300 text-slate-700' 
+                    : 'bg-background border-border text-white'
+                }`}
+              >
+                <option value="solicitud">Fecha de Solicitud</option>
+                <option value="entrega_devolucion">Fecha de Entrega/Devolución</option>
+                <option value="registro">Fecha de Sincronización</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={pendingStartDate}
+                onChange={(e) => setPendingStartDate(e.target.value)}
+                onClick={(e) => {
+                  try {
+                    (e.target as any).showPicker?.();
+                  } catch (err) {
+                    console.warn('showPicker restricted:', err);
+                  }
+                }}
+                className={`text-[11px] font-bold py-1.5 px-2.5 rounded-lg border focus:outline-none focus:ring-1 focus:ring-neon transition-all cursor-pointer ${
+                  theme === 'theme-light-white' 
+                    ? 'bg-white border-slate-300 text-slate-700 [color-scheme:light]' 
+                    : 'bg-background border-border text-white [color-scheme:dark]'
+                }`}
+              />
+              <span className={`text-xs ${theme === 'theme-light-white' ? 'text-slate-400' : 'text-slate-500'}`}>al</span>
+              <input
+                type="date"
+                value={pendingEndDate}
+                onChange={(e) => setPendingEndDate(e.target.value)}
+                onClick={(e) => {
+                  try {
+                    (e.target as any).showPicker?.();
+                  } catch (err) {
+                    console.warn('showPicker restricted:', err);
+                  }
+                }}
+                className={`text-[11px] font-bold py-1.5 px-2.5 rounded-lg border focus:outline-none focus:ring-1 focus:ring-neon transition-all cursor-pointer ${
+                  theme === 'theme-light-white' 
+                    ? 'bg-white border-slate-300 text-slate-700 [color-scheme:light]' 
+                    : 'bg-background border-border text-white [color-scheme:dark]'
+                }`}
+              />
+            </div>
+
+            <button
+              onClick={() => {
+                setGlobalStartDate(pendingStartDate);
+                setGlobalEndDate(pendingEndDate);
+                setGlobalDateFilterType(pendingDateFilterType);
+              }}
+              className="bg-neon hover:bg-neon/80 text-black font-black uppercase tracking-wider px-4 py-1.5 rounded-lg transition-all text-[11px] shadow-[0_0_15px_rgba(34,197,94,0.3)] cursor-pointer flex items-center gap-1"
+            >
+              <Filter size={11} />
+              Filtrar
+            </button>
+
+            {(globalStartDate || globalEndDate) && (
+              <button
+                onClick={() => {
+                  setPendingStartDate('');
+                  setPendingEndDate('');
+                  setGlobalStartDate('');
+                  setGlobalEndDate('');
+                }}
+                className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  theme === 'theme-light-white'
+                    ? 'bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white border border-red-200'
+                    : 'bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white border border-red-500/20'
+                }`}
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* View Content */}
         <div ref={activeTabContentRef} className="flex-1 overflow-y-auto p-4 md:p-6">
           <AnimatePresence mode="wait">
@@ -826,7 +1048,7 @@ function AppContent() {
             >
               {activeTab === 'dashboard' && (
                 <Dashboard 
-                  orders={orders} 
+                  orders={filteredOrders} 
                   stats={stats} 
                   formatCurrency={formatCurrency} 
                   currencySymbol={currencyInfo.symbol} 
@@ -839,7 +1061,7 @@ function AppContent() {
               )}
               {activeTab === 'kpis' && (
                 <KPIPanel 
-                  orders={orders} 
+                  orders={filteredOrders} 
                   stats={stats} 
                   formatCurrency={formatCurrency} 
                   currency={currency}
@@ -851,7 +1073,7 @@ function AppContent() {
               )}
               {activeTab === 'logistics-ai' && (
                 <LogisticsAI 
-                  orders={orders} 
+                  orders={filteredOrders} 
                   stats={stats} 
                   formatCurrency={formatCurrency} 
                   currency={currency}
@@ -920,12 +1142,13 @@ function AppContent() {
               {activeTab === 'ad-panel' && <AdPanel theme={theme} />}
               {activeTab === 'returns' && (
                 <ReturnsAnalysis 
-                  orders={orders} 
+                  orders={filteredOrders} 
                   formatCurrency={formatCurrency} 
                   currency={currency}
                   currencies={dynamicCurrencies}
                   isConversionActive={isConversionActive}
                   theme={theme}
+                  onDeleteOrders={deleteOrders}
                 />
               )}
               {activeTab === 'ads' && (
@@ -947,7 +1170,7 @@ function AppContent() {
               )}
               {activeTab === 'shipping' && (
                 <ShippingAnalysis 
-                  orders={orders} 
+                  orders={filteredOrders} 
                   formatCurrency={formatCurrency} 
                   currency={currency}
                   currencies={dynamicCurrencies}
@@ -957,7 +1180,7 @@ function AppContent() {
               {activeTab === 'financial' && (
                 <div className="space-y-6">
                   <FinancialSummary 
-                    orders={orders} 
+                    orders={filteredOrders} 
                     formatCurrency={formatCurrency} 
                     currency={currency}
                     currencies={dynamicCurrencies}
@@ -986,7 +1209,7 @@ function AppContent() {
 
       {/* Global State-Aware voice guided AI Assistant */}
       <FloatingAIAssistant
-        orders={orders}
+        orders={filteredOrders}
         stats={stats}
         periods={periods}
         formatCurrency={formatCurrency}

@@ -4,6 +4,9 @@ import { Order, calculateOrderProfit, OrderStatus } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
+import { collection, doc, writeBatch, setDoc, query, where, getDocs } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
+import { useAuth } from './Auth';
 
 interface OrderManagementProps {
   orders: Order[];
@@ -124,6 +127,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const isLightWhite = theme === 'theme-light-white';
   const isReconciliationMode = viewMode === 'TIKTOK';
   const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  const { user, isDemoMode } = useAuth();
 
   const scrollTable = (direction: 'left' | 'right') => {
     if (tableScrollRef.current) {
@@ -867,6 +872,195 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const [showConfirm, setShowConfirm] = useState<{ type: 'selected' | 'all' | 'single', orderId?: string } | null>(null);
   const [isImporting, setIsImporting] = useState<false | 'Dropi' | 'Shopify'>(false);
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+
+  // Date and month batch sync tool states
+  const [syncDate, setSyncDate] = useState<string>('');
+  const [syncTarget, setSyncTarget] = useState<'all' | 'selected'>('selected');
+  const [syncSourceMode, setSyncSourceMode] = useState<'solicitud' | 'entrega_devolucion'>('solicitud');
+  const [isExecutingSync, setIsExecutingSync] = useState(false);
+
+  useEffect(() => {
+    if (selectedOrderIds.length > 0) {
+      setSyncTarget('selected');
+    } else {
+      setSyncTarget('all');
+    }
+  }, [selectedOrderIds.length]);
+
+  const calculatedMonth = useMemo(() => {
+    if (!syncDate) return '';
+    const d = new Date(syncDate + 'T12:00:00');
+    return d.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+  }, [syncDate]);
+
+  const saveAndSychronizeOrdersDate = async () => {
+    setIsExecutingSync(true);
+
+    try {
+      // Find orders to update
+      const targetOrdersList = orders.filter(o => {
+        const isDropi = o.provider?.toLowerCase().includes('dropi') || !!o.transportadora;
+        return isDropi && selectedOrderIds.includes(o.id);
+      });
+
+      if (targetOrdersList.length === 0) {
+        setNotification({ 
+          message: 'No hay pedidos seleccionados o ninguno es de Dropi.', 
+          type: 'error' 
+        });
+        setIsExecutingSync(false);
+        return;
+      }
+
+      const updatedOrdersMap = new Map<string, Order>();
+      targetOrdersList.forEach(o => {
+        const origDate = o.originalDate || o.date;
+        let finalDate = o.date;
+        const dateString = syncSourceMode === 'solicitud' ? o.fechaSolicitud : o.fechaEntregaDevolucion;
+        if (dateString) {
+          const parsed = parseFlexibleDate(dateString);
+          if (parsed && !isNaN(parsed.getTime())) {
+            finalDate = parsed;
+          }
+        }
+        updatedOrdersMap.set(o.id, {
+          ...o,
+          date: finalDate,
+          originalDate: origDate
+        });
+      });
+
+      const MONTHS_SPANISH = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+      ];
+
+      // Update in Firestore if config is valid and user is logged in
+      if (!isDemoMode && isFirebaseConfigValid && user) {
+        const batch = writeBatch(db);
+        
+        // 1. Update orders
+        targetOrdersList.forEach(o => {
+          const docRef = doc(db, 'orders', o.id);
+          const origDate = o.originalDate || o.date;
+          let finalDate = o.date;
+          const dateString = syncSourceMode === 'solicitud' ? o.fechaSolicitud : o.fechaEntregaDevolucion;
+          if (dateString) {
+            const parsed = parseFlexibleDate(dateString);
+            if (parsed && !isNaN(parsed.getTime())) {
+              finalDate = parsed;
+            }
+          }
+          batch.set(docRef, { 
+            date: finalDate.toISOString(),
+            originalDate: origDate instanceof Date ? origDate.toISOString() : String(origDate)
+          }, { merge: true });
+        });
+
+        // 2. Query matching return_novelties for this user and update them in same batch
+        try {
+          const qNovelties = query(collection(db, 'return_novelties'), where('uid', '==', user.uid));
+          const querySnapshot = await getDocs(qNovelties);
+          querySnapshot.forEach((docSnapshot) => {
+            const nData = docSnapshot.data();
+            const orderIdStr = String(nData.orderId || '').toLowerCase();
+            const matchingOrder = targetOrdersList.find(o => 
+              o.id.toLowerCase() === orderIdStr || 
+              (o.orderId && o.orderId.toLowerCase() === orderIdStr)
+            );
+            if (matchingOrder) {
+              let finalDate = matchingOrder.date;
+              const dateString = syncSourceMode === 'solicitud' ? matchingOrder.fechaSolicitud : matchingOrder.fechaEntregaDevolucion;
+              if (dateString) {
+                const parsed = parseFlexibleDate(dateString);
+                if (parsed && !isNaN(parsed.getTime())) {
+                  finalDate = parsed;
+                }
+              }
+              const yyyy = finalDate.getFullYear();
+              const mm = String(finalDate.getMonth() + 1).padStart(2, '0');
+              const dd = String(finalDate.getDate()).padStart(2, '0');
+              const finalDateStr = `${yyyy}-${mm}-${dd}`;
+              const finalMonthStr = MONTHS_SPANISH[finalDate.getMonth()];
+              
+              batch.set(docSnapshot.ref, {
+                fecha: finalDateStr,
+                mes: finalMonthStr
+              }, { merge: true });
+            }
+          });
+        } catch (errNovelties) {
+          console.error("Error querying/batch-updating return novelties in Firestore:", errNovelties);
+        }
+
+        await batch.commit();
+      }
+
+      // 3. Update return novelties in local storage for Demo Mode / Offline
+      const savedNoveltiesStr = localStorage.getItem('ecommil_return_novelties');
+      if (savedNoveltiesStr) {
+        try {
+          const localNovelties = JSON.parse(savedNoveltiesStr) as any[];
+          const updatedLocalNovelties = localNovelties.map(n => {
+            const orderIdLower = String(n.orderId || '').toLowerCase();
+            const matchingOrder = targetOrdersList.find(o => 
+              o.id.toLowerCase() === orderIdLower || 
+              (o.orderId && o.orderId.toLowerCase() === orderIdLower)
+            );
+            if (matchingOrder) {
+              let finalDate = matchingOrder.date;
+              const dateString = syncSourceMode === 'solicitud' ? matchingOrder.fechaSolicitud : matchingOrder.fechaEntregaDevolucion;
+              if (dateString) {
+                const parsed = parseFlexibleDate(dateString);
+                if (parsed && !isNaN(parsed.getTime())) {
+                  finalDate = parsed;
+                }
+              }
+              const yyyy = finalDate.getFullYear();
+              const mm = String(finalDate.getMonth() + 1).padStart(2, '0');
+              const dd = String(finalDate.getDate()).padStart(2, '0');
+              const finalDateStr = `${yyyy}-${mm}-${dd}`;
+              const finalMonthStr = MONTHS_SPANISH[finalDate.getMonth()];
+              return {
+                ...n,
+                fecha: finalDateStr,
+                mes: finalMonthStr
+              };
+            }
+            return n;
+          });
+          localStorage.setItem('ecommil_return_novelties', JSON.stringify(updatedLocalNovelties));
+        } catch (e) {
+          console.error('Error updating local return novelties:', e);
+        }
+      }
+
+      // Update in local state
+      setOrders(prev => prev.map(o => {
+        if (updatedOrdersMap.has(o.id)) {
+          return updatedOrdersMap.get(o.id)!;
+        }
+        return o;
+      }));
+
+      const dateSourceName = syncSourceMode === 'solicitud' ? 'Fecha de Solicitud' : 'Fecha de Entrega o Devolución';
+      setNotification({
+        message: `¡ÉXITO! Se sincronizaron ${targetOrdersList.length} pedidos utilizando su ${dateSourceName}. Las novedades de devoluciones correspondientes también fueron actualizadas.`,
+        type: 'success'
+      });
+      setTimeout(() => setNotification(null), 7000);
+      setSelectedOrderIds([]); // Clear selection after success
+    } catch (err: any) {
+      console.error('Error in batch date sync:', err);
+      if (!isDemoMode && isFirebaseConfigValid) {
+        handleFirestoreError(err, OperationType.WRITE, 'orders');
+      } else {
+        setNotification({ message: 'Error al actualizar los pedidos.', type: 'error' });
+      }
+    } finally {
+      setIsExecutingSync(false);
+    }
+  };
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState<Order | null>(null);
 
@@ -883,7 +1077,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     status: 'Pendiente',
     provider: 'Dropi',
     country: 'Colombia',
-    trackingId: ''
+    trackingId: '',
+    fechaSolicitud: '',
+    fechaEntregaDevolucion: ''
   });
 
   const handleAddManualOrder = (e: React.FormEvent) => {
@@ -919,7 +1115,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       status: 'Pendiente',
       provider: 'Dropi',
       country: 'Colombia',
-      trackingId: ''
+      trackingId: '',
+      fechaSolicitud: '',
+      fechaEntregaDevolucion: ''
     });
   };
 
@@ -1291,6 +1489,49 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             const trackingId = String(getField(['Guía', 'Guia', 'Tracking', 'Seguimiento', 'NÚMERO GUIA']) || '');
             const rawDropiDate = getField(['Fecha', 'Date', 'Creado', 'FECHA']);
 
+            const rawFechaSolicitud = getField([
+              'Fecha de Solicitud', 
+              'Fecha Solicitud', 
+              'FECHA_SOLICITUD', 
+              'FECHA SOLICITUD',
+              'Fecha de Creación',
+              'Fecha Creado',
+              'Creado',
+              'Fecha',
+              'FECHA'
+            ]);
+
+            const rawFechaEntregaDevolucion = getField([
+              'Fecha de Entrega o Devolución',
+              'Fecha de Entrega o Devolucion',
+              'Fecha Entrega / Devolucion',
+              'Fecha Entrega o Devolución',
+              'Fecha Entrega o Devolucion',
+              'Fecha de Entrega',
+              'Fecha de Devolución',
+              'Fecha de Devolucion',
+              'Fecha Entrega',
+              'Fecha Devolución',
+              'Fecha Devolucion',
+              'FECHA_ENTREGA',
+              'FECHA_DEVOLUCION',
+              'FECHA_ENTREGA_DEVOLUCION',
+              'FECHA ENTREGA',
+              'FECHA DEVOLUCION'
+            ]);
+
+            const formatImportedDate = (val: any) => {
+              if (!val) return '';
+              const parsed = parseFlexibleDate(String(val));
+              if (parsed && !isNaN(parsed.getTime())) {
+                return format(parsed, 'yyyy-MM-dd');
+              }
+              return String(val);
+            };
+
+            const fechaSolicitudValue = formatImportedDate(rawFechaSolicitud);
+            const fechaEntregaDevolucionValue = formatImportedDate(rawFechaEntregaDevolucion);
+
             return {
               id: `temp-${Math.random().toString(36).substring(2, 11)}`,
               date: (rawDropiDate ? parseFlexibleDate(String(rawDropiDate)) : null) || new Date(),
@@ -1337,7 +1578,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               ultimoMovimiento: String(getField(['ÚLTIMO MOVIMIENTO']) || ''),
               vendedor: String(getField(['VENDEDOR']) || ''),
               tienda: String(getField(['TIENDA']) || ''),
-              tags: String(getField(['TAGS']) || '')
+              tags: String(getField(['TAGS']) || ''),
+              fechaSolicitud: fechaSolicitudValue,
+              fechaEntregaDevolucion: fechaEntregaDevolucionValue
             };
           });
         }
@@ -1522,10 +1765,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     }
 
     const allCols = [
-      { id: 'fechaReporte', label: 'FECHA REPORTE', value: (o: Order) => o.fechaReporte, className: 'text-slate-300' },
       { id: 'orderId', label: 'ID ORDEN', value: (o: Order) => o.orderId, className: 'font-black text-white text-[15px]' },
+      { id: 'fechaSolicitud', label: 'FECHA SOLICITUD', value: (o: Order) => o.fechaSolicitud || '---', className: 'text-orange-400 font-bold' },
+      { id: 'fechaEntregaDevolucion', label: 'FECHA DE ENTREGA O DEVOLUCION', value: (o: Order) => o.fechaEntregaDevolucion || '---', className: 'text-amber-500 font-bold' },
       { id: 'hora', label: 'HORA', value: (o: Order) => o.hora, className: 'text-slate-300' },
-      { id: 'date', label: 'FECHA', value: (o: Order) => (o.date && !isNaN(o.date.getTime())) ? format(o.date, 'yyyy-MM-dd') : '---', className: 'text-blue-400/80' },
       { id: 'nombreCliente', label: 'NOMBRE CLIENTE', value: (o: Order) => o.nombreCliente, className: 'text-white font-black text-[15px]' },
       { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono, className: 'text-slate-300' },
       { id: 'trackingId', label: 'NÚMERO GUIA', value: (o: Order) => o.trackingId || 'SIN GUÍA', className: 'text-slate-400 font-medium' },
@@ -1815,6 +2058,113 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           </div>
         )}
       </div>
+
+      {viewMode === 'DROPI' && selectedOrderIds.length > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: -15 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -15 }}
+          className={`p-6 rounded-2xl border transition-all duration-300 relative overflow-hidden mb-6 ${
+            isLightWhite 
+              ? 'border-slate-200/80 shadow-md shadow-orange-500/5' 
+              : 'bg-[#0f0f0f] border-orange-500/10 shadow-xl'
+          }`}
+          style={isLightWhite ? { backgroundColor: '#f3f4f7' } : {}}
+        >
+          {/* Subtle glowing accent background */}
+          {!isLightWhite && (
+            <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/5 blur-3xl rounded-full -mr-20 -mt-20 pointer-events-none"></div>
+          )}
+          
+          <div 
+            className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10 p-5 rounded-xl ${
+              isLightWhite ? 'border border-slate-200/50' : ''
+            }`}
+            style={isLightWhite ? { backgroundColor: '#fdf6f6' } : {}}
+          >
+            <div className="flex-1">
+              <h3 className={`text-sm font-display font-black uppercase tracking-wider flex items-center gap-2 ${
+                isLightWhite ? 'text-slate-800' : 'text-white'
+              }`}>
+                <Calendar className="text-[#ff9100]" size={18} />
+                Sincronización de Fechas (Dropi)
+              </h3>
+              <p className={`text-xs mt-1 max-w-xl ${
+                isLightWhite ? 'text-slate-500' : 'text-slate-400'
+              }`}>
+                Sincroniza y guarda la <strong className="text-[#ff9100] font-black">{syncSourceMode === 'solicitud' ? 'Fecha de Solicitud' : 'Fecha de Entrega o Devolución'}</strong> de forma permanente para los <strong className="text-[#ff9100] font-black">{selectedOrderIds.length}</strong> pedidos seleccionados de Dropi. Esto se aplicará inmediatamente en los análisis principales, novedades de devoluciones y fletes.
+              </p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+              {/* Selector de Origen de Fecha */}
+              <div className="flex flex-col">
+                <span className={`text-[9px] font-black uppercase tracking-widest mb-1.5 ${
+                  isLightWhite ? 'text-slate-500' : 'text-slate-400'
+                }`}>Origen de Fecha a Sincronizar</span>
+                <div className={`flex p-1 rounded-xl border ${
+                  isLightWhite ? 'bg-slate-200/60 border-slate-300' : 'bg-black/50 border-white/10'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => setSyncSourceMode('solicitud')}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                      syncSourceMode === 'solicitud' 
+                        ? (isLightWhite ? 'bg-[#ff9100] text-white shadow-sm' : 'bg-[#ff9100] text-black') 
+                        : (isLightWhite ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white')
+                    }`}
+                  >
+                    Fecha Solicitud
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSyncSourceMode('entrega_devolucion')}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                      syncSourceMode === 'entrega_devolucion' 
+                        ? (isLightWhite ? 'bg-[#ff9100] text-white shadow-sm' : 'bg-[#ff9100] text-black') 
+                        : (isLightWhite ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white')
+                    }`}
+                  >
+                    Fecha Entrega o Devolución
+                  </button>
+                </div>
+              </div>
+
+              {/* Botón Ejecutar */}
+              <div className="flex flex-col justify-end pt-5 sm:pt-0">
+                <button
+                  type="button"
+                  disabled={isExecutingSync}
+                  onClick={saveAndSychronizeOrdersDate}
+                  className={`flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all ${
+                    !isExecutingSync
+                      ? (isLightWhite 
+                          ? 'bg-[#ff9100] text-white hover:bg-[#e07d00] shadow-sm shadow-orange-500/10 active:scale-95 cursor-pointer'
+                          : 'bg-[#ff9100] text-black hover:bg-[#e07d00] shadow-lg shadow-orange-500/10 active:scale-95 cursor-pointer')
+                      : (isLightWhite 
+                          ? 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed'
+                          : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed')
+                  }`}
+                >
+                  {isExecutingSync ? (
+                    <>
+                      <div className={`w-3.5 h-3.5 border-2 rounded-full animate-spin ${
+                        isLightWhite ? 'border-white border-t-transparent' : 'border-black border-t-transparent'
+                      }`}></div>
+                      <span>Sincronizando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap size={13} fill="currentColor" />
+                      <span>Ejecutar Sincronización</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {viewMode !== 'TIKTOK' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
@@ -3160,7 +3510,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     <h4 className="text-xs font-bold text-primary uppercase tracking-[0.2em] mb-4 border-b border-primary/20 pb-2">Información Básica</h4>
                     <div className="space-y-4">
                       <DetailRow label="ID de Orden" value={showDetailModal.orderId} />
-                      <DetailRow label="Fecha" value={(showDetailModal.date && !isNaN(showDetailModal.date.getTime())) ? format(showDetailModal.date, 'yyyy-MM-dd') : '---'} />
+                      <DetailRow label="Fecha Solicitud" value={showDetailModal.fechaSolicitud || '---'} />
+                      <DetailRow label="Fecha de Entrega o Devolución" value={showDetailModal.fechaEntregaDevolucion || '---'} />
                       <DetailRow label="Hora" value={showDetailModal.hora} />
                       <DetailRow label="Cliente" value={showDetailModal.nombreCliente} />
                       <DetailRow label="Teléfono" value={showDetailModal.telefono} />
@@ -3411,6 +3762,26 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     value={newOrderForm.shippingReal || ''}
                     onChange={e => setNewOrderForm({...newOrderForm, shippingReal: parseFloat(e.target.value) || 0})}
                     placeholder="0.00"
+                    className="w-full bg-background border border-border rounded-xl py-3 px-4 text-white focus:outline-none focus:border-primary transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Fecha de Solicitud</label>
+                  <input 
+                    type="date" 
+                    value={newOrderForm.fechaSolicitud || ''}
+                    onChange={e => setNewOrderForm({...newOrderForm, fechaSolicitud: e.target.value})}
+                    className="w-full bg-background border border-border rounded-xl py-3 px-4 text-white focus:outline-none focus:border-primary transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Fecha de Entrega o Devolución</label>
+                  <input 
+                    type="date" 
+                    value={newOrderForm.fechaEntregaDevolucion || ''}
+                    onChange={e => setNewOrderForm({...newOrderForm, fechaEntregaDevolucion: e.target.value})}
                     className="w-full bg-background border border-border rounded-xl py-3 px-4 text-white focus:outline-none focus:border-primary transition-colors"
                   />
                 </div>
