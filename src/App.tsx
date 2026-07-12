@@ -162,6 +162,19 @@ function AppContent() {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  // Global Product Filter states
+  const [globalProductFilter, setGlobalProductFilter] = useState<string>('all');
+
+  const globalUniqueProducts = useMemo(() => {
+    const productsSet = new Set<string>();
+    orders.forEach(o => {
+      if (o.product) {
+        productsSet.add(o.product);
+      }
+    });
+    return Array.from(productsSet).sort();
+  }, [orders]);
+
   // Global Date Range Filter states
   const [globalStartDate, setGlobalStartDate] = useState<string>(() => {
     return localStorage.getItem('ecommil_global_start_date') || '';
@@ -203,7 +216,11 @@ function AppContent() {
   }, [globalDateFilterType]);
 
   const filteredOrders = useMemo(() => {
-    return orders.filter(o => {
+    let result = orders;
+    if (globalProductFilter !== 'all') {
+      result = result.filter(o => o.product === globalProductFilter);
+    }
+    return result.filter(o => {
       let orderDate: Date | null = null;
       if (globalDateFilterType === 'solicitud') {
         if (o.fechaSolicitud) {
@@ -245,7 +262,7 @@ function AppContent() {
       }
       return true;
     });
-  }, [orders, globalStartDate, globalEndDate, globalDateFilterType]);
+  }, [orders, globalStartDate, globalEndDate, globalDateFilterType, globalProductFilter]);
 
   const activeTabContentRef = useRef<HTMLDivElement>(null);
 
@@ -580,11 +597,9 @@ function AppContent() {
     { id: 'kpis', label: 'Análisis Pro', icon: Activity, isGlowing: true },
     { id: 'logistics-ai', label: 'Asesor IA', icon: Bot },
     { id: 'orders', label: 'DROPI', icon: ShoppingCart },
-    { id: 'shopify', label: 'SHOPIFY', icon: Globe },
     { id: 'consiliador-pro', label: 'FLUJOS ADS', icon: Zap, isGlowing: true },
-    { id: 'calculator', label: 'Calculadora', icon: Calculator },
     { id: 'returns', label: 'Devoluciones', icon: RotateCcw },
-    { id: 'shipping', label: 'Fletes', icon: Truck },
+    { id: 'shipping', label: 'Semáforos de Transportadora', icon: Truck },
     { id: 'financial', label: 'Resumen P&L', icon: BarChart3 },
   ];
 
@@ -669,7 +684,7 @@ function AppContent() {
               ) : (
                 <item.icon size={20} className={activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'} />
               )}
-              {!isSidebarCollapsed && <span className="font-medium">{item.label}</span>}
+              {!isSidebarCollapsed && <span className="font-medium text-left">{item.label}</span>}
             </button>
           ))}
         </nav>
@@ -696,6 +711,17 @@ function AppContent() {
           >
             <Search size={20} className={activeTab === 'research' ? 'text-neon' : 'group-hover:text-neon'} />
             {!isSidebarCollapsed && <span className="font-medium">Investigación</span>}
+          </button>
+          <button
+            onClick={() => setActiveTab('calculator')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+              activeTab === 'calculator' 
+                ? 'bg-neon/10 text-neon border border-neon/20' 
+                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <Calculator size={20} className={activeTab === 'calculator' ? 'text-neon' : 'group-hover:text-neon'} />
+            {!isSidebarCollapsed && <span className="font-medium">Calculadora</span>}
           </button>
           <button
             onClick={() => setActiveTab('ad-panel')}
@@ -786,6 +812,29 @@ function AppContent() {
                 <span className={`text-xs sm:text-sm font-mono font-bold ${stats.healthScore > 70 ? 'text-neon' : stats.healthScore > 40 ? 'text-gold' : 'text-red-500'}`}>
                   {Math.round(stats.healthScore || 0)}
                 </span>
+              </div>
+            </div>
+
+            <div className="h-6 w-px bg-border/50 hidden sm:block" />
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] sm:text-xs font-display text-slate-500 uppercase tracking-tighter hidden xs:inline">Producto</span>
+              <div className="relative">
+                <select
+                  value={globalProductFilter}
+                  onChange={(e) => setGlobalProductFilter(e.target.value)}
+                  className="bg-card/40 border border-border rounded-lg text-[10px] sm:text-[11px] py-1 pl-2.5 pr-7 text-slate-300 focus:outline-none focus:border-neon cursor-pointer max-w-[120px] sm:max-w-[180px] font-bold truncate transition-colors hover:border-border/80 appearance-none"
+                >
+                  <option value="all">📦 Todos los Productos</option>
+                  {globalUniqueProducts.map(prod => (
+                    <option key={prod} value={prod} className="bg-slate-950 text-slate-300">
+                      {prod}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-slate-500 text-[8px]">
+                  ▼
+                </div>
               </div>
             </div>
           </div>
@@ -903,6 +952,7 @@ function AppContent() {
           {[
             ...menuItems,
             { id: 'sales', label: 'Ventas' },
+            { id: 'calculator', label: 'Calculadora' },
             { id: 'research', label: 'Investigación' },
             { id: 'ad-panel', label: 'Panel Ads' },
             { id: 'ads', label: 'Publicidad' },
@@ -1092,19 +1142,6 @@ function AppContent() {
                   exchangeRate={currencyInfo.rate}
                   isConversionActive={isConversionActive}
                   viewMode="DROPI" theme={theme}
-                />
-              )}
-              {activeTab === 'shopify' && (
-                <OrderManagement 
-                  orders={orders} 
-                  setOrders={setOrders}
-                  formatCurrency={formatCurrency} 
-                  onDeleteOrders={deleteOrders} 
-                  onAddOrders={addOrders}
-                  currentCurrency={currency}
-                  exchangeRate={currencyInfo.rate}
-                  isConversionActive={isConversionActive}
-                  viewMode="SHOPIFY" theme={theme}
                 />
               )}
               {activeTab === 'consiliador-pro' && (

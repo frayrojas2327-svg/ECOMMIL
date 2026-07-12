@@ -181,7 +181,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       });
       setAdExpenses(expensesData);
     }, (error) => {
-      console.warn("Error reading ad expenses for P&L:", error);
+      handleFirestoreError(error, OperationType.LIST, 'ad_expenses');
     });
 
     return () => unsubscribe();

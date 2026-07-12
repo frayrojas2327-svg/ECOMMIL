@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { collection, doc, writeBatch, setDoc, query, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { useAuth } from './Auth';
+import { ReturnNovelty } from './ReturnsAnalysis';
 
 interface OrderManagementProps {
   orders: Order[];
@@ -20,6 +21,18 @@ interface OrderManagementProps {
   viewMode?: 'SHOPIFY' | 'DROPI' | 'TIKTOK';
   theme?: string;
 }
+
+export const STATUS_COLORS: Record<string, { text: string; border: string; bg: string; badge: string }> = {
+  'Entregado': { text: 'text-[#00df9a]', border: 'border-[#00df9a]/40', bg: 'bg-[#00df9a]/5', badge: '🟢' },
+  'En tránsito': { text: 'text-blue-400', border: 'border-blue-400/40', bg: 'bg-blue-400/5', badge: '🔵' },
+  'Devuelto': { text: 'text-[#ff9100]', border: 'border-[#ff9100]/40', bg: 'bg-[#ff9100]/5', badge: '🟠' },
+  'Cancelado': { text: 'text-[#ff4b4b]', border: 'border-[#ff4b4b]/40', bg: 'bg-[#ff4b4b]/5', badge: '🔴' },
+  'Pendiente': { text: 'text-amber-400', border: 'border-amber-400/40', bg: 'bg-amber-400/5', badge: '🟡' },
+  'Guía Generada': { text: 'text-slate-300', border: 'border-slate-500/40', bg: 'bg-slate-500/5', badge: '📑' },
+  'Recolectado': { text: 'text-slate-300', border: 'border-slate-600/40', bg: 'bg-slate-600/5', badge: '📦' },
+  'Incidencia': { text: 'text-red-400', border: 'border-red-900/40', bg: 'bg-red-900/5', badge: '⚠️' },
+  'All': { text: 'text-white', border: 'border-white/10', bg: 'bg-[#111]', badge: '🔍' }
+};
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
   const styles = {
@@ -110,6 +123,150 @@ const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
   // Last resort attempt
   const d = new Date(dateStr);
   return isNaN(d.getTime()) ? null : d;
+};
+
+interface InlineProductEditorProps {
+  order: Order;
+  uniqueProducts: string[];
+  onUpdate: (orderId: string, newProduct: string) => Promise<void>;
+  isLightWhite: boolean;
+}
+
+const InlineProductEditor: React.FC<InlineProductEditorProps> = ({ 
+  order, 
+  uniqueProducts, 
+  onUpdate,
+  isLightWhite 
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempValue, setTempValue] = useState(order.product || '');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setTempValue(order.product || '');
+  }, [order.product]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsEditing(false);
+        setShowDropdown(false);
+        if (tempValue.trim() && tempValue !== order.product) {
+          onUpdate(order.id, tempValue);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isEditing, tempValue, order.id, order.product, onUpdate]);
+
+  if (!isEditing) {
+    return (
+      <div 
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsEditing(true);
+          setShowDropdown(true);
+        }}
+        className={`group flex items-center gap-2 cursor-pointer py-1.5 px-2.5 rounded-lg transition-all ${
+          isLightWhite ? 'hover:bg-slate-100 text-slate-800' : 'hover:bg-white/5 text-slate-200'
+        }`}
+        title="Haz clic para editar el producto"
+      >
+        <span className="font-bold text-xs truncate max-w-[140px] sm:max-w-[200px]">
+          {order.product || <span className="text-slate-500 italic">Sin producto</span>}
+        </span>
+        <span className="opacity-0 group-hover:opacity-100 text-slate-500 transition-opacity text-[10px]">
+          ✏️
+        </span>
+      </div>
+    );
+  }
+
+  const filteredUnique = uniqueProducts.filter(p => p && p.toLowerCase() !== (order.product || '').toLowerCase());
+
+  return (
+    <div 
+      ref={containerRef} 
+      onClick={(e) => e.stopPropagation()} 
+      className="relative z-50 flex items-center gap-1.5 w-[180px] sm:w-[240px]"
+    >
+      <div className="flex flex-col w-full gap-1">
+        <div className="flex gap-1 w-full">
+          <input
+            type="text"
+            value={tempValue}
+            autoFocus
+            onChange={(e) => setTempValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setIsEditing(false);
+                setShowDropdown(false);
+                if (tempValue.trim() && tempValue !== order.product) {
+                  onUpdate(order.id, tempValue);
+                }
+              } else if (e.key === 'Escape') {
+                setTempValue(order.product || '');
+                setIsEditing(false);
+                setShowDropdown(false);
+              }
+            }}
+            placeholder="Escribe el producto..."
+            className={`text-xs px-2 py-1.5 rounded-lg font-bold border focus:outline-none focus:border-[#00df9a] w-full ${
+              isLightWhite 
+                ? 'bg-white border-slate-300 text-slate-800' 
+                : 'bg-[#111] border-white/15 text-white'
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setIsEditing(false);
+              setShowDropdown(false);
+              if (tempValue.trim() && tempValue !== order.product) {
+                onUpdate(order.id, tempValue);
+              }
+            }}
+            className="p-1.5 bg-[#00df9a] hover:bg-[#00c589] text-black rounded-lg text-[10px] font-black cursor-pointer"
+            title="Guardar"
+          >
+            ✓
+          </button>
+        </div>
+
+        {showDropdown && filteredUnique.length > 0 && (
+          <div className={`absolute top-full left-0 mt-1 w-full max-h-[160px] overflow-y-auto rounded-xl border shadow-2xl z-[100] custom-scrollbar ${
+            isLightWhite ? 'bg-white border-slate-200 text-slate-700' : 'bg-[#0a0a0a] border-white/10 text-slate-300'
+          }`}>
+            <div className={`px-2 py-1 text-[9px] uppercase font-black tracking-wider border-b ${
+              isLightWhite ? 'bg-slate-50 border-slate-100 text-slate-400' : 'bg-black/40 border-white/5 text-slate-500'
+            }`}>
+              Productos Existentes:
+            </div>
+            {filteredUnique.map(prod => (
+              <button
+                key={prod}
+                type="button"
+                onClick={() => {
+                  setTempValue(prod);
+                  setIsEditing(false);
+                  setShowDropdown(false);
+                  onUpdate(order.id, prod);
+                }}
+                className={`w-full text-left px-3 py-1.5 text-xs font-bold transition-colors ${
+                  isLightWhite ? 'hover:bg-slate-100 text-slate-800' : 'hover:bg-white/5 text-slate-200'
+                }`}
+              >
+                📦 {prod}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 const OrderManagement: React.FC<OrderManagementProps> = ({ 
@@ -865,6 +1022,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const [deptFilter, setDeptFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  const [productFilter, setProductFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'All' | 'Shopify' | 'Dropi' | 'TikTok'>('All');
   const [reqDate, setReqDate] = useState('');
   const [delDate, setDelDate] = useState('');
@@ -878,6 +1036,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const [syncTarget, setSyncTarget] = useState<'all' | 'selected'>('selected');
   const [syncSourceMode, setSyncSourceMode] = useState<'solicitud' | 'entrega_devolucion'>('solicitud');
   const [isExecutingSync, setIsExecutingSync] = useState(false);
+
+  // Batch product assignment states
+  const [batchProductValue, setBatchProductValue] = useState<string>('');
+  const [isExecutingBatchProduct, setIsExecutingBatchProduct] = useState(false);
 
   useEffect(() => {
     if (selectedOrderIds.length > 0) {
@@ -1061,6 +1223,240 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       setIsExecutingSync(false);
     }
   };
+
+  const uniqueProductsList = useMemo(() => {
+    const productsSet = new Set<string>();
+    orders.forEach(o => {
+      if (o.product) {
+        productsSet.add(o.product);
+      }
+    });
+    return Array.from(productsSet).sort();
+  }, [orders]);
+
+  const handleBatchAssignProduct = async () => {
+    const trimmedProduct = batchProductValue.trim();
+    if (!trimmedProduct) {
+      setNotification({
+        message: 'Por favor ingresa o selecciona un nombre de producto válido.',
+        type: 'error'
+      });
+      return;
+    }
+    
+    setIsExecutingBatchProduct(true);
+    
+    try {
+      const targetOrdersList = orders.filter(o => selectedOrderIds.includes(o.id));
+      
+      if (targetOrdersList.length === 0) {
+        setNotification({
+          message: 'No hay pedidos seleccionados.',
+          type: 'error'
+        });
+        setIsExecutingBatchProduct(false);
+        return;
+      }
+
+      // Update in Firestore if config is valid and user is logged in
+      if (!isDemoMode && isFirebaseConfigValid && user) {
+        const batch = writeBatch(db);
+        
+        targetOrdersList.forEach(o => {
+          const docRef = doc(db, 'orders', o.id);
+          batch.set(docRef, { 
+            product: trimmedProduct
+          }, { merge: true });
+        });
+
+        await batch.commit();
+      }
+
+      // Update in local state
+      setOrders(prev => prev.map(o => {
+        if (selectedOrderIds.includes(o.id)) {
+          return {
+            ...o,
+            product: trimmedProduct
+          };
+        }
+        return o;
+      }));
+
+      setNotification({
+        message: `¡ÉXITO! Se asignó el producto "${trimmedProduct}" a ${targetOrdersList.length} pedidos seleccionados.`,
+        type: 'success'
+      });
+      setTimeout(() => setNotification(null), 5000);
+      setSelectedOrderIds([]); // Clear selection after success
+      setBatchProductValue(''); // Clear input
+    } catch (err: any) {
+      console.error('Error in batch product assignment:', err);
+      if (!isDemoMode && isFirebaseConfigValid) {
+        handleFirestoreError(err, OperationType.WRITE, 'orders');
+      } else {
+        setNotification({ message: 'Error al actualizar el producto de los pedidos.', type: 'error' });
+      }
+    } finally {
+      setIsExecutingBatchProduct(false);
+    }
+  };
+
+  const handleUpdateOrderProduct = async (orderId: string, newProduct: string) => {
+    const trimmed = newProduct.trim();
+    if (!trimmed) return;
+    try {
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, product: trimmed } : o));
+
+      if (!isDemoMode && isFirebaseConfigValid && user) {
+        const docRef = doc(db, 'orders', orderId);
+        await setDoc(docRef, { product: trimmed }, { merge: true });
+      }
+    } catch (err) {
+      console.error('Error updating single order product:', err);
+    }
+  };
+
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
+    try {
+      const todayDDMMYYYY = format(new Date(), 'dd/MM/yyyy');
+      const todayYYYYMMDD = format(new Date(), 'yyyy-MM-dd');
+      
+      const MONTHS_SPANISH = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+      ];
+      const currentMonthSpanish = MONTHS_SPANISH[new Date().getMonth()];
+
+      let updatedOrder: Order | null = null;
+
+      // 1. Calculate updated order values
+      setOrders(prev => prev.map(o => {
+        if (o.id === orderId) {
+          const needsDateUpdate = (newStatus === 'Entregado' || newStatus === 'Devuelto') && (!o.fechaEntregaDevolucion || o.fechaEntregaDevolucion === '---');
+          updatedOrder = {
+            ...o,
+            status: newStatus,
+            ...(needsDateUpdate ? { fechaEntregaDevolucion: todayDDMMYYYY } : {})
+          };
+          return updatedOrder;
+        }
+        return o;
+      }));
+
+      // Find the order in the current local array to derive fields for the novelty
+      const originalOrder = orders.find(o => o.id === orderId);
+      if (!originalOrder) return;
+
+      const finalOrder = {
+        ...originalOrder,
+        status: newStatus,
+        ...((newStatus === 'Entregado' || newStatus === 'Devuelto') && (!originalOrder.fechaEntregaDevolucion || originalOrder.fechaEntregaDevolucion === '---') ? { fechaEntregaDevolucion: todayDDMMYYYY } : {})
+      };
+
+      // 2. Persist order update to Firestore
+      if (!isDemoMode && isFirebaseConfigValid && user) {
+        const orderRef = doc(db, 'orders', orderId);
+        await setDoc(orderRef, {
+          status: finalOrder.status,
+          fechaEntregaDevolucion: finalOrder.fechaEntregaDevolucion || '---'
+        }, { merge: true });
+      }
+
+      // 3. If newStatus is 'Devuelto', we must handle return novelties
+      if (newStatus === 'Devuelto') {
+        const noveltyId = Math.random().toString(36).substring(2, 11);
+        const noveltyData: ReturnNovelty = {
+          id: noveltyId,
+          uid: user?.uid || 'demo-user',
+          orderId: finalOrder.orderId || finalOrder.id,
+          guia: finalOrder.trackingId || '---',
+          productName: finalOrder.product || '---',
+          nombreCliente: finalOrder.nombreCliente || '---',
+          fecha: todayYYYYMMDD,
+          origenNovedad: 'Dropi (Modificado de Incidencia)',
+          descripcion: 'Pedido marcado como Devuelto desde Incidencia en Ruta',
+          resolucion: 'Devuelto a bodega',
+          timestamp: Date.now(),
+          transportadora: finalOrder.transportadora || '---',
+          mes: currentMonthSpanish,
+          etiquetaDevolucion: 'Devuelto al Inventario'
+        };
+
+        // Write to Firestore if logged in
+        if (!isDemoMode && isFirebaseConfigValid && user) {
+          try {
+            const qNovelties = query(
+              collection(db, 'return_novelties'), 
+              where('uid', '==', user.uid),
+              where('orderId', '==', finalOrder.orderId || finalOrder.id)
+            );
+            const querySnapshot = await getDocs(qNovelties);
+            if (querySnapshot.empty) {
+              await setDoc(doc(db, 'return_novelties', noveltyId), noveltyData);
+            } else {
+              // Update existing novelty
+              const existingDoc = querySnapshot.docs[0];
+              await setDoc(existingDoc.ref, {
+                fecha: todayYYYYMMDD,
+                mes: currentMonthSpanish,
+                descripcion: 'Pedido marcado como Devuelto desde Incidencia en Ruta (Actualizado)'
+              }, { merge: true });
+            }
+          } catch (errNovelties) {
+            console.error("Error updating return novelties in Firestore:", errNovelties);
+          }
+        }
+
+        // Write/sync to localStorage
+        try {
+          const savedNoveltiesStr = localStorage.getItem('ecommil_return_novelties');
+          let localNovelties: ReturnNovelty[] = [];
+          if (savedNoveltiesStr) {
+            localNovelties = JSON.parse(savedNoveltiesStr) as ReturnNovelty[];
+          }
+          
+          const existingIndex = localNovelties.findIndex(n => 
+            n.orderId === (finalOrder.orderId || finalOrder.id) || 
+            (finalOrder.trackingId && n.guia === finalOrder.trackingId)
+          );
+
+          if (existingIndex >= 0) {
+            localNovelties[existingIndex] = {
+              ...localNovelties[existingIndex],
+              fecha: todayYYYYMMDD,
+              mes: currentMonthSpanish,
+              descripcion: 'Pedido marcado como Devuelto desde Incidencia en Ruta (Actualizado)'
+            };
+          } else {
+            localNovelties.unshift(noveltyData);
+          }
+
+          localStorage.setItem('ecommil_return_novelties', JSON.stringify(localNovelties));
+          
+          // Trigger custom storage and custom updated events
+          window.dispatchEvent(new Event('storage'));
+          window.dispatchEvent(new Event('order-status-updated'));
+        } catch (e) {
+          console.error('Error updating local return novelties:', e);
+        }
+      }
+
+      setNotification({
+        message: `Se actualizó el estado del pedido a ${newStatus.toUpperCase()}.${newStatus === 'Devuelto' ? ' Se registró la novedad en el análisis de devoluciones.' : ''}`,
+        type: 'success'
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      setNotification({
+        message: 'Ocurrió un error al actualizar el estado del pedido.',
+        type: 'error'
+      });
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState<Order | null>(null);
 
@@ -1537,12 +1933,105 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               date: (rawDropiDate ? parseFlexibleDate(String(rawDropiDate)) : null) || new Date(),
               orderId: String(getField(['ID Pedido', 'ID', 'Referencia']) || '').replace('#', '') || `DRP-${Math.random().toString(36).substring(7).toUpperCase()}`,
               product: (() => {
-                const nameCol = getField(['Nombre Producto', 'Producto', 'Item', 'NOMBRE_PRODUCTO', 'PRODUCTO_NOMBRE', 'NOMBRE']);
-                if (nameCol) return String(nameCol);
+                const rowKeys = Object.keys(row);
+
+                // Priority 0: Scan all cells in the row for product keywords like 'collar'
+                for (const key of rowKeys) {
+                  const val = row[key];
+                  if (val !== undefined && val !== null) {
+                    const strVal = String(val).trim();
+                    const strLower = strVal.toLowerCase();
+                    if (strLower.startsWith('collar') || strLower.includes('collar')) {
+                      return strVal;
+                    }
+                  }
+                }
+
+                // Check for other typical product keywords if 'collar' wasn't found
+                const commonProductKeywords = [
+                  'pulsera', 'cadena', 'anillo', 'arete', 'joya', 'reloj', 'brazalete',
+                  'organizador', 'cepillo', 'kit', 'soporte', 'mini', 'set', 'combo', 'parche',
+                  'lente', 'faja', 'audifonos', 'audífonos', 'parlante', 'cargador'
+                ];
+                for (const key of rowKeys) {
+                  const val = row[key];
+                  if (val !== undefined && val !== null) {
+                    const strVal = String(val).trim();
+                    const strLower = strVal.toLowerCase();
+                    if (commonProductKeywords.some(kw => strLower.startsWith(kw) || strLower.includes(' ' + kw))) {
+                      if (isNaN(Number(strVal)) && strVal.length > 3) {
+                        return strVal;
+                      }
+                    }
+                  }
+                }
+
+                const financialOrIdWords = [
+                  'costo', 'coste', 'precio', 'flete', 'valor', 'total', 'venta', 'compra', 
+                  'id', 'sku', 'código', 'codigo', 'guia', 'guía', 'comision', 'comisión', 
+                  'fee', 'recaudo', 'devolucion', 'devolución', 'retorno', 'novedad', 'tracking'
+                ];
                 
-                // Si "PRODUCTO" no es un número, probablemente sea el nombre
-                const prodCol = getField(['PRODUCTO']);
-                if (prodCol && parseMoney(prodCol) === 0) return String(prodCol);
+                const productColumnTerms = [
+                  'nombre producto', 'nombre del producto', 'nombre de producto', 
+                  'producto_nombre', 'nombre_producto', 'producto', 'product', 
+                  'product name', 'product_name', 'item', 'items', 'detalle', 
+                  'descripcion', 'descripción', 'nombre', 'articulo', 'artículo'
+                ];
+                
+                // 1. Try to find an exact match first, ignoring case and trimming
+                for (const term of productColumnTerms) {
+                  const foundKey = rowKeys.find(k => k.toLowerCase().trim() === term);
+                  if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
+                    const val = String(row[foundKey]).trim();
+                    if (val && isNaN(Number(val))) { // Ensure it's not a pure number/ID
+                      return val;
+                    }
+                  }
+                }
+                
+                // 2. Try to find a loose match (includes) but exclude any keys containing financial/ID words
+                for (const term of productColumnTerms) {
+                  const foundKey = rowKeys.find(k => {
+                    const kLower = k.toLowerCase().trim();
+                    if (!kLower.includes(term)) return false;
+                    const hasFinancialOrId = financialOrIdWords.some(w => kLower.includes(w));
+                    return !hasFinancialOrId;
+                  });
+                  if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
+                    const val = String(row[foundKey]).trim();
+                    if (val && isNaN(Number(val))) {
+                      return val;
+                    }
+                  }
+                }
+                
+                // 3. Fallback: check if any key includes 'producto', 'item', 'product', 'detalle', 'descripcion', 'nombre'
+                // even if it has numbers, as long as it's not purely a number and not in financialOrIdWords
+                const desperateKey = rowKeys.find(k => {
+                  const kLower = k.toLowerCase().trim();
+                  const isProdLike = ['producto', 'item', 'product', 'detalle', 'descripcion', 'nombre'].some(w => kLower.includes(w));
+                  const hasFinancialOrId = financialOrIdWords.some(w => kLower.includes(w));
+                  return isProdLike && !hasFinancialOrId;
+                });
+                if (desperateKey && row[desperateKey] !== undefined && row[desperateKey] !== null) {
+                  const val = String(row[desperateKey]).trim();
+                  if (val && isNaN(Number(val))) {
+                    return val;
+                  }
+                }
+                
+                // 4. Ultimate fallback: if there's a column with a name that contains "producto" or "item" or "product"
+                // and its value is a non-numeric string of length > 2
+                for (const k of rowKeys) {
+                  const kLower = k.toLowerCase();
+                  if (['producto', 'item', 'product', 'nombre'].some(w => kLower.includes(w))) {
+                    const val = String(row[k]).trim();
+                    if (val && isNaN(Number(val)) && val.length > 2) {
+                      return val;
+                    }
+                  }
+                }
                 
                 return 'Producto Dropi';
               })(),
@@ -1658,6 +2147,11 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         : tagFilter === 'SIN ETIQUETA' 
           ? (!order.tags || order.tags.trim() === '') 
           : (order.tags && order.tags.toLowerCase().includes(tagFilter.toLowerCase()));
+      const matchesProduct = !productFilter || (order.product && order.product.toLowerCase().trim() === productFilter.toLowerCase().trim());
+      const matchesSource = sourceFilter === 'All' || 
+        (sourceFilter === 'Shopify' && isShopify) ||
+        (sourceFilter === 'Dropi' && isDropi) ||
+        (sourceFilter === 'TikTok' && (order.notas?.includes('TIKTOK') || false));
 
       let matchesReqDate = true;
       if (reqDate) {
@@ -1674,9 +2168,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         }
       }
 
-      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesTag && matchesReqDate;
+      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesTag && matchesProduct && matchesSource && matchesReqDate;
     });
-  }, [orders, searchTerm, statusFilter, deptFilter, cityFilter, tagFilter, reqDate, viewMode]);
+  }, [orders, searchTerm, statusFilter, deptFilter, cityFilter, tagFilter, productFilter, sourceFilter, reqDate, viewMode]);
 
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('order-column-widths');
@@ -1726,7 +2220,19 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         { id: 'nombreCliente', label: 'NOMBRE COMPLETO', value: (o: Order) => o.nombreCliente, className: 'text-white font-black text-[15px]' },
         { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono, className: 'text-slate-300' },
         { id: 'ciudadDestino', label: 'CIUDAD', value: (o: Order) => o.ciudadDestino || '---' },
-        { id: 'product', label: 'PRODUCTO', value: (o: Order) => o.product },
+        { 
+          id: 'product', 
+          label: 'PRODUCTO', 
+          value: (o: Order) => o.product,
+          render: (o: Order) => (
+            <InlineProductEditor 
+              order={o} 
+              uniqueProducts={uniqueProductsList} 
+              onUpdate={handleUpdateOrderProduct} 
+              isLightWhite={isLightWhite} 
+            />
+          )
+        },
         { id: 'departamentoDestino', label: 'DEPARTAMENTO', value: (o: Order) => o.departamentoDestino || o.country || '---' },
         { id: 'direccion', label: 'DIRECCIÓN', value: (o: Order) => o.direccion, className: 'text-xs text-slate-400 truncate max-w-[150px]' },
         { id: 'price', label: 'VALOR PRODUCTO', value: (o: Order) => (o.price || 0) - (o.priorityShipping || 0), isMoney: true, className: 'text-emerald-400 font-bold' },
@@ -1737,10 +2243,35 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           value: (o: Order) => o.status, 
           render: (o: Order) => (
             <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
-              <StatusBadge status={o.status} />
-              <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
-                {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
-              </span>
+              {o.status === 'Incidencia' ? (
+                <div onClick={(e) => e.stopPropagation()} className="relative z-10">
+                  <select
+                    value={o.status}
+                    onChange={async (e) => {
+                      const newStatus = e.target.value as OrderStatus;
+                      if (newStatus !== 'Incidencia') {
+                        await handleUpdateOrderStatus(o.id, newStatus);
+                      }
+                    }}
+                    className="bg-red-950/25 border border-red-500/40 hover:border-red-400 text-red-400 font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans"
+                    title="Editar estado de incidencia"
+                  >
+                    <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
+                    <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                    <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
+                    <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
+                    <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
+                    <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <StatusBadge status={o.status} />
+                  <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
+                    {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
+                  </span>
+                </>
+              )}
             </div>
           ) 
         },
@@ -1778,14 +2309,51 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         value: (o: Order) => o.status, 
         render: (o: Order) => (
           <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
-            <StatusBadge status={o.status} />
-            <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
-              {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
-            </span>
+            {o.status === 'Incidencia' ? (
+              <div onClick={(e) => e.stopPropagation()} className="relative z-10">
+                <select
+                  value={o.status}
+                  onChange={async (e) => {
+                    const newStatus = e.target.value as OrderStatus;
+                    if (newStatus !== 'Incidencia') {
+                      await handleUpdateOrderStatus(o.id, newStatus);
+                    }
+                  }}
+                  className="bg-red-950/25 border border-red-500/40 hover:border-red-400 text-red-400 font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans"
+                  title="Editar estado de incidencia"
+                >
+                  <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
+                  <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                  <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
+                  <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
+                  <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
+                  <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                </select>
+              </div>
+            ) : (
+              <>
+                <StatusBadge status={o.status} />
+                <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
+                  {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
+                </span>
+              </>
+            )}
           </div>
         ) 
       },
-      { id: 'product', label: 'PRODUCTO', value: (o: Order) => o.product },
+      { 
+        id: 'product', 
+        label: 'PRODUCTO', 
+        value: (o: Order) => o.product,
+        render: (o: Order) => (
+          <InlineProductEditor 
+            order={o} 
+            uniqueProducts={uniqueProductsList} 
+            onUpdate={handleUpdateOrderProduct} 
+            isLightWhite={isLightWhite} 
+          />
+        )
+      },
       { 
         id: 'valorFacturado', 
         label: 'VALOR VENTA', 
@@ -2059,112 +2627,237 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         )}
       </div>
 
-      {viewMode === 'DROPI' && selectedOrderIds.length > 0 && (
-        <motion.div 
-          initial={{ opacity: 0, y: -15 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -15 }}
-          className={`p-6 rounded-2xl border transition-all duration-300 relative overflow-hidden mb-6 ${
-            isLightWhite 
-              ? 'border-slate-200/80 shadow-md shadow-orange-500/5' 
-              : 'bg-[#0f0f0f] border-orange-500/10 shadow-xl'
-          }`}
-          style={isLightWhite ? { backgroundColor: '#f3f4f7' } : {}}
-        >
-          {/* Subtle glowing accent background */}
-          {!isLightWhite && (
-            <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/5 blur-3xl rounded-full -mr-20 -mt-20 pointer-events-none"></div>
-          )}
-          
-          <div 
-            className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10 p-5 rounded-xl ${
-              isLightWhite ? 'border border-slate-200/50' : ''
-            }`}
-            style={isLightWhite ? { backgroundColor: '#fdf6f6' } : {}}
-          >
-            <div className="flex-1">
-              <h3 className={`text-sm font-display font-black uppercase tracking-wider flex items-center gap-2 ${
-                isLightWhite ? 'text-slate-800' : 'text-white'
-              }`}>
-                <Calendar className="text-[#ff9100]" size={18} />
-                Sincronización de Fechas (Dropi)
-              </h3>
-              <p className={`text-xs mt-1 max-w-xl ${
-                isLightWhite ? 'text-slate-500' : 'text-slate-400'
-              }`}>
-                Sincroniza y guarda la <strong className="text-[#ff9100] font-black">{syncSourceMode === 'solicitud' ? 'Fecha de Solicitud' : 'Fecha de Entrega o Devolución'}</strong> de forma permanente para los <strong className="text-[#ff9100] font-black">{selectedOrderIds.length}</strong> pedidos seleccionados de Dropi. Esto se aplicará inmediatamente en los análisis principales, novedades de devoluciones y fletes.
-              </p>
+      <motion.div 
+        initial={{ opacity: 0, y: -15 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`p-6 rounded-2xl border transition-all duration-300 relative overflow-hidden mb-6 ${
+          isLightWhite 
+            ? 'border-slate-200/80 shadow-md shadow-orange-500/5' 
+            : 'bg-[#0f0f0f] border-orange-500/10 shadow-xl'
+        }`}
+        style={isLightWhite ? { backgroundColor: '#f3f4f7' } : {}}
+      >
+        {/* Subtle glowing accent background */}
+        {!isLightWhite && (
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#00df9a]/5 blur-3xl rounded-full -mr-20 -mt-20 pointer-events-none"></div>
+        )}
+
+        <div className="relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-white/5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-[#ff9100]">
+                <Package size={18} />
+              </div>
+              <div>
+                <h3 className={`text-sm font-display font-black uppercase tracking-wider ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>
+                  Asignador de Productos y Acciones Masivas
+                </h3>
+                <p className={`text-[10px] uppercase font-bold tracking-wider mt-0.5 ${isLightWhite ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {selectedOrderIds.length > 0 
+                    ? `Tienes ${selectedOrderIds.length} pedidos seleccionados actualmente` 
+                    : 'Selecciona pedidos en la tabla de abajo para aplicar cambios masivos'}
+                </p>
+              </div>
             </div>
             
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-              {/* Selector de Origen de Fecha */}
-              <div className="flex flex-col">
-                <span className={`text-[9px] font-black uppercase tracking-widest mb-1.5 ${
-                  isLightWhite ? 'text-slate-500' : 'text-slate-400'
-                }`}>Origen de Fecha a Sincronizar</span>
-                <div className={`flex p-1 rounded-xl border ${
-                  isLightWhite ? 'bg-slate-200/60 border-slate-300' : 'bg-black/50 border-white/10'
-                }`}>
+            {selectedOrderIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedOrderIds([])}
+                className="text-[10px] font-black uppercase tracking-wider text-red-400 hover:text-red-300 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/5 border border-red-500/10 cursor-pointer"
+              >
+                <X size={12} /> Limpiar Selección ({selectedOrderIds.length})
+              </button>
+            )}
+          </div>
+
+          <div className={`grid grid-cols-1 ${viewMode === 'DROPI' ? 'lg:grid-cols-2' : 'grid-cols-1'} gap-8`}>
+            
+            {/* SECTION 1: Batch Product Assignment */}
+            <div className={`p-5 rounded-xl border flex flex-col justify-between ${
+              isLightWhite ? 'bg-white border-slate-200/60 shadow-sm' : 'bg-black/20 border-white/5'
+            }`}>
+              <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-dashed border-white/5">
+                  <h4 className={`text-xs font-display font-black uppercase tracking-wider flex items-center gap-2 ${
+                    isLightWhite ? 'text-slate-800' : 'text-white'
+                  }`}>
+                    <Package className="text-[#00df9a]" size={16} />
+                    Asignación de Producto en Lote
+                  </h4>
+                  
                   <button
                     type="button"
-                    onClick={() => setSyncSourceMode('solicitud')}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
-                      syncSourceMode === 'solicitud' 
-                        ? (isLightWhite ? 'bg-[#ff9100] text-white shadow-sm' : 'bg-[#ff9100] text-black') 
-                        : (isLightWhite ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white')
+                    disabled={selectedOrderIds.length === 0 || isExecutingBatchProduct}
+                    onClick={handleBatchAssignProduct}
+                    className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shrink-0 ${
+                      selectedOrderIds.length > 0 && !isExecutingBatchProduct
+                        ? (isLightWhite 
+                            ? 'bg-[#00df9a] text-black hover:bg-[#00c589] shadow-sm shadow-[#00df9a]/10 active:scale-95 cursor-pointer'
+                            : 'bg-[#00df9a] text-black hover:bg-[#00c589] shadow-lg shadow-[#00df9a]/10 active:scale-95 cursor-pointer')
+                        : 'bg-slate-800 border border-white/5 text-slate-500 cursor-not-allowed opacity-40'
                     }`}
                   >
-                    Fecha Solicitud
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSyncSourceMode('entrega_devolucion')}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
-                      syncSourceMode === 'entrega_devolucion' 
-                        ? (isLightWhite ? 'bg-[#ff9100] text-white shadow-sm' : 'bg-[#ff9100] text-black') 
-                        : (isLightWhite ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white')
-                    }`}
-                  >
-                    Fecha Entrega o Devolución
+                    {isExecutingBatchProduct ? (
+                      <>
+                        <div className="w-3 h-3 border-2 rounded-full animate-spin border-black border-t-transparent"></div>
+                        <span>Asignando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Package size={12} />
+                        <span>Asignar {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                      </>
+                    )}
                   </button>
                 </div>
-              </div>
 
-              {/* Botón Ejecutar */}
-              <div className="flex flex-col justify-end pt-5 sm:pt-0">
-                <button
-                  type="button"
-                  disabled={isExecutingSync}
-                  onClick={saveAndSychronizeOrdersDate}
-                  className={`flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all ${
-                    !isExecutingSync
-                      ? (isLightWhite 
-                          ? 'bg-[#ff9100] text-white hover:bg-[#e07d00] shadow-sm shadow-orange-500/10 active:scale-95 cursor-pointer'
-                          : 'bg-[#ff9100] text-black hover:bg-[#e07d00] shadow-lg shadow-orange-500/10 active:scale-95 cursor-pointer')
-                      : (isLightWhite 
-                          ? 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed'
-                          : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed')
-                  }`}
-                >
-                  {isExecutingSync ? (
-                    <>
-                      <div className={`w-3.5 h-3.5 border-2 rounded-full animate-spin ${
-                        isLightWhite ? 'border-white border-t-transparent' : 'border-black border-t-transparent'
-                      }`}></div>
-                      <span>Sincronizando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap size={13} fill="currentColor" />
-                      <span>Ejecutar Sincronización</span>
-                    </>
-                  )}
-                </button>
+                <p className={`text-[11px] mb-4 ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Asigna un nombre de producto a los pedidos que selecciones manualmente en la tabla de abajo.
+                </p>
+
+                {selectedOrderIds.length === 0 ? (
+                  <div className={`p-4 rounded-xl border text-xs font-bold mb-4 leading-relaxed ${
+                    isLightWhite ? 'bg-amber-50/50 border-amber-200 text-amber-800' : 'bg-amber-500/5 border-amber-500/10 text-amber-400/90'
+                  }`}>
+                    💡 <strong>¿Cómo usarlo?</strong> Marca las casillas de verificación (cuadrados vacíos) al lado de los pedidos que quieras en la tabla de abajo, luego regresa aquí para elegir o escribir el producto y asignarlo.
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                    <div className="flex flex-col gap-1.5 flex-1">
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+                        Seleccionar Existente
+                      </span>
+                      <select
+                        onChange={(e) => setBatchProductValue(e.target.value)}
+                        className={`w-full border rounded-xl px-4 py-2.5 text-xs font-bold transition-colors focus:outline-none focus:border-[#00df9a] cursor-pointer ${
+                          isLightWhite 
+                            ? 'bg-white border-slate-200 text-slate-700 hover:border-slate-300' 
+                            : 'bg-[#111] border-white/10 text-slate-300 hover:border-white/20'
+                        }`}
+                      >
+                        <option value="">-- Elegir de la lista --</option>
+                        {uniqueProductsList.map(prod => (
+                          <option key={prod} value={prod} className={isLightWhite ? 'text-slate-800' : 'bg-[#111] text-slate-300'}>
+                            📦 {prod}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 flex-1">
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+                        Nombre del Producto (Escribir o Editar)
+                      </span>
+                      <input
+                        type="text"
+                        value={batchProductValue}
+                        onChange={(e) => setBatchProductValue(e.target.value)}
+                        placeholder="Ej: Collar de Trébol"
+                        className={`w-full border rounded-xl px-4 py-2.5 text-xs font-bold transition-colors focus:outline-none focus:border-[#00df9a] ${
+                          isLightWhite 
+                            ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                            : 'bg-black/40 border-white/10 text-white placeholder-slate-600'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* SECTION 2: Date Sync (Only for Dropi) */}
+            {viewMode === 'DROPI' && (
+              <div className={`p-5 rounded-xl border flex flex-col justify-between ${
+                isLightWhite ? 'bg-white border-slate-200/60 shadow-sm' : 'bg-black/20 border-white/5'
+              }`}>
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-dashed border-white/5">
+                    <h4 className={`text-xs font-display font-black uppercase tracking-wider flex items-center gap-2 ${
+                      isLightWhite ? 'text-slate-800' : 'text-white'
+                    }`}>
+                      <Calendar className="text-[#ff9100]" size={16} />
+                      Sincronización de Fechas (Dropi)
+                    </h4>
+
+                    <button
+                      type="button"
+                      disabled={selectedOrderIds.length === 0 || isExecutingSync}
+                      onClick={saveAndSychronizeOrdersDate}
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shrink-0 ${
+                        selectedOrderIds.length > 0 && !isExecutingSync
+                          ? (isLightWhite 
+                              ? 'bg-[#ff9100] text-white hover:bg-[#e07d00] shadow-sm shadow-orange-500/10 active:scale-95 cursor-pointer'
+                              : 'bg-[#ff9100] text-black hover:bg-[#e07d00] shadow-lg shadow-orange-500/10 active:scale-95 cursor-pointer')
+                          : 'bg-slate-800 border border-white/5 text-slate-500 cursor-not-allowed opacity-40'
+                      }`}
+                    >
+                      {isExecutingSync ? (
+                        <>
+                          <div className={`w-3 h-3 border-2 rounded-full animate-spin ${
+                            isLightWhite ? 'border-white border-t-transparent' : 'border-black border-t-transparent'
+                          }`}></div>
+                          <span>Sincronizando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={12} fill="currentColor" />
+                          <span>Sincronizar {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <p className={`text-[11px] mb-4 ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+                    Sincroniza la <strong className="text-[#ff9100] font-black">{syncSourceMode === 'solicitud' ? 'Fecha de Solicitud' : 'Fecha de Entrega o Devolución'}</strong> de los pedidos seleccionados de Dropi.
+                  </p>
+
+                  {selectedOrderIds.length === 0 ? (
+                    <div className={`p-4 rounded-xl border text-xs font-bold mb-4 leading-relaxed ${
+                      isLightWhite ? 'bg-blue-50/50 border-blue-200 text-blue-800' : 'bg-blue-500/5 border-blue-500/10 text-blue-400/90'
+                    }`}>
+                      💡 Selecciona uno o más pedidos de Dropi en la tabla de abajo para activar la sincronización masiva de fechas de reporte.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5 mb-4">
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+                        Origen de Fecha a Sincronizar
+                      </span>
+                      <div className={`flex p-1 rounded-xl border ${
+                        isLightWhite ? 'bg-slate-200/60 border-slate-300' : 'bg-black/50 border-white/10'
+                      }`}>
+                        <button
+                          type="button"
+                          onClick={() => setSyncSourceMode('solicitud')}
+                          className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                            syncSourceMode === 'solicitud' 
+                              ? (isLightWhite ? 'bg-[#ff9100] text-white shadow-sm' : 'bg-[#ff9100] text-black') 
+                              : (isLightWhite ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white')
+                          }`}
+                        >
+                          Fecha Solicitud
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSyncSourceMode('entrega_devolucion')}
+                          className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                            syncSourceMode === 'entrega_devolucion' 
+                              ? (isLightWhite ? 'bg-[#ff9100] text-white shadow-sm' : 'bg-[#ff9100] text-black') 
+                              : (isLightWhite ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white')
+                          }`}
+                        >
+                          Fecha Entrega / Dev.
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
           </div>
-        </motion.div>
-      )}
+        </div>
+      </motion.div>
 
       {viewMode !== 'TIKTOK' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
@@ -3108,17 +3801,17 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 <select 
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222]"
+                  className={`border rounded-xl py-2 px-4 text-[13px] focus:outline-none transition-all font-bold cursor-pointer hover:brightness-110 h-[38px] ${STATUS_COLORS[statusFilter]?.text || 'text-white'} ${STATUS_COLORS[statusFilter]?.border || 'border-white/5'} ${STATUS_COLORS[statusFilter]?.bg || 'bg-[#111]'}`}
                 >
-                  <option value="All">Todos</option>
-                  <option value="Entregado">Entregado</option>
-                  <option value="En tránsito">En tránsito</option>
-                  <option value="Guía Generada">Guía Generada</option>
-                  <option value="Recolectado">Recolectado</option>
-                  <option value="Incidencia">Incidencia</option>
-                  <option value="Pendiente">Pendiente</option>
-                  <option value="Devuelto">Devuelto</option>
-                  <option value="Cancelado">Cancelado</option>
+                  <option value="All" className="bg-[#0f0f11] text-white font-bold">🔍 TODOS</option>
+                  <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                  <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 EN TRÁNSITO</option>
+                  <option value="Guía Generada" className="bg-[#0f0f11] text-slate-300 font-bold">📑 GUÍA GENERADA</option>
+                  <option value="Recolectado" className="bg-[#0f0f11] text-slate-400 font-bold">📦 RECOLECTADO</option>
+                  <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
+                  <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                  <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
+                  <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                 </select>
               </div>
 
@@ -3159,6 +3852,20 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <option value="">Todos</option>
                   {Array.from(new Set(orders.map(o => o.departamentoDestino).filter(Boolean))).sort().map(dept => (
                     <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Producto</span>
+                <select 
+                  value={productFilter}
+                  onChange={(e) => setProductFilter(e.target.value)}
+                  className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222] max-w-[160px]"
+                >
+                  <option value="">Todos</option>
+                  {uniqueProductsList.map(prod => (
+                    <option key={prod} value={prod}>{prod}</option>
                   ))}
                 </select>
               </div>
@@ -3282,6 +3989,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               onClick={() => {
                 setDeptFilter('');
                 setCityFilter('');
+                setProductFilter('');
                 setReqDate('');
                 setDelDate('');
                 setStatusFilter('All');
@@ -3526,7 +4234,32 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     <h4 className="text-[10px] font-black text-[#00df9a] uppercase tracking-[0.2em] mb-4 border-b border-[#00df9a]/20 pb-2">Logística y Envío</h4>
                     <div className="space-y-4">
                       <DetailRow label="Guía" value={showDetailModal.trackingId} />
-                      <DetailRow label="Estado" value={showDetailModal.status} />
+                      {showDetailModal.status === 'Incidencia' ? (
+                        <div className="flex flex-col gap-1 border-b border-white/[0.03] pb-2 last:border-0">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em]">Estado (Editable)</span>
+                          <select
+                            value={showDetailModal.status}
+                            onChange={async (e) => {
+                              const newStatus = e.target.value as OrderStatus;
+                              if (newStatus !== 'Incidencia') {
+                                await handleUpdateOrderStatus(showDetailModal.id, newStatus);
+                                // Update modal state too to reflect instantly
+                                setShowDetailModal(prev => prev ? { ...prev, status: newStatus } : null);
+                              }
+                            }}
+                            className="w-full bg-red-950/20 border border-red-500/40 hover:border-red-400 text-red-400 font-bold rounded-xl py-2 px-3 text-[13px] focus:outline-none transition-all cursor-pointer"
+                          >
+                            <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
+                            <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                            <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
+                            <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
+                            <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
+                            <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <DetailRow label="Estado" value={showDetailModal.status} />
+                      )}
                       <DetailRow label="Tipo Envío" value={showDetailModal.tipoEnvio} />
                       <DetailRow label="Vendedor" value={showDetailModal.vendedor} />
                       <DetailRow label="Transportadora" value={showDetailModal.transportadora} />
@@ -3704,15 +4437,15 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <select 
                     value={newOrderForm.status}
                     onChange={e => setNewOrderForm({...newOrderForm, status: e.target.value as any})}
-                    className="w-full bg-background border border-border rounded-xl py-3 px-4 text-white focus:outline-none focus:border-primary transition-colors"
+                    className={`w-full border rounded-xl py-3 px-4 focus:outline-none transition-all font-bold cursor-pointer ${STATUS_COLORS[newOrderForm.status]?.text || 'text-white'} ${STATUS_COLORS[newOrderForm.status]?.border || 'border-border'} ${STATUS_COLORS[newOrderForm.status]?.bg || 'bg-[#111]'}`}
                   >
-                    <option value="Pendiente">Pendiente</option>
-                    <option value="En tránsito">En tránsito</option>
-                    <option value="Entregado">Entregado</option>
-                    <option value="Guía Generada">Guía Generada</option>
-                    <option value="Incidencia">Incidencia</option>
-                    <option value="Devuelto">Devuelto</option>
-                    <option value="Cancelado">Cancelado</option>
+                    <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                    <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 EN TRÁNSITO</option>
+                    <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                    <option value="Guía Generada" className="bg-[#0f0f11] text-slate-300 font-bold">📑 GUÍA GENERADA</option>
+                    <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
+                    <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
+                    <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                   </select>
                 </div>
 

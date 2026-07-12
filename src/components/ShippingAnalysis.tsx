@@ -22,6 +22,20 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
   // Tag Filtering states (sin etiqueta / TikTok Orgánico)
   const [tagFilter, setTagFilter] = useState<'all' | 'sin_etiqueta' | 'tiktok_organico'>('all');
 
+  // Product Filtering states
+  const [productFilter, setProductFilter] = useState<string>('all');
+
+  // Extract unique products list from orders
+  const uniqueProducts = useMemo(() => {
+    const productsSet = new Set<string>();
+    orders.forEach(o => {
+      if (o.product) {
+        productsSet.add(o.product);
+      }
+    });
+    return Array.from(productsSet).sort();
+  }, [orders]);
+
   // Ecommil AI Analysis states
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
@@ -60,16 +74,21 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     }).format(rounded);
   };
 
-  // Memoized filter for upstream orders based on tag filter choice
+  // Memoized filter for upstream orders based on tag filter choice and product filter choice
   const filteredOrders = useMemo(() => {
+    let res = orders;
     if (tagFilter === 'sin_etiqueta') {
-      return orders.filter(o => !o.tags || o.tags.trim() === '');
+      res = orders.filter(o => !o.tags || o.tags.trim() === '');
+    } else if (tagFilter === 'tiktok_organico') {
+      res = orders.filter(o => o.tags?.toLowerCase().includes('tik') && o.tags?.toLowerCase().includes('organ'));
     }
-    if (tagFilter === 'tiktok_organico') {
-      return orders.filter(o => o.tags?.toLowerCase().includes('tik') && o.tags?.toLowerCase().includes('organ'));
+    
+    if (productFilter && productFilter !== 'all') {
+      res = res.filter(o => o.product === productFilter);
     }
-    return orders;
-  }, [orders, tagFilter]);
+    
+    return res;
+  }, [orders, tagFilter, productFilter]);
 
   const stats = useMemo(() => {
     // Exclude cancelled orders for shipping dynamics and deliverability calculations
@@ -232,6 +251,37 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     };
   }, [filteredOrders]);
 
+  const runAiDiagnostic = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const response = await fetch("/api/analisis-fletes-pro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          totalCharged: stats.totalCharged,
+          totalReal: stats.totalReal,
+          totalShippingLoss: stats.totalShippingLoss,
+          globalRate: stats.globalRate,
+          deptsList: stats.deptsList.slice(0, 8),
+          citiesList: stats.citiesList.slice(0, 15),
+          carriersList: stats.carriersList,
+          tagFilter: tagFilter
+        })
+      });
+      if (!response.ok) {
+        throw new Error("Ocurrió un problema de comunicación con Ecommil IA.");
+      }
+      const data = await response.json();
+      setAiResult(data.analysisText);
+    } catch (err: any) {
+      console.error(err);
+      setAiError(err.message || "Error al solicitar análisis. Por favor intenta de nuevo.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // Filter elements computed dynamically
   const filteredDepts = useMemo(() => {
     return stats.deptsList.filter(item => {
@@ -296,7 +346,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
         <div>
           <h2 className="text-2xl font-display font-bold text-white flex items-center gap-2">
             <Truck className="text-emerald-400" size={24} />
-            Control de Envíos y Fletes
+            Semáforos de Transportadora
           </h2>
           <p className="text-sm text-slate-500">Métricas avanzadas de distribución, fletes reales vs facturados y efectividad de transportadoras</p>
         </div>
@@ -466,7 +516,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
               <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-900 shrink-0">
                 <button
                   onClick={() => { setActiveTab('departamento'); setSearchTerm(''); setSelectedDeptFilter(''); setSelectedCarrierFilter(''); }}
-                  className={`px-3 py-2 rounded-lg text-[15px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  className={`px-3 py-2 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                     activeTab === 'departamento' 
                       ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]' 
                       : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
@@ -476,7 +526,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                 </button>
                 <button
                   onClick={() => { setActiveTab('ciudad'); setSearchTerm(''); setSelectedDeptFilter(''); setSelectedCarrierFilter(''); }}
-                  className={`px-3 py-2 rounded-lg text-[15px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  className={`px-3 py-2 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                     activeTab === 'ciudad' 
                       ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]' 
                       : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
@@ -486,7 +536,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                 </button>
                 <button
                   onClick={() => { setActiveTab('transportadora'); setSearchTerm(''); setSelectedDeptFilter(''); setSelectedCarrierFilter(''); }}
-                  className={`px-3 py-2 rounded-lg text-[15px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  className={`px-3 py-2 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                     activeTab === 'transportadora' 
                       ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]' 
                       : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
@@ -562,7 +612,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                 )}
 
                 {/* Filtro por Canal / Tag (TAC) dropdown */}
-                <div className="relative">
+                <div className="relative w-[143px] xl:w-[143px] shrink-0">
                   <select
                     value={tagFilter}
                     onChange={(e) => {
@@ -570,7 +620,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       setAiResult(null);
                       setAiError(null);
                     }}
-                    className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-44 occurrence-none appearance-none font-bold"
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-[143px] xl:w-[143px] occurrence-none appearance-none font-bold"
                   >
                     <option value="all">Canal: Todos</option>
                     <option value="sin_etiqueta">Sin Etiqueta</option>
@@ -581,60 +631,42 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                   </div>
                 </div>
 
-                {/* Ecommil IA trigger button */}
-                <button
-                  onClick={async () => {
-                    setAiLoading(true);
-                    setAiError(null);
-                    try {
-                      const response = await fetch("/api/analisis-fletes-pro", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          totalCharged: stats.totalCharged,
-                          totalReal: stats.totalReal,
-                          totalShippingLoss: stats.totalShippingLoss,
-                          globalRate: stats.globalRate,
-                          deptsList: stats.deptsList.slice(0, 8),
-                          citiesList: stats.citiesList.slice(0, 15),
-                          carriersList: stats.carriersList,
-                          tagFilter: tagFilter
-                        })
-                      });
-                      if (!response.ok) {
-                        throw new Error("Ocurrió un problema de comunicación con Ecommil IA.");
-                      }
-                      const data = await response.json();
-                      setAiResult(data.analysisText);
-                    } catch (err: any) {
-                      console.error(err);
-                      setAiError(err.message || "Error al solicitar análisis. Por favor intenta de nuevo.");
-                    } finally {
-                      setAiLoading(false);
-                    }
-                  }}
-                  disabled={aiLoading}
-                  className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-black font-extrabold text-[14px] px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.2)] transition-all shrink-0 hover:scale-[1.02] active:scale-95 whitespace-nowrap"
-                >
-                  {aiLoading ? (
-                    <Loader2 className="animate-spin shrink-0" size={14} />
-                  ) : (
-                    <Sparkles className="shrink-0 text-black animate-pulse" size={14} />
-                  )}
-                  <span>Diagnóstico IA</span>
-                </button>
+                {/* Filtro por Producto dropdown */}
+                <div className="relative w-[180px] xl:w-[180px] shrink-0">
+                  <select
+                    value={productFilter}
+                    onChange={(e) => {
+                      setProductFilter(e.target.value);
+                      setAiResult(null);
+                      setAiError(null);
+                    }}
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-[180px] xl:w-[180px] occurrence-none appearance-none font-bold truncate"
+                  >
+                    <option value="all">📦 Producto: Todos</option>
+                    {uniqueProducts.map(prod => (
+                      <option key={prod} value={prod}>
+                        {prod}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
+                    ▼
+                  </div>
+                </div>
 
                 {/* Quick Search */}
-                <div className="relative w-full xl:w-60">
-                  <Search size={16} className="absolute left-2.5 top-2.5 text-slate-500" />
+                <div className="relative w-[108px] xl:w-[108px] shrink-0">
+                  <Search size={16} className="absolute left-2.5 top-[10px] text-slate-500" />
                   <input
                     type="text"
                     placeholder={`Buscar ${activeTab}...`}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-lg pl-9 pr-4 py-1.5 text-[15px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-emerald-500/40"
+                    className="w-[108px] h-[35.9922px] bg-slate-950/80 border border-slate-800 rounded-lg pl-9 pr-4 py-1.5 text-[15px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-emerald-500/40"
                   />
                 </div>
+
+
               </div>
             </div>
 
@@ -939,6 +971,36 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
               </ResponsiveContainer>
             </div>
           )}
+
+          {/* BOTÓN GRANDE DE DIAGNÓSTICO CON IA CON TODOS SUS DETALLES */}
+          <div className="mt-8 pt-6 border-t border-slate-900/60 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="text-left">
+              <h4 className="text-[15px] font-bold text-white flex items-center gap-1.5">
+                <Sparkles className="text-emerald-400 animate-pulse" size={16} />
+                Diagnóstico Logístico Avanzado con IA
+              </h4>
+              <p className="text-xs text-slate-400 mt-1 max-w-xl leading-relaxed">
+                Nuestra Inteligencia Artificial analizará en segundos las tasas de éxito de tus transportadoras, pérdidas ocultas de fletes, ciudades críticas en Guatemala y te proporcionará recomendaciones estratégicas accionables.
+              </p>
+            </div>
+            <button
+              onClick={runAiDiagnostic}
+              disabled={aiLoading}
+              className="w-full md:w-auto bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 text-black font-black text-xs px-6 py-3.5 rounded-xl flex items-center justify-center gap-2.5 cursor-pointer shadow-[0_0_25px_rgba(16,185,129,0.2)] hover:shadow-[0_0_35px_rgba(16,185,129,0.35)] transition-all duration-300 hover:scale-[1.02] active:scale-95 whitespace-nowrap"
+            >
+              {aiLoading ? (
+                <>
+                  <Loader2 className="animate-spin text-black shrink-0" size={16} />
+                  <span>Analizando Métricas...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="text-black animate-pulse shrink-0" size={16} />
+                  <span>GENERAR DIAGNÓSTICO EXPERTO</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
       </div>

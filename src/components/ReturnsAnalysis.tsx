@@ -302,7 +302,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
         }).catch(err => console.error("Error seeding initial tags in Firestore:", err));
       }
     }, (error) => {
-      console.error("Error listening to custom tags in Firestore:", error);
+      handleFirestoreError(error, OperationType.GET, 'custom_return_tags');
     });
 
     return () => unsubscribe();
@@ -411,13 +411,29 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
   // Fallback to localStorage if Firebase is not valid or in Demo Mode
   useEffect(() => {
-    if ((isDemoMode || !isFirebaseConfigValid) && !user) {
-      const saved = localStorage.getItem('ecommil_return_novelties');
-      if (saved) {
-        setNovelties(JSON.parse(saved));
+    const loadLocalNovelties = () => {
+      if ((isDemoMode || !isFirebaseConfigValid) || !user) {
+        const saved = localStorage.getItem('ecommil_return_novelties');
+        if (saved) {
+          try {
+            setNovelties(JSON.parse(saved));
+          } catch (e) {
+            console.error("Error parsing local return novelties:", e);
+          }
+        }
+        setNoveltiesLoading(false);
       }
-      setNoveltiesLoading(false);
-    }
+    };
+
+    loadLocalNovelties();
+
+    window.addEventListener('storage', loadLocalNovelties);
+    window.addEventListener('order-status-updated', loadLocalNovelties);
+
+    return () => {
+      window.removeEventListener('storage', loadLocalNovelties);
+      window.removeEventListener('order-status-updated', loadLocalNovelties);
+    };
   }, [user, isDemoMode]);
 
   // Sync with Firestore database
