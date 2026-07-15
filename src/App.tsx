@@ -597,7 +597,6 @@ function AppContent() {
     { id: 'kpis', label: 'Análisis Pro', icon: Activity, isGlowing: true },
     { id: 'logistics-ai', label: 'Asesor IA', icon: Bot },
     { id: 'orders', label: 'DROPI', icon: ShoppingCart },
-    { id: 'consiliador-pro', label: 'FLUJOS ADS', icon: Zap, isGlowing: true },
     { id: 'returns', label: 'Devoluciones', icon: RotateCcw },
     { id: 'shipping', label: 'Semáforos de Transportadora', icon: Truck },
     { id: 'financial', label: 'Resumen P&L', icon: BarChart3 },
@@ -1142,19 +1141,6 @@ function AppContent() {
                   exchangeRate={currencyInfo.rate}
                   isConversionActive={isConversionActive}
                   viewMode="DROPI" theme={theme}
-                />
-              )}
-              {activeTab === 'consiliador-pro' && (
-                <OrderManagement 
-                  orders={orders} 
-                  setOrders={setOrders}
-                  formatCurrency={formatCurrency} 
-                  onDeleteOrders={deleteOrders} 
-                  onAddOrders={addOrders}
-                  currentCurrency={currency}
-                  exchangeRate={currencyInfo.rate}
-                  isConversionActive={isConversionActive}
-                  viewMode="TIKTOK" theme={theme}
                 />
               )}
               {activeTab === 'calculator' && (

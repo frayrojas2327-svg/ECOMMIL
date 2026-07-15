@@ -80,6 +80,23 @@ const TAG_COLORS = [
   { name: 'Naranja', value: '#fb923c' },
 ];
 
+const MONTH_NAMES = [
+  { value: '01', label: 'Enero' },
+  { value: '02', label: 'Febrero' },
+  { value: '03', label: 'Marzo' },
+  { value: '04', label: 'Abril' },
+  { value: '05', label: 'Mayo' },
+  { value: '06', label: 'Junio' },
+  { value: '07', label: 'Julio' },
+  { value: '08', label: 'Agosto' },
+  { value: '09', label: 'Septiembre' },
+  { value: '10', label: 'Octubre' },
+  { value: '11', label: 'Noviembre' },
+  { value: '12', label: 'Diciembre' },
+];
+
+const YEAR_OPTIONS = ['2024', '2025', '2026', '2027', '2028'];
+
 export default function AdvertisingExpenses({ 
   formatCurrency,
   currency,
@@ -148,7 +165,25 @@ export default function AdvertisingExpenses({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempEdit, setTempEdit] = useState<Partial<AdvertisingExpense> | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+  const [accountFilter, setAccountFilter] = useState('');
+
+  // Month-by-month filtering states
+  const [selectedYear, setSelectedYear] = useState(() => {
+    const now = new Date();
+    return now.getFullYear().toString();
+  });
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return String(now.getMonth() + 1).padStart(2, '0');
+  });
+  const [isMonthFilterActive, setIsMonthFilterActive] = useState(true);
+  
+  const uniqueAccounts = useMemo(() => {
+    const list = expenses.map(e => e.accountName?.trim() || 'Sin Cuenta').filter(Boolean);
+    return Array.from(new Set(list)).sort();
+  }, [expenses]);
   
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -317,11 +352,95 @@ export default function AdvertisingExpenses({
                            platform.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            notes.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesDate = !dateFilter || exp.date === dateFilter;
+      let matchesDate = true;
+      if (startDateFilter) {
+        matchesDate = matchesDate && exp.date >= startDateFilter;
+      }
+      if (endDateFilter) {
+        matchesDate = matchesDate && exp.date <= endDateFilter;
+      }
+
+      // Filter by Month and Year if option is active
+      if (isMonthFilterActive && exp.date) {
+        const trimmed = exp.date.trim();
+        const dateMatch = trimmed.match(/^(\d{4})-(\d{1,2})/);
+        if (dateMatch) {
+          const yr = dateMatch[1];
+          const mth = dateMatch[2].padStart(2, '0');
+          matchesDate = matchesDate && yr === selectedYear && mth === selectedMonth;
+        } else {
+          matchesDate = false;
+        }
+      }
+
+      let matchesAccount = true;
+      if (accountFilter) {
+        if (accountFilter === 'Sin Cuenta') {
+          matchesAccount = !exp.accountName || exp.accountName.trim() === '';
+        } else {
+          matchesAccount = exp.accountName?.trim() === accountFilter;
+        }
+      }
       
-      return matchesSearch && matchesDate;
+      return matchesSearch && matchesDate && matchesAccount;
     });
-  }, [expenses, searchTerm, dateFilter]);
+  }, [expenses, searchTerm, startDateFilter, endDateFilter, accountFilter, selectedYear, selectedMonth, isMonthFilterActive]);
+
+  // Group all expenses from this section to display a simple month-by-month total sum table!
+  const monthlySummaryData = useMemo(() => {
+    const groups: Record<string, { amount: number; count: number }> = {};
+    
+    // Always guarantee that the current real-world month and the currently selected month are included
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const selectedKey = `${selectedYear}-${selectedMonth}`;
+    
+    groups[currentKey] = { amount: 0, count: 0 };
+    groups[selectedKey] = { amount: 0, count: 0 };
+
+    expenses.forEach(e => {
+      if (!e.date) return;
+      const trimmed = e.date.trim();
+      const match = trimmed.match(/^(\d{4})-(\d{1,2})/);
+      if (!match) return;
+      const yr = match[1];
+      const mth = match[2].padStart(2, '0');
+      const monthPrefix = `${yr}-${mth}`;
+
+      if (!groups[monthPrefix]) {
+        groups[monthPrefix] = { amount: 0, count: 0 };
+      }
+      groups[monthPrefix].amount += e.amount || 0;
+      groups[monthPrefix].count += 1;
+    });
+
+    const list = Object.entries(groups)
+      .map(([monthKey, data]) => {
+        const [yr, mth] = monthKey.split('-');
+        const monthObj = MONTH_NAMES.find(m => m.value === mth);
+        const monthLabel = monthObj ? monthObj.label : mth;
+        return {
+          monthKey,
+          label: `${monthLabel} ${yr}`,
+          amount: data.amount,
+          count: data.count,
+          year: yr,
+          month: mth
+        };
+      })
+      .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+
+    // De-duplicate items based on monthKey to guarantee absolute uniqueness
+    const deDuplicated: typeof list = [];
+    const seenKeys = new Set<string>();
+    for (const item of list) {
+      if (!seenKeys.has(item.monthKey)) {
+        seenKeys.add(item.monthKey);
+        deDuplicated.push(item);
+      }
+    }
+    return deDuplicated;
+  }, [expenses, selectedYear, selectedMonth]);
 
   const stats = useMemo(() => {
     const total = filteredExpenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -444,6 +563,68 @@ export default function AdvertisingExpenses({
             {expenses.length}
           </p>
         </div>
+      </div>
+
+      {/* Resumen de Totales por Mes */}
+      <div className="fintech-card p-6 border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-[13px] font-display font-bold text-white uppercase tracking-widest flex items-center gap-2">
+              <span className="text-primary">📊</span> Resumen de Inversión por Mes (Suma Total)
+            </h3>
+            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+              Consolidado automático de todos los registros de publicidad por mes. Haz clic en un mes para filtrarlo abajo.
+            </p>
+          </div>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-border">
+            Total meses registrados: {monthlySummaryData.length}
+          </span>
+        </div>
+
+        {monthlySummaryData.length === 0 ? (
+          <div className="py-6 text-center text-slate-500 font-mono text-xs">
+            No hay gastos registrados en Publicidad para consolidar.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {monthlySummaryData.map((item) => {
+              const isActive = isMonthFilterActive && selectedYear === item.year && selectedMonth === item.month;
+              return (
+                <button
+                  key={item.monthKey}
+                  type="button"
+                  onClick={() => {
+                    setSelectedYear(item.year);
+                    setSelectedMonth(item.month);
+                    setIsMonthFilterActive(true);
+                  }}
+                  className={`p-3.5 rounded-xl border font-mono text-left transition-all active:scale-95 cursor-pointer relative group ${
+                    isActive
+                      ? 'bg-primary/10 border-primary shadow-lg shadow-primary/5 text-white'
+                      : 'bg-background border-border hover:border-slate-700 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-[11px] font-bold ${isActive ? 'text-primary' : 'text-slate-400 group-hover:text-white'}`}>
+                      {item.label}
+                    </span>
+                    {isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+                    )}
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold text-white">
+                      {localFormatCurrency(item.amount)}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-bold">
+                      {item.count} {item.count === 1 ? 'reg' : 'regs'}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Add Expense Form Section */}
@@ -664,6 +845,47 @@ export default function AdvertisingExpenses({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h3 className="text-[13px] font-display font-bold text-white uppercase tracking-widest">Historial de Gastos</h3>
             <div className="flex flex-wrap items-center gap-3">
+              {/* Filtro por Mes */}
+              <div className="flex items-center gap-1.5 bg-background border border-border rounded-xl px-3 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsMonthFilterActive(!isMonthFilterActive)}
+                  className={`text-[10px] font-bold uppercase transition-colors mr-1 cursor-pointer ${
+                    isMonthFilterActive ? 'text-primary' : 'text-slate-500 hover:text-white'
+                  }`}
+                  title="Activar/Desactivar filtro por mes"
+                >
+                  📅 {isMonthFilterActive ? 'Mes Filtrado:' : 'Ver Histórico'}
+                </button>
+                {isMonthFilterActive && (
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="bg-transparent border-none text-white text-xs font-bold outline-none cursor-pointer appearance-none pr-1"
+                    >
+                      {MONTH_NAMES.map(m => (
+                        <option key={m.value} value={m.value} className="bg-black text-white">
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-slate-600 text-xs font-bold">/</span>
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => setSelectedYear(e.target.value)}
+                      className="bg-transparent border-none text-white text-xs font-bold outline-none cursor-pointer appearance-none pr-1"
+                    >
+                      {YEAR_OPTIONS.map(y => (
+                        <option key={y} value={y} className="bg-black text-white">
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
               <div className="relative min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                 <input 
@@ -674,29 +896,85 @@ export default function AdvertisingExpenses({
                   className="w-full bg-background border border-border rounded-xl py-1.5 pl-9 pr-4 text-xs text-white focus:border-primary outline-none"
                 />
               </div>
-              <div className="relative group/date-filter">
-                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover/date-filter:text-primary transition-colors pointer-events-none" size={14} />
-                <input 
-                  type="date"
-                  value={dateFilter}
-                  onClick={(e) => {
-                    try {
-                      (e.target as any).showPicker?.();
-                    } catch (err) {
-                      console.warn('showPicker restricted in this environment:', err);
-                    }
-                  }}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="bg-background border border-border rounded-xl py-1.5 pl-9 pr-4 text-xs text-white focus:border-primary outline-none [color-scheme:dark] cursor-pointer"
-                />
-                {dateFilter && (
-                  <button 
-                    onClick={() => setDateFilter('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Cuenta:</span>
+                <div className="relative group/account">
+                  <Target className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover/account:text-primary transition-colors pointer-events-none" size={14} />
+                  <select
+                    value={accountFilter}
+                    onChange={(e) => setAccountFilter(e.target.value)}
+                    className="bg-background border border-border rounded-xl py-1.5 pl-9 pr-8 text-xs text-white focus:border-primary outline-none cursor-pointer appearance-none min-w-[150px]"
                   >
-                    <CloseIcon size={12} />
-                  </button>
-                )}
+                    <option value="">Todas las cuentas</option>
+                    {uniqueAccounts.map((account) => (
+                      <option key={account} value={account}>
+                        {account}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                    <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Inicio:</span>
+                <div className="relative group/start-date">
+                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover/start-date:text-primary transition-colors pointer-events-none" size={14} />
+                  <input 
+                    type="date"
+                    value={startDateFilter}
+                    onClick={(e) => {
+                      try {
+                        (e.target as any).showPicker?.();
+                      } catch (err) {
+                        console.warn('showPicker restricted in this environment:', err);
+                      }
+                    }}
+                    onChange={(e) => setStartDateFilter(e.target.value)}
+                    className="bg-background border border-border rounded-xl py-1.5 pl-9 pr-7 text-xs text-white focus:border-primary outline-none [color-scheme:dark] cursor-pointer"
+                  />
+                  {startDateFilter && (
+                    <button 
+                      onClick={() => setStartDateFilter('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Fin:</span>
+                <div className="relative group/end-date">
+                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover/end-date:text-primary transition-colors pointer-events-none" size={14} />
+                  <input 
+                    type="date"
+                    value={endDateFilter}
+                    onClick={(e) => {
+                      try {
+                        (e.target as any).showPicker?.();
+                      } catch (err) {
+                        console.warn('showPicker restricted in this environment:', err);
+                      }
+                    }}
+                    onChange={(e) => setEndDateFilter(e.target.value)}
+                    className="bg-background border border-border rounded-xl py-1.5 pl-9 pr-7 text-xs text-white focus:border-primary outline-none [color-scheme:dark] cursor-pointer"
+                  />
+                  {endDateFilter && (
+                    <button 
+                      onClick={() => setEndDateFilter('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

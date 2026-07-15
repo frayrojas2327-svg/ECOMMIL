@@ -93,13 +93,24 @@ service cloud.firestore {
              data.shipping is number &&
              data.ads is number &&
              data.fees is number &&
-             data.returnsLoss is number;
+             data.returnsLoss is number &&
+             (data.get('otherExpenses', 0) is number);
     }
 
     // Helper for Custom Return Tags
     function isValidCustomReturnTags(data) {
       return data.get('uid', '') == request.auth.uid &&
              data.labels is list;
+    }
+
+    // Helper for Other Platform Expenses
+    function isValidOtherPlatformExpense(data) {
+      return data.get('uid', '') == request.auth.uid &&
+             data.name is string && data.name.size() <= 200 &&
+             data.category is string && data.category.size() <= 100 &&
+             data.amount is number &&
+             data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             data.timestamp is number;
     }
 
     // 1. Orders Collection
@@ -244,6 +255,23 @@ service cloud.firestore {
     match /custom_return_tags/{tagId} {
       allow read: if isSignedIn() && tagId == request.auth.uid;
       allow write: if isVerified() && tagId == request.auth.uid && isValidCustomReturnTags(incoming());
+    }
+
+    // 11. Other Platform Expenses Collection
+    match /other_platform_expenses/{expenseId} {
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      allow create: if isVerified() && 
+                      isValidId(expenseId) &&
+                      isValidOtherPlatformExpense(incoming());
+      
+      allow update: if isVerified() &&
+                       isOwner(resource.data.uid) &&
+                       isValidOtherPlatformExpense(incoming()) &&
+                       incoming().uid == resource.data.uid;
+                        
+      allow delete: if isVerified() && isOwner(resource.data.uid);
     }
   }
 }

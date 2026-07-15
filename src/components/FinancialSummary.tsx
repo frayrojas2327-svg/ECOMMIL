@@ -16,9 +16,10 @@ import {
   Calendar,
   Layers,
   Save,
-  Undo2
+  Undo2,
+  Trash2
 } from 'lucide-react';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { useAuth } from './Auth';
 import { Order, calculateOrderProfit, CurrencyCode, CURRENCIES } from '../mockData';
@@ -30,6 +31,18 @@ interface FinancialSummaryProps {
   currencies?: any;
   isConversionActive?: boolean;
 }
+
+const matchDatePrefix = (dateStr: string, prefix: string) => {
+  if (!dateStr || !prefix) return false;
+  const trimmedDate = dateStr.trim();
+  const dateMatch = trimmedDate.match(/^(\d{4})-(\d{1,2})/);
+  if (!dateMatch) return false;
+  
+  const prefMatch = prefix.trim().match(/^(\d{4})-(\d{1,2})/);
+  if (!prefMatch) return false;
+  
+  return dateMatch[1] === prefMatch[1] && dateMatch[2].padStart(2, '0') === prefMatch[2].padStart(2, '0');
+};
 
 const MONTH_NAMES = [
   { value: '01', label: 'Enero' },
@@ -187,6 +200,59 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     return () => unsubscribe();
   }, [user, isDemoMode, selectedYear, selectedMonth]);
 
+  // Other platform/variable expenses state
+  const [otherExpenses, setOtherExpenses] = useState<{
+    id: string;
+    uid: string;
+    name: string;
+    category: string;
+    amount: number; // in USD
+    originalAmount?: number;
+    originalCurrency?: string;
+    date: string;
+    timestamp: number;
+  }[]>([]);
+
+  // Firestore sync for other platform expenses
+  useEffect(() => {
+    if (!user || isDemoMode || !isFirebaseConfigValid) {
+      // Offline/Demo fallback to localStorage
+      const localSaved = localStorage.getItem('ecommil_other_platform_expenses');
+      if (localSaved) {
+        try {
+          setOtherExpenses(JSON.parse(localSaved));
+        } catch (e) {
+          console.error("Error parsing local other platform expenses:", e);
+        }
+      } else {
+        const demoOther = [
+          { id: 'local_other_1', uid: 'demo', name: 'Suscripción Shopify', category: 'Software', amount: 39, date: `${selectedYear}-${selectedMonth}-01`, timestamp: Date.now() },
+          { id: 'local_other_2', uid: 'demo', name: 'Apps de Dropshipping', category: 'Software', amount: 19, date: `${selectedYear}-${selectedMonth}-05`, timestamp: Date.now() },
+          { id: 'local_other_3', uid: 'demo', name: 'Hosting & Dominio', category: 'Infraestructura', amount: 15, date: `${selectedYear}-${selectedMonth}-10`, timestamp: Date.now() }
+        ];
+        setOtherExpenses(demoOther);
+        localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(demoOther));
+      }
+      return;
+    }
+
+    const q = query(collection(db, 'other_platform_expenses'), where('uid', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          ...d
+        } as any;
+      });
+      setOtherExpenses(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'other_platform_expenses');
+    });
+
+    return () => unsubscribe();
+  }, [user, isDemoMode, selectedYear, selectedMonth]);
+
   // Explainer details for transparent automatic system data sources
   const systemExplainer = useMemo(() => {
     let deliveredCount = 0;
@@ -202,7 +268,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     });
 
     const monthPrefix = `${selectedYear}-${selectedMonth}`;
-    const monthlyAdExpenses = adExpenses.filter(e => e.date && e.date.startsWith(monthPrefix));
+    const monthlyAdExpenses = adExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
     adsCount = monthlyAdExpenses.length;
 
     const usingAdExpenses = adsCount > 0;
@@ -255,19 +321,16 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       }
     });
 
-    // Extract real recorded advertisement platform expenses if logged, else fallback to order fields
+    // Extract real recorded advertisement platform expenses from the Publicidad section (ad_expenses)
     const monthPrefix = `${selectedYear}-${selectedMonth}`;
-    const monthlyAdExpenses = adExpenses.filter(e => e.date && e.date.startsWith(monthPrefix));
-    
-    if (monthlyAdExpenses.length > 0) {
-      ads = monthlyAdExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-    } else {
-      // Fallback: sum of order ads cost
-      ads = filteredOrders.reduce((sum, o) => sum + (o.adsCost || 0), 0);
-    }
+    const monthlyAdExpenses = adExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
+    ads = monthlyAdExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    return { revenue, cogs, shipping, ads, fees, returnsLoss };
-  }, [filteredOrders, adExpenses, selectedYear, selectedMonth]);
+    const monthlyOther = otherExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
+    const otherExpensesSum = monthlyOther.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    return { revenue, cogs, shipping, ads, fees, returnsLoss, otherExpenses: otherExpensesSum };
+  }, [filteredOrders, adExpenses, otherExpenses, selectedYear, selectedMonth]);
 
   // Load Overrides state
   const [overrides, setOverrides] = useState<Record<string, {
@@ -277,6 +340,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     ads: number; // Stored in USD
     fees: number; // Stored in USD
     returnsLoss: number; // Stored in USD
+    otherExpenses?: number; // Stored in USD
   }>>({});
   const [loadingOverrides, setLoadingOverrides] = useState(true);
 
@@ -314,6 +378,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             ads: Number(data.ads ?? 0),
             fees: Number(data.fees ?? 0),
             returnsLoss: Number(data.returnsLoss ?? 0),
+            otherExpenses: Number(data.otherExpenses ?? 0),
           };
         }
       });
@@ -342,9 +407,10 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     const ads = fromUSD(base.ads);
     const fees = fromUSD(base.fees);
     const returnsLoss = fromUSD(base.returnsLoss);
+    const otherExpenses = fromUSD(base.otherExpenses ?? systemCalculatedDataUSD.otherExpenses ?? 0);
 
     const grossProfit = revenue - cogs;
-    const ebitda = grossProfit - shipping - ads - fees - returnsLoss;
+    const ebitda = grossProfit - shipping - ads - fees - returnsLoss - otherExpenses;
 
     return {
       revenue,
@@ -353,11 +419,166 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       ads,
       fees,
       returnsLoss,
+      otherExpenses,
       grossProfit,
       ebitda,
       isOverridden
     };
   }, [monthKey, overrides, systemCalculatedDataUSD, rate, isConversionActive]);
+
+  // Aggregate financial data month-by-month for the quick filter buttons grid
+  const monthlyFinancialSummaryData = useMemo(() => {
+    const allMonths = new Set<string>();
+    
+    // Always guarantee that the current real-world month and the currently selected month are included
+    const now = new Date();
+    allMonths.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    allMonths.add(`${selectedYear}-${selectedMonth}`);
+    
+    orders.forEach(o => {
+      const d = o.date;
+      if (d && d instanceof Date && !isNaN(d.getTime())) {
+        allMonths.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      }
+    });
+
+    Object.keys(overrides).forEach(k => {
+      const trimmed = k.trim();
+      const match = trimmed.match(/^(\d{4})-(\d{1,2})/);
+      if (match) {
+        const yr = match[1];
+        const mth = match[2].padStart(2, '0');
+        allMonths.add(`${yr}-${mth}`);
+      }
+    });
+
+    adExpenses.forEach(e => {
+      if (e.date) {
+        const trimmed = e.date.trim();
+        const match = trimmed.match(/^(\d{4})-(\d{1,2})/);
+        if (match) {
+          const yr = match[1];
+          const mth = match[2].padStart(2, '0');
+          allMonths.add(`${yr}-${mth}`);
+        }
+      }
+    });
+
+    otherExpenses.forEach(e => {
+      if (e.date) {
+        const trimmed = e.date.trim();
+        const match = trimmed.match(/^(\d{4})-(\d{1,2})/);
+        if (match) {
+          const yr = match[1];
+          const mth = match[2].padStart(2, '0');
+          allMonths.add(`${yr}-${mth}`);
+        }
+      }
+    });
+
+    if (allMonths.size === 0) {
+      const now = new Date();
+      allMonths.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    const list = Array.from(allMonths).map(mKey => {
+      const [yr, mth] = mKey.split('-');
+      
+      const mOrders = orders.filter(o => {
+        const d = o.date;
+        if (!d) return false;
+        return d.getFullYear().toString() === yr && String(d.getMonth() + 1).padStart(2, '0') === mth;
+      });
+
+      const mAdExpenses = adExpenses.filter(e => e.date && matchDatePrefix(e.date, mKey));
+      const adsUSD = mAdExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+      const mOtherExpenses = otherExpenses.filter(e => e.date && matchDatePrefix(e.date, mKey));
+      const otherExpensesUSD = mOtherExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+      let sysRevenue = 0;
+      let sysCogs = 0;
+      let sysShipping = 0;
+      let sysFees = 0;
+      let sysReturnsLoss = 0;
+
+      mOrders.forEach(o => {
+        const isDelivered = o.status === 'Entregado';
+        if (isDelivered) {
+          sysRevenue += o.price;
+          sysCogs += o.cost;
+        }
+        if (o.status !== 'Cancelado') {
+          sysShipping += o.shippingReal;
+          const comisionVal = Number(o.comision || 0);
+          if (comisionVal > 0) {
+            sysFees += comisionVal;
+          } else {
+            sysFees += o.price * (o.platformFee || 0);
+          }
+        }
+        if (o.status === 'Devuelto') {
+          const returnPenalty = Math.abs(Number(o.costoDevolucionFlete || 0));
+          sysReturnsLoss += returnPenalty > 0 ? returnPenalty : (o.shippingReal > 0 ? o.shippingReal * 0.5 : 3.88);
+        }
+      });
+
+      const override = overrides[mKey];
+      const base = override || {
+        revenue: sysRevenue,
+        cogs: sysCogs,
+        shipping: sysShipping,
+        ads: adsUSD,
+        fees: sysFees,
+        returnsLoss: sysReturnsLoss,
+        otherExpenses: otherExpensesUSD
+      };
+
+      const finalRev = base.revenue;
+      const finalCogs = base.cogs;
+      const finalShipping = base.shipping;
+      const finalAds = base.ads ?? adsUSD;
+      const finalFees = base.fees;
+      const finalReturnsLoss = base.returnsLoss;
+      const finalOther = base.otherExpenses ?? otherExpensesUSD;
+
+      const grossProfit = finalRev - finalCogs;
+      const netProfit = grossProfit - finalShipping - finalAds - finalFees - finalReturnsLoss - finalOther;
+
+      const monthObj = MONTH_NAMES.find(m => m.value === mth);
+      const monthLabel = monthObj ? monthObj.label : mth;
+
+      return {
+        monthKey,
+        label: `${monthLabel} ${yr}`,
+        year: yr,
+        month: mth,
+        revenue: finalRev,
+        cogs: finalCogs,
+        shipping: finalShipping,
+        ads: finalAds,
+        fees: finalFees,
+        returnsLoss: finalReturnsLoss,
+        otherExpenses: finalOther,
+        grossProfit,
+        netProfit,
+        isOverridden: !!override
+      };
+    });
+
+    const sortedList = list.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+    
+    // De-duplicate items based on monthKey to guarantee absolute uniqueness
+    const deDuplicated: typeof sortedList = [];
+    const seenKeys = new Set<string>();
+    for (const item of sortedList) {
+      if (!seenKeys.has(item.monthKey)) {
+        seenKeys.add(item.monthKey);
+        deDuplicated.push(item);
+      }
+    }
+    return deDuplicated;
+  }, [orders, overrides, adExpenses, otherExpenses, selectedYear, selectedMonth]);
 
   // Local editing states (maintained in display currency for the user's convenience)
   const [isEditing, setIsEditing] = useState(false);
@@ -367,6 +588,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
   const [editedAds, setEditedAds] = useState(0);
   const [editedPlatformFees, setEditedPlatformFees] = useState(0);
   const [editedReturnsLoss, setEditedReturnsLoss] = useState(0);
+  const [editedOtherExpenses, setEditedOtherExpenses] = useState(0);
 
   // Sync inputs with active month details whenever the selected month or edit status triggers
   useEffect(() => {
@@ -376,6 +598,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     setEditedAds(Math.round(activeData.ads * 100) / 100);
     setEditedPlatformFees(Math.round(activeData.fees * 100) / 100);
     setEditedReturnsLoss(Math.round(activeData.returnsLoss * 100) / 100);
+    setEditedOtherExpenses(Math.round(activeData.otherExpenses * 100) / 100);
   }, [activeData, isEditing]);
 
   const [saving, setSaving] = useState(false);
@@ -387,6 +610,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     setEditedAds(Math.round(activeData.ads * 100) / 100);
     setEditedPlatformFees(Math.round(activeData.fees * 100) / 100);
     setEditedReturnsLoss(Math.round(activeData.returnsLoss * 100) / 100);
+    setEditedOtherExpenses(Math.round(activeData.otherExpenses * 100) / 100);
     setIsEditing(true);
   };
 
@@ -399,7 +623,8 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       shipping: toUSD(Number(editedShipping)),
       ads: toUSD(Number(editedAds)),
       fees: toUSD(Number(editedPlatformFees)),
-      returnsLoss: toUSD(Number(editedReturnsLoss))
+      returnsLoss: toUSD(Number(editedReturnsLoss)),
+      otherExpenses: toUSD(Number(editedOtherExpenses))
     };
 
     try {
@@ -462,6 +687,80 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     }
   };
 
+  const [showAdsDetail, setShowAdsDetail] = useState(false);
+  const [showAddOtherForm, setShowAddOtherForm] = useState(false);
+  const [newOtherExpense, setNewOtherExpense] = useState({
+    name: '',
+    category: 'Software',
+    amount: '',
+    date: `${selectedYear}-${selectedMonth}-01`
+  });
+
+  // Sync date when month or year changes
+  useEffect(() => {
+    setNewOtherExpense(prev => ({
+      ...prev,
+      date: `${selectedYear}-${selectedMonth}-01`
+    }));
+  }, [selectedYear, selectedMonth]);
+
+  const handleAddOtherExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOtherExpense.name || !newOtherExpense.amount) return;
+
+    // Convert display currency amount back to USD if isConversionActive is enabled
+    const amtInDisplay = Number(newOtherExpense.amount);
+    const amtInUSD = toUSD(amtInDisplay);
+
+    const expenseObj = {
+      uid: user?.uid || 'demo',
+      name: newOtherExpense.name,
+      category: newOtherExpense.category,
+      amount: amtInUSD,
+      date: newOtherExpense.date,
+      timestamp: Date.now()
+    };
+
+    try {
+      if (user && !isDemoMode && isFirebaseConfigValid) {
+        await addDoc(collection(db, 'other_platform_expenses'), expenseObj);
+      } else {
+        // Local state offline update
+        const localItems = [...otherExpenses, { id: 'local_' + Date.now(), ...expenseObj }];
+        setOtherExpenses(localItems);
+        localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(localItems));
+      }
+
+      // Reset form
+      setNewOtherExpense({
+        name: '',
+        category: 'Software',
+        amount: '',
+        date: `${selectedYear}-${selectedMonth}-01`
+      });
+      setShowAddOtherForm(false);
+    } catch (err) {
+      console.error("Error adding other expense:", err);
+      alert("Error al guardar el gasto");
+    }
+  };
+
+  const handleDeleteOtherExpense = async (id: string) => {
+    if (!window.confirm('¿Seguro que deseas eliminar este gasto?')) return;
+
+    try {
+      if (user && !isDemoMode && isFirebaseConfigValid) {
+        await deleteDoc(doc(db, 'other_platform_expenses', id));
+      } else {
+        const updated = otherExpenses.filter(e => e.id !== id);
+        setOtherExpenses(updated);
+        localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(updated));
+      }
+    } catch (err) {
+      console.error("Error deleting other expense:", err);
+    }
+  };
+
   // Real-time live data for chart rendering (incorporating user edits on-the-fly)
   const chartData = useMemo(() => {
     const rev = isEditing ? Number(editedRevenue) : activeData.revenue;
@@ -470,6 +769,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     const ad = isEditing ? Number(editedAds) : activeData.ads;
     const fe = isEditing ? Number(editedPlatformFees) : activeData.fees;
     const ret = isEditing ? Number(editedReturnsLoss) : activeData.returnsLoss;
+    const oth = isEditing ? Number(editedOtherExpenses) : activeData.otherExpenses;
 
     return [
       { name: 'Ingresos', value: rev, color: '#00ff88' },
@@ -478,13 +778,14 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       { name: 'Ads', value: -ad, color: '#8b5cf6' },
       { name: 'Comisiones', value: -fe, color: '#64748b' },
       { name: 'Devoluciones', value: -ret, color: '#ef4444' },
+      { name: 'Otras Plat.', value: -oth, color: '#f43f5e' },
     ];
-  }, [isEditing, editedRevenue, editedCogs, editedShipping, editedAds, editedPlatformFees, editedReturnsLoss, activeData]);
+  }, [isEditing, editedRevenue, editedCogs, editedShipping, editedAds, editedPlatformFees, editedReturnsLoss, editedOtherExpenses, activeData]);
 
   // Live P&L derived results
   const liveGrossProfit = isEditing ? (Number(editedRevenue) - Number(editedCogs)) : activeData.grossProfit;
   const liveNetProfit = isEditing ? 
-    (liveGrossProfit - Number(editedShipping) - Number(editedAds) - Number(editedPlatformFees) - Number(editedReturnsLoss)) : 
+    (liveGrossProfit - Number(editedShipping) - Number(editedAds) - Number(editedPlatformFees) - Number(editedReturnsLoss) - Number(editedOtherExpenses)) : 
     activeData.ebitda;
 
   const currentMonthLabel = MONTH_NAMES.find(m => m.value === selectedMonth)?.label || 'Marzo';
@@ -553,6 +854,85 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Visual Month-by-Month Financial Summary / Filter Grid */}
+      <div className="glass-card p-6 bg-black border border-slate-900 rounded-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-[13px] font-display font-bold text-white uppercase tracking-widest flex items-center gap-2">
+              <span className="text-neon">📊</span> Consolidado Mensual de Resultados (P&L)
+            </h3>
+            <p className="text-[11px] text-slate-500 font-mono mt-0.5 text-left">
+              Suma total de ingresos, costos y utilidad neta por mes. Haz clic en un mes para seleccionarlo y ver su estado de resultados detallado abajo.
+            </p>
+          </div>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-slate-900 shrink-0">
+            Total meses: {monthlyFinancialSummaryData.length}
+          </span>
+        </div>
+
+        {monthlyFinancialSummaryData.length === 0 ? (
+          <div className="py-6 text-center text-slate-500 font-mono text-xs">
+            No hay registros financieros suficientes para consolidar por mes.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {monthlyFinancialSummaryData.map((item) => {
+              const isActive = selectedYear === item.year && selectedMonth === item.month;
+              const displayRevenue = fromUSD(item.revenue);
+              const displayNetProfit = fromUSD(item.netProfit);
+              const displayTotalExpenses = fromUSD(item.revenue - item.netProfit);
+              const isProfitPositive = item.netProfit >= 0;
+
+              return (
+                <button
+                  key={item.monthKey}
+                  type="button"
+                  onClick={() => {
+                    setSelectedYear(item.year);
+                    setSelectedMonth(item.month);
+                    setIsEditing(false); // Reset editing mode
+                  }}
+                  className={`p-3.5 rounded-xl border font-mono text-left transition-all active:scale-95 cursor-pointer relative group ${
+                    isActive
+                      ? 'bg-neon/10 border-neon shadow-lg shadow-neon/5 text-white'
+                      : 'bg-slate-950 border-slate-900 hover:border-slate-800 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-[11px] font-bold ${isActive ? 'text-neon' : 'text-slate-400 group-hover:text-white'}`}>
+                      {item.label}
+                    </span>
+                    {isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-neon" />
+                    )}
+                  </div>
+                  
+                  {/* Revenue / Expenses detail */}
+                  <div className="space-y-1 mb-2 text-[10px] text-slate-400 border-b border-slate-900 pb-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Ingresos:</span>
+                      <span className="text-slate-300">{localFormatCurrency(displayRevenue)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Gastos:</span>
+                      <span className="text-slate-400">-{localFormatCurrency(displayTotalExpenses)}</span>
+                    </div>
+                  </div>
+
+                  {/* Net Profit */}
+                  <div className="flex items-baseline justify-between pt-0.5">
+                    <span className="text-[9px] uppercase text-slate-500 font-bold">Utilidad:</span>
+                    <span className={`text-xs font-bold font-mono ${isProfitPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {isProfitPositive ? '+' : ''}{localFormatCurrency(displayNetProfit)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -705,30 +1085,90 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
               </div>
 
               {/* OUTWARD MARKETING ETC */}
-              <div className="flex justify-between items-start py-1 gap-4">
-                <div>
-                  <span className="text-base text-slate-400 block text-left">(-) Inversión Ads & Marketing</span>
-                  <span className="text-[11px] text-slate-500 font-mono block text-left">
-                    {systemExplainer.usingAdExpenses 
-                      ? `Sumatoria de ${systemExplainer.adsCount} registros en sección campañas de Ads`
-                      : `Suma de costos de publicidad de pedidos cargados`}
-                  </span>
-                </div>
-                {isEditing ? (
-                  <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
-                    <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
-                    <input 
-                      type="number"
-                      value={editedAds}
-                      onChange={(e) => setEditedAds(Number(e.target.value))}
-                      className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
-                      placeholder="0"
-                    />
+              <div className="border-b border-slate-900/40 pb-2">
+                <div className="flex justify-between items-start py-1 gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-base text-slate-400 block text-left">(-) Inversión Ads & Marketing</span>
+                      {isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => setEditedAds(Math.round(fromUSD(systemCalculatedDataUSD.ads) * 100) / 100)}
+                          className="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                          title="Jalar el valor automático calculado para este mes"
+                        >
+                          🔄 Jalar de Publicidad
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowAdsDetail(!showAdsDetail)}
+                        className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                        title="Ver desglose de campañas para este mes"
+                      >
+                        📊 {showAdsDetail ? 'Ocultar' : 'Ver'} Detalle ({adExpenses.filter(e => e.date && matchDatePrefix(e.date, `${selectedYear}-${selectedMonth}`)).length})
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-slate-500 font-mono block text-left">
+                      Suma total de publicidad jalada de la sección de Publicidad ({systemExplainer.adsCount} registros) para el mes
+                    </span>
                   </div>
-                ) : (
-                  <span className="text-base font-mono text-slate-300 shrink-0">
-                    {localFormatCurrency(activeData.ads)}
-                  </span>
+                  {isEditing ? (
+                    <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
+                      <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
+                      <input 
+                        type="number"
+                        value={editedAds}
+                        onChange={(e) => setEditedAds(Number(e.target.value))}
+                        className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
+                        placeholder="0"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-base font-mono text-slate-300 shrink-0">
+                      {localFormatCurrency(activeData.ads)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Inline Collapsible Ad Expenses Detail */}
+                {showAdsDetail && (
+                  <div className="mt-3 p-4 bg-slate-950 border border-slate-900 rounded-xl space-y-2 text-xs font-mono animate-fadeIn">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Campañas de {currentMonthLabel} {selectedYear}</span>
+                      <span className="text-slate-500 text-[10px]">Valores jalados de Publicidad</span>
+                    </div>
+                    {(() => {
+                      const monthPrefix = `${selectedYear}-${selectedMonth}`;
+                      const monthlyAds = adExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
+                      
+                      if (monthlyAds.length === 0) {
+                        return (
+                          <div className="text-center py-4 text-slate-500">
+                            No hay gastos registrados en Publicidad para este mes.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                          {monthlyAds.map((e) => (
+                            <div key={e.id} className="flex justify-between items-center text-[11px]">
+                              <div className="flex flex-col text-left">
+                                <span className="text-slate-300 font-bold">{e.productName || 'Campaña General'}</span>
+                                <span className="text-slate-500 text-[9px]">{e.platform} • {e.date}</span>
+                              </div>
+                              <span className="text-slate-300 font-bold">{localFormatCurrency(fromUSD(e.amount))}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between items-center border-t border-slate-900 pt-2 font-bold text-neon">
+                            <span>Suma Total Mes:</span>
+                            <span>{localFormatCurrency(fromUSD(monthlyAds.reduce((sum, e) => sum + (e.amount || 0), 0)))}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 )}
               </div>
 
@@ -780,6 +1220,32 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                 ) : (
                   <span className="text-base font-mono text-slate-300 shrink-0">
                     {localFormatCurrency(activeData.returnsLoss)}
+                  </span>
+                )}
+              </div>
+
+              {/* OTRAS PLATAFORMAS Y GASTOS OPERATIVOS */}
+              <div className="flex justify-between items-start py-1 gap-4">
+                <div>
+                  <span className="text-base text-slate-400 block text-left">(-) Otras Plataformas y Herramientas</span>
+                  <span className="text-[11px] text-slate-500 font-mono block text-left">
+                    Shopify, hosting, dominios, sueldos, integraciones y otros costos operativos
+                  </span>
+                </div>
+                {isEditing ? (
+                  <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
+                    <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
+                    <input 
+                      type="number"
+                      value={editedOtherExpenses}
+                      onChange={(e) => setEditedOtherExpenses(Number(e.target.value))}
+                      className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
+                      placeholder="0"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-base font-mono text-slate-300 shrink-0">
+                    {localFormatCurrency(activeData.otherExpenses)}
                   </span>
                 )}
               </div>
@@ -865,12 +1331,247 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                   (isEditing ? Number(editedShipping) : activeData.shipping) +
                   (isEditing ? Number(editedAds) : activeData.ads) +
                   (isEditing ? Number(editedPlatformFees) : activeData.fees) +
-                  (isEditing ? Number(editedReturnsLoss) : activeData.returnsLoss)
+                  (isEditing ? Number(editedReturnsLoss) : activeData.returnsLoss) +
+                  (isEditing ? Number(editedOtherExpenses) : activeData.otherExpenses)
                 )}
               </span>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* DETALLE DE PUBLICIDAD (ADS) POR MES */}
+      <div className="glass-card p-6 bg-black border border-slate-900 rounded-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 className="text-lg font-display font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <span className="text-neon">📢</span> Detalle de Publicidad y Campañas (Ads)
+            </h3>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">
+              Gastos de publicidad importados de la sección de campañas para {currentMonthLabel} {selectedYear}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono px-2.5 py-1 bg-slate-900 border border-slate-800 text-slate-400 rounded-lg">
+              Mes: {currentMonthLabel} {selectedYear}
+            </span>
+          </div>
+        </div>
+
+        {/* Expenses List for current selectedMonth */}
+        {(() => {
+          const monthPrefix = `${selectedYear}-${selectedMonth}`;
+          const filteredAdList = adExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
+
+          if (filteredAdList.length === 0) {
+            return (
+              <div className="py-8 text-center bg-slate-950/40 border border-slate-900 border-dashed rounded-xl">
+                <p className="text-sm text-slate-500 font-mono">No hay gastos de publicidad registrados para {currentMonthLabel} {selectedYear}.</p>
+                <p className="text-xs text-slate-600 font-mono mt-1">Los gastos de publicidad de campañas se sumarán automáticamente si existen, de lo contrario se utilizará el costo estimado en los pedidos.</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-900 text-slate-400 uppercase tracking-wider text-[10px]">
+                    <th className="pb-3 pl-2">Producto</th>
+                    <th className="pb-3">Plataforma</th>
+                    <th className="pb-3">Fecha</th>
+                    <th className="pb-3 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900">
+                  {filteredAdList.map((expense) => {
+                    const displayAmt = fromUSD(expense.amount);
+                    return (
+                      <tr key={expense.id} className="hover:bg-slate-950/40 transition-colors">
+                        <td className="py-3.5 pl-2 font-bold text-slate-200">
+                          {expense.productName || 'Campaña General'}
+                        </td>
+                        <td className="py-3.5">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] border ${
+                            expense.platform.includes('Facebook') ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                            expense.platform.includes('TikTok') ? 'bg-pink-500/10 text-pink-400 border-pink-500/20' :
+                            expense.platform.includes('Google') ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                            'bg-slate-900 text-slate-400 border-slate-800'
+                          }`}>
+                            {expense.platform}
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-slate-400">{expense.date}</td>
+                        <td className="py-3.5 text-right font-bold text-slate-200">{localFormatCurrency(displayAmt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-800">
+                    <td colSpan={3} className="py-4 pl-2 font-bold text-slate-400">Total de Publicidad (Filtrado por Mes):</td>
+                    <td className="py-4 text-right font-bold text-neon text-sm">
+                      {localFormatCurrency(fromUSD(filteredAdList.reduce((sum, e) => sum + (e.amount || 0), 0)))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* OTRAS PLATAFORMAS DETAILED LIST & ADD FORM */}
+      <div className="glass-card p-6 bg-black border border-slate-900 rounded-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 className="text-lg font-display font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <span className="text-neon">💼</span> Otras Plataformas y Gastos Operativos
+            </h3>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">
+              Administra suscripciones, software, sueldos y gastos fijos de {currentMonthLabel} {selectedYear}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddOtherForm(!showAddOtherForm)}
+            className="px-4 py-2 bg-neon/10 hover:bg-neon/20 border border-neon/30 text-neon rounded-xl text-sm font-mono font-bold transition-all active:scale-95 shrink-0 flex items-center justify-center gap-2"
+          >
+            {showAddOtherForm ? 'Cancelar' : '+ Agregar Gasto'}
+          </button>
+        </div>
+
+        {/* Collapsible Add Form */}
+        {showAddOtherForm && (
+          <form onSubmit={handleAddOtherExpense} className="mb-6 p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 animate-fadeIn">
+            <h4 className="text-sm font-bold text-slate-300 font-mono uppercase tracking-wider">Nuevo Gasto Operativo</h4>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1 font-mono">Nombre / Descripción</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Shopify Plus, Diseñador, Hosting"
+                  value={newOtherExpense.name}
+                  onChange={(e) => setNewOtherExpense(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full bg-black border border-slate-800 focus:border-neon rounded-lg px-3 py-2 text-white text-sm outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1 font-mono">Categoría</label>
+                <select
+                  value={newOtherExpense.category}
+                  onChange={(e) => setNewOtherExpense(prev => ({ ...prev, category: e.target.value }))}
+                  className="w-full bg-black border border-slate-800 focus:border-neon rounded-lg px-3 py-2 text-white text-sm outline-none font-mono"
+                >
+                  <option value="Software">Software & Apps</option>
+                  <option value="Sueldos">Sueldos & Comisiones</option>
+                  <option value="Servicios">Hosting & Servicios</option>
+                  <option value="Marketing">Diseño & Publicidad extra</option>
+                  <option value="Oficina">Alquiler & Oficina</option>
+                  <option value="Otro">Otro gasto</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1 font-mono">Monto ({currencySymbol})</label>
+                <input
+                  type="number"
+                  required
+                  step="any"
+                  placeholder="0.00"
+                  value={newOtherExpense.amount}
+                  onChange={(e) => setNewOtherExpense(prev => ({ ...prev, amount: e.target.value }))}
+                  className="w-full bg-black border border-slate-800 focus:border-neon rounded-lg px-3 py-2 text-white text-sm outline-none font-mono text-right"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1 font-mono">Fecha</label>
+                <input
+                  type="date"
+                  required
+                  value={newOtherExpense.date}
+                  onChange={(e) => setNewOtherExpense(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full bg-black border border-slate-800 focus:border-neon rounded-lg px-3 py-2 text-white text-sm outline-none font-mono"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                className="px-5 py-2 bg-neon hover:bg-neon/90 text-background font-mono font-bold text-xs rounded-lg transition-all active:scale-95"
+              >
+                Guardar Gasto
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Expenses List for current selectedMonth */}
+        {(() => {
+          const monthPrefix = `${selectedYear}-${selectedMonth}`;
+          const filteredOtherList = otherExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
+
+          if (filteredOtherList.length === 0) {
+            return (
+              <div className="py-8 text-center bg-slate-950/40 border border-slate-900 border-dashed rounded-xl">
+                <p className="text-sm text-slate-500 font-mono">No hay otros gastos registrados para {currentMonthLabel} {selectedYear}.</p>
+                <p className="text-xs text-slate-600 font-mono mt-1">Los gastos fijos o suscripciones de este mes se sumarán automáticamente al P&L.</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-900 text-slate-400 uppercase tracking-wider text-[10px]">
+                    <th className="pb-3 pl-2">Descripción</th>
+                    <th className="pb-3">Categoría</th>
+                    <th className="pb-3">Fecha</th>
+                    <th className="pb-3 text-right">Monto</th>
+                    <th className="pb-3 pr-2 text-center w-12">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900">
+                  {filteredOtherList.map((expense) => {
+                    // Since stored in USD base, convert to display currency
+                    const displayAmt = fromUSD(expense.amount);
+                    return (
+                      <tr key={expense.id} className="hover:bg-slate-950/40 transition-colors">
+                        <td className="py-3.5 pl-2 font-bold text-slate-200">{expense.name}</td>
+                        <td className="py-3.5">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-900 text-slate-400 text-[10px] border border-slate-800">
+                            {expense.category}
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-slate-400">{expense.date}</td>
+                        <td className="py-3.5 text-right font-bold text-slate-200">{localFormatCurrency(displayAmt)}</td>
+                        <td className="py-3.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteOtherExpense(expense.id)}
+                            className="p-1 hover:text-red-500 text-slate-500 transition-all hover:scale-110 active:scale-95"
+                            title="Eliminar gasto"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-800">
+                    <td colSpan={3} className="py-4 pl-2 font-bold text-slate-400">Total de Otras Plataformas y Gastos Operativos:</td>
+                    <td className="py-4 text-right font-bold text-neon text-sm">
+                      {localFormatCurrency(fromUSD(filteredOtherList.reduce((sum, e) => sum + (e.amount || 0), 0)))}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Floating Scroll to Top */}

@@ -181,6 +181,7 @@
         "ads": { "type": "number" },
         "fees": { "type": "number" },
         "returnsLoss": { "type": "number" },
+        "otherExpenses": { "type": "number" },
         "updatedAt": { "type": "number" }
       },
       "required": ["uid", "monthKey", "revenue", "cogs", "shipping", "ads", "fees", "returnsLoss"]
@@ -204,6 +205,22 @@
         }
       },
       "required": ["uid", "labels"]
+    },
+    "OtherPlatformExpense": {
+      "title": "Other Platform Expense",
+      "description": "Subscription, software, salaries, or other fixed operational expenses for a month",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "originalAmount": { "type": "number" },
+        "originalCurrency": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["uid", "name", "category", "amount", "date", "timestamp"]
     }
   },
   "firestore": {
@@ -242,6 +259,10 @@
     "custom_return_tags/{tagId}": {
       "schema": "CustomReturnTags",
       "description": "Collection of custom return labels and color assignments"
+    },
+    "other_platform_expenses/{expenseId}": {
+      "schema": "OtherPlatformExpense",
+      "description": "Collection of other platform and operational expenses"
     }
   }
 }
