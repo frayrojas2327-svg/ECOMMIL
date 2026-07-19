@@ -39,16 +39,65 @@ interface PlatformExpensesProps {
   currency: CurrencyCode;
   currencies: any;
   isConversionActive?: boolean;
+  fixedExpenses: FixedExpense[];
+  setFixedExpenses: React.Dispatch<React.SetStateAction<FixedExpense[]>>;
+  variableExpenses: VariableExpense[];
+  setVariableExpenses: React.Dispatch<React.SetStateAction<VariableExpense[]>>;
 }
 
 const EXPENSE_CATEGORIES = ['Software', 'Publicidad', 'Servicios', 'Personal', 'Suscripciones', 'Otros'];
+
+const MONTH_NAMES = [
+  { value: '01', label: 'Enero' },
+  { value: '02', label: 'Febrero' },
+  { value: '03', label: 'Marzo' },
+  { value: '04', label: 'Abril' },
+  { value: '05', label: 'Mayo' },
+  { value: '06', label: 'Junio' },
+  { value: '07', label: 'Julio' },
+  { value: '08', label: 'Agosto' },
+  { value: '09', label: 'Septiembre' },
+  { value: '10', label: 'Octubre' },
+  { value: '11', label: 'Noviembre' },
+  { value: '12', label: 'Diciembre' },
+];
+
+const MONTH_COLORS: Record<string, { bg: string, text: string, border: string }> = {
+  '01': { bg: 'bg-sky-500/10', text: 'text-sky-400', border: 'border-sky-500/20' }, // Enero
+  '02': { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/20' }, // Febrero
+  '03': { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/20' }, // Marzo
+  '04': { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' }, // Abril
+  '05': { bg: 'bg-teal-500/10', text: 'text-teal-400', border: 'border-teal-500/20' }, // Mayo
+  '06': { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' }, // Junio
+  '07': { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20' }, // Julio
+  '08': { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' }, // Agosto
+  '09': { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20' }, // Septiembre
+  '10': { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/20' }, // Octubre
+  '11': { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20' }, // Noviembre
+  '12': { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20' }, // Diciembre
+};
+
+const getMonthDetails = (dateStr: string) => {
+  if (!dateStr) return { name: 'Desconocido', styles: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' } };
+  const parts = dateStr.split('-');
+  if (parts.length < 2) return { name: 'Desconocido', styles: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' } };
+  const monthVal = parts[1];
+  const monthObj = MONTH_NAMES.find(m => m.value === monthVal);
+  const name = monthObj ? monthObj.label : 'Desconocido';
+  const styles = MONTH_COLORS[monthVal] || { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' };
+  return { name, styles };
+};
 
 const PlatformExpenses: React.FC<PlatformExpensesProps> = ({ 
   formatCurrency, 
   currencySymbol,
   currency,
   currencies,
-  isConversionActive = false
+  isConversionActive = false,
+  fixedExpenses,
+  setFixedExpenses,
+  variableExpenses,
+  setVariableExpenses
 }) => {
   const localFormatCurrency = (amount: number, expense?: FixedExpense | VariableExpense) => {
     // If we have original currency that matches current, use it exactly
@@ -79,16 +128,6 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
     }).format(rounded);
   };
 
-  const [fixedExpenses, setFixedExpenses] = useState<FixedExpense[]>(() => {
-    const saved = localStorage.getItem('ecommil_fixed_expenses');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [variableExpenses, setVariableExpenses] = useState<VariableExpense[]>(() => {
-    const saved = localStorage.getItem('ecommil_variable_expenses');
-    return saved ? JSON.parse(saved) : [];
-  });
-
   const [isSaved, setIsSaved] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -108,14 +147,6 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
     startDate: new Date().toISOString().split('T')[0],
     endDate: ''
   });
-
-  useEffect(() => {
-    localStorage.setItem('ecommil_fixed_expenses', JSON.stringify(fixedExpenses));
-  }, [fixedExpenses]);
-
-  useEffect(() => {
-    localStorage.setItem('ecommil_variable_expenses', JSON.stringify(variableExpenses));
-  }, [variableExpenses]);
 
   const addExpense = () => {
     const info = currencies[currency];
@@ -197,7 +228,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-[15px]">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
@@ -424,6 +455,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
             <thead>
               <tr className="border-b border-border bg-slate-800/30">
                 <th className="p-3 text-left text-[10px] uppercase tracking-widest text-slate-500 font-black">Tipo</th>
+                <th className="p-3 text-left text-[10px] uppercase tracking-widest text-slate-500 font-black">Mes</th>
                 <th className="p-3 text-left text-[10px] uppercase tracking-widest text-slate-500 font-black">Concepto / Plataforma</th>
                 <th className="p-3 text-left text-[10px] uppercase tracking-widest text-slate-500 font-black">Categoría</th>
                 <th className="p-3 text-left text-[10px] uppercase tracking-widest text-slate-500 font-black">Monto</th>
@@ -439,6 +471,17 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                 <tr key={expense.id} className="hover:bg-neon/5 transition-colors group">
                   <td className="p-3">
                     <span className="px-2 py-0.5 rounded-md bg-neon/10 text-neon text-[10px] font-bold uppercase">Fijo</span>
+                  </td>
+                  <td className="p-3">
+                    {(() => {
+                      const dateVal = expense.startDate;
+                      const { name: monthLabel, styles: monthStyles } = getMonthDetails(dateVal);
+                      return (
+                        <span className={`px-2.5 py-1 rounded-full border text-[11px] font-black uppercase tracking-wider ${monthStyles.bg} ${monthStyles.text} ${monthStyles.border}`}>
+                          {monthLabel}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="p-3">
                     {editingId === expense.id ? (
@@ -582,6 +625,17 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                     <span className="px-2 py-0.5 rounded-md bg-gold/10 text-gold text-[10px] font-bold uppercase">Variable</span>
                   </td>
                   <td className="p-3">
+                    {(() => {
+                      const dateVal = expense.startDate;
+                      const { name: monthLabel, styles: monthStyles } = getMonthDetails(dateVal);
+                      return (
+                        <span className={`px-2.5 py-1 rounded-full border text-[11px] font-black uppercase tracking-wider ${monthStyles.bg} ${monthStyles.text} ${monthStyles.border}`}>
+                          {monthLabel}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                  <td className="p-3">
                     {editingId === expense.id ? (
                       <input 
                         type="text"
@@ -675,7 +729,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
 
               {fixedExpenses.length === 0 && variableExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-12 text-center">
+                  <td colSpan={9} className="p-12 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <TableIcon size={40} className="text-slate-700" />
                       <p className="text-slate-500 uppercase tracking-widest font-bold text-xs">No hay gastos en el historial</p>
@@ -688,7 +742,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
             {(fixedExpenses.length > 0 || variableExpenses.length > 0) && (
               <tfoot>
                 <tr className="bg-card/50 border-t border-border font-bold">
-                  <td colSpan={6} className="p-3 text-right text-[11px] uppercase tracking-widest text-slate-500">Total Operativo Mensual (Fijos):</td>
+                  <td colSpan={7} className="p-3 text-right text-[11px] uppercase tracking-widest text-slate-500">Total Operativo Mensual (Fijos):</td>
                   <td className="p-3 text-[15px] font-mono text-neon">{localFormatCurrency(totalMonthlyFixed)}</td>
                   <td className="p-3"></td>
                 </tr>

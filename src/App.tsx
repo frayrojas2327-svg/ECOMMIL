@@ -157,10 +157,63 @@ function AppContent() {
     return () => clearInterval(interval);
   }, []);
 
-  const [orders, setOrders] = useState<Order[]>([]);
+   const [orders, setOrders] = useState<Order[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // Shared Month/Year selection state across components (e.g. FinancialSummary, AdvertisingExpenses)
+  const defaultYearMonth = useMemo(() => {
+    if (orders.length > 0) {
+      const dates = orders.map(o => o.date).filter(Boolean);
+      if (dates.length > 0) {
+        const latest = new Date(Math.max(...dates.map(d => d.getTime())));
+        return {
+          year: latest.getFullYear().toString(),
+          month: String(latest.getMonth() + 1).padStart(2, '0')
+        };
+      }
+    }
+    const now = new Date();
+    return {
+      year: now.getFullYear().toString(),
+      month: String(now.getMonth() + 1).padStart(2, '0')
+    };
+  }, [orders]);
+
+  const [selectedYear, setSelectedYear] = useState<string>(() => {
+    const now = new Date();
+    return now.getFullYear().toString();
+  });
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return String(now.getMonth() + 1).padStart(2, '0');
+  });
+
+  useEffect(() => {
+    if (defaultYearMonth.year && defaultYearMonth.month) {
+      setSelectedYear(defaultYearMonth.year);
+      setSelectedMonth(defaultYearMonth.month);
+    }
+  }, [defaultYearMonth]);
+
+  const [fixedExpenses, setFixedExpenses] = useState<any[]>(() => {
+    const saved = localStorage.getItem('ecommil_fixed_expenses');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [variableExpenses, setVariableExpenses] = useState<any[]>(() => {
+    const saved = localStorage.getItem('ecommil_variable_expenses');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_fixed_expenses', JSON.stringify(fixedExpenses));
+  }, [fixedExpenses]);
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_variable_expenses', JSON.stringify(variableExpenses));
+  }, [variableExpenses]);
 
   // Global Product Filter states
   const [globalProductFilter, setGlobalProductFilter] = useState<string>('all');
@@ -218,7 +271,11 @@ function AppContent() {
   const filteredOrders = useMemo(() => {
     let result = orders;
     if (globalProductFilter !== 'all') {
-      result = result.filter(o => o.product === globalProductFilter);
+      if (globalProductFilter === 'sin_producto') {
+        result = result.filter(o => !o.product || o.product.trim() === '' || o.product.toLowerCase().trim() === 'sin producto');
+      } else {
+        result = result.filter(o => o.product === globalProductFilter);
+      }
     }
     return result.filter(o => {
       let orderDate: Date | null = null;
@@ -281,6 +338,130 @@ function AppContent() {
 
     return () => clearTimeout(timer);
   }, [activeTab]);
+
+  // Pomodoro Global States (persistent across panel navigation)
+  const [timerMinutes, setTimerMinutes] = useState(25);
+  const [timeRemaining, setTimeRemaining] = useState(25 * 60);
+  const [timerIsActive, setTimerIsActive] = useState(false);
+  const [timerMode, setTimerMode] = useState<'work' | 'break'>('work');
+  const [focusTask, setFocusTask] = useState('Busca nuevos productos');
+  const [completedPomodoros, setCompletedPomodoros] = useState<number>(() => {
+    const saved = localStorage.getItem('ecommil_completed_pomodoros');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  // Desktop Notifications Permission & Triggering
+  const [notificationPermission, setNotificationPermission] = useState<string>('default');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
+
+  const requestNotificationPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const permission = await Notification.requestPermission();
+        setNotificationPermission(permission);
+        if (permission === 'granted') {
+          try {
+            new Notification('🔔 Notificaciones de PC activadas', {
+              body: 'Te avisaremos con alertas visuales en tu computadora al finalizar tus temporizadores.',
+              icon: 'https://cdn-icons-png.flaticon.com/512/3602/3602123.png'
+            });
+          } catch (e) {
+            console.error('Error triggering permission confirmation:', e);
+          }
+        }
+      } catch (error) {
+        console.error('Error requesting notification permission:', error);
+      }
+    }
+  };
+
+  const showDesktopNotification = (title: string, body: string) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const notification = new Notification(title, {
+          body,
+          icon: 'https://cdn-icons-png.flaticon.com/512/3602/3602123.png',
+          requireInteraction: true // Keep it open until clicked/dismissed so they don't miss it
+        });
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      } catch (e) {
+        console.error('Error creating desktop notification:', e);
+      }
+    }
+  };
+
+  // Loud and distinct sound pattern on timer completion (Triangle wave, loud and clear)
+  const playCompletionSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      const playBeep = (startTime: number, duration: number, frequency: number) => {
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        oscillator.type = 'triangle'; // Triangle is warmer and much louder than sine
+        oscillator.frequency.setValueAtTime(frequency, startTime);
+        
+        // Loud envelope that ramps up and stays at high volume (0.85) then fades out quickly
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.85, startTime + 0.04);
+        gainNode.gain.setValueAtTime(0.85, startTime + duration - 0.04);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+      };
+
+      const now = audioCtx.currentTime;
+      // High frequency double triple-beep rhythm so it is extremely noticeable
+      playBeep(now, 0.20, 880);         // Beep 1 (A5)
+      playBeep(now + 0.25, 0.20, 880);    // Beep 2 (A5)
+      playBeep(now + 0.50, 0.20, 880);    // Beep 3 (A5)
+      playBeep(now + 0.75, 0.45, 1200);   // Beep 4 (Higher pitch & longer)
+    } catch (e) {
+      console.error('Error playing notification sound:', e);
+    }
+  };
+
+  // Pomodoro Interval Timer Tick
+  useEffect(() => {
+    let interval: any = null;
+    if (timerIsActive && timeRemaining > 0) {
+      interval = setInterval(() => {
+        setTimeRemaining(prev => prev - 1);
+      }, 1000);
+    } else if (timeRemaining === 0 && timerIsActive) {
+      setTimerIsActive(false);
+      playCompletionSound();
+      if (timerMode === 'work') {
+        const newCount = completedPomodoros + 1;
+        setCompletedPomodoros(newCount);
+        localStorage.setItem('ecommil_completed_pomodoros', String(newCount));
+        setTimerMode('break');
+        setTimerMinutes(5);
+        setTimeRemaining(5 * 60);
+        showDesktopNotification('🎯 ¡Sesión Pomodoro Terminada!', 'Tómate un descanso de 5 minutos.');
+        alert('🎯 ¡Sesión Pomodoro Terminada! Tómate un descanso de 5 minutos.');
+      } else {
+        setTimerMode('work');
+        setTimerMinutes(25);
+        setTimeRemaining(25 * 60);
+        showDesktopNotification('💪 ¡Descanso Terminado!', 'De vuelta al enfoque.');
+        alert('💪 ¡Descanso Terminado! De vuelta al enfoque.');
+      }
+    }
+    return () => clearInterval(interval);
+  }, [timerIsActive, timeRemaining, timerMode, completedPomodoros]);
 
   // Fetch orders from Firestore
   useEffect(() => {
@@ -825,6 +1006,7 @@ function AppContent() {
                   className="bg-card/40 border border-border rounded-lg text-[10px] sm:text-[11px] py-1 pl-2.5 pr-7 text-slate-300 focus:outline-none focus:border-neon cursor-pointer max-w-[120px] sm:max-w-[180px] font-bold truncate transition-colors hover:border-border/80 appearance-none"
                 >
                   <option value="all">📦 Todos los Productos</option>
+                  <option value="sin_producto" className="bg-slate-950 text-slate-300">📦 Sin producto</option>
                   {globalUniqueProducts.map(prod => (
                     <option key={prod} value={prod} className="bg-slate-950 text-slate-300">
                       {prod}
@@ -1161,7 +1343,26 @@ function AppContent() {
                   currencies={dynamicCurrencies}
                 />
               )}
-              {activeTab === 'research' && <MarketResearch />}
+              {activeTab === 'research' && (
+                <MarketResearch 
+                  timerMinutes={timerMinutes}
+                  setTimerMinutes={setTimerMinutes}
+                  timeRemaining={timeRemaining}
+                  setTimeRemaining={setTimeRemaining}
+                  timerIsActive={timerIsActive}
+                  setTimerIsActive={setTimerIsActive}
+                  timerMode={timerMode}
+                  setTimerMode={setTimerMode}
+                  focusTask={focusTask}
+                  setFocusTask={setFocusTask}
+                  completedPomodoros={completedPomodoros}
+                  setCompletedPomodoros={setCompletedPomodoros}
+                  notificationPermission={notificationPermission}
+                  requestNotificationPermission={requestNotificationPermission}
+                  showDesktopNotification={showDesktopNotification}
+                  playCompletionSound={playCompletionSound}
+                />
+              )}
               {activeTab === 'ad-panel' && <AdPanel theme={theme} />}
               {activeTab === 'returns' && (
                 <ReturnsAnalysis 
@@ -1180,6 +1381,10 @@ function AppContent() {
                   currency={currency}
                   currencies={dynamicCurrencies}
                   isConversionActive={isConversionActive}
+                  selectedYear={selectedYear}
+                  setSelectedYear={setSelectedYear}
+                  selectedMonth={selectedMonth}
+                  setSelectedMonth={setSelectedMonth}
                 />
               )}
               {activeTab === 'platform-expenses' && (
@@ -1189,6 +1394,10 @@ function AppContent() {
                   currency={currency}
                   currencies={dynamicCurrencies}
                   isConversionActive={isConversionActive}
+                  fixedExpenses={fixedExpenses}
+                  setFixedExpenses={setFixedExpenses}
+                  variableExpenses={variableExpenses}
+                  setVariableExpenses={setVariableExpenses}
                 />
               )}
               {activeTab === 'shipping' && (
@@ -1201,13 +1410,21 @@ function AppContent() {
                 />
               )}
               {activeTab === 'financial' && (
-                <div className="space-y-6">
+                <div className="space-y-[15px]">
                   <FinancialSummary 
                     orders={filteredOrders} 
                     formatCurrency={formatCurrency} 
                     currency={currency}
                     currencies={dynamicCurrencies}
                     isConversionActive={isConversionActive}
+                    fixedExpenses={fixedExpenses}
+                    setFixedExpenses={setFixedExpenses}
+                    variableExpenses={variableExpenses}
+                    setVariableExpenses={setVariableExpenses}
+                    selectedYear={selectedYear}
+                    setSelectedYear={setSelectedYear}
+                    selectedMonth={selectedMonth}
+                    setSelectedMonth={setSelectedMonth}
                   />
                 </div>
               )}

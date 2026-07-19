@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import { 
   AlertTriangle, RotateCcw, XCircle, TrendingDown, Globe, Brain, Sparkles, Cpu, Loader2, 
-  BarChart3, TrendingUp, CheckCircle, ArrowRight, Plus, Trash2, Edit2, Calendar, FileText, 
+  BarChart3, TrendingUp, CheckCircle, ArrowRight, Plus, Trash2, Edit2, Calendar, FileText, X, 
   Search, Info, AlertCircle, RefreshCw, Palette, Tag, Check
 } from 'lucide-react';
 import { Order, calculateOrderProfit, CurrencyCode } from '../mockData';
@@ -391,6 +391,8 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
   const [noveltyTagFilter, setNoveltyTagFilter] = useState<string>('TODOS');
   const [noveltyDevolucionFilter, setNoveltyDevolucionFilter] = useState<string>('TODOS');
   const [formEtiquetaDevolucion, setFormEtiquetaDevolucion] = useState<string>('');
+  const [showCustomCauseInput, setShowCustomCauseInput] = useState(false);
+  const [tempCauseName, setTempCauseName] = useState('');
 
   // Tab state for professional return list vs novelties control
   const [activeSubTab, setActiveSubTab] = useState<'novelties' | 'all-returns'>('all-returns');
@@ -1612,69 +1614,112 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
               <div className="space-y-2">
                 <label className={`block uppercase tracking-widest font-extrabold font-display ${isLightWhite ? 'text-[12px] text-slate-600' : 'text-[14px] text-slate-300'}`}>Causa / Origen de Incidencia</label>
                 <div className="space-y-2">
-                  <select
-                    value={formOrigenNovedad}
-                    onChange={(e) => setFormOrigenNovedad(e.target.value)}
-                    className={`w-full border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
-                      isLightWhite 
-                        ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
-                        : 'bg-[#111] border-border text-white text-[14px]'
-                    }`}
-                  >
-                    <option value="Cliente no responde / Apagado / No contestó" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Cliente no responde / Apagado</option>
-                    <option value="Dirección incorrecta / incompleta / Sin cobertura" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Dirección incorrecta / Sin cobertura</option>
-                    <option value="Rechazado por precio / Falta de dinero" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Rechazado por precio / Falta de dinero</option>
-                    <option value="Paquete dañado / averiado por transportadora" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Paquete dañado por transportadora</option>
-                    <option value="Error en producto (Mala calidad, talla, color incorrecto)" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Error en producto (Fallas, color, talla)</option>
-                    <option value="Rechazado porque demoró mucho en llegar" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Demora excesiva en entrega</option>
-                    <option value="Estafa de entrega / Cliente arrepentido / No pidió" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Estafa de entrega / Cliente arrepentido / No pidió</option>
-                    <option value="Otro motivo de logística" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Otro motivo de logística</option>
-                    {customOrigines.map((cause, idx) => (
-                      <option key={idx} value={cause} className={isLightWhite ? 'bg-white text-cyan-600 font-sans' : 'bg-[#111] text-cyan-400 font-sans'}>
-                        {cause}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Input to append a dynamic cause option */}
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="text"
-                      id="dynamic-new-cause-box"
-                      placeholder="Nueva causa personalizada..."
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const val = (e.target as HTMLInputElement).value.trim();
-                          if (val && !customOrigines.includes(val)) {
-                            setCustomOrigines(prev => [...prev, val]);
-                            setFormOrigenNovedad(val);
-                            (e.target as HTMLInputElement).value = '';
+                  {!showCustomCauseInput ? (
+                    <div className="flex gap-2">
+                      <select
+                        value={formOrigenNovedad}
+                        onChange={(e) => {
+                          if (e.target.value === 'ADD_NEW') {
+                            setShowCustomCauseInput(true);
+                          } else {
+                            setFormOrigenNovedad(e.target.value);
                           }
-                        }
-                      }}
-                      className={`w-full border rounded-xl px-3 py-1.5 focus:outline-none focus:border-gold font-sans ${
-                        isLightWhite 
-                          ? 'bg-white border-slate-200 text-slate-800 text-[14px] placeholder-slate-400' 
-                          : 'bg-[#151522] border-border/85 text-white text-xs placeholder-slate-500'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const inputEl = document.getElementById('dynamic-new-cause-box') as HTMLInputElement;
-                        const val = inputEl?.value.trim();
-                        if (val && !customOrigines.includes(val)) {
-                          setCustomOrigines(prev => [...prev, val]);
-                          setFormOrigenNovedad(val);
-                          inputEl.value = '';
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-gold/10 hover:bg-gold/20 text-gold border border-gold/25 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer"
-                    >
-                      + Agregar
-                    </button>
-                  </div>
+                        }}
+                        className={`flex-1 border focus:border-gold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold font-sans ${
+                          isLightWhite 
+                            ? 'bg-white border-slate-200 text-slate-800 text-[15px]' 
+                            : 'bg-[#111] border-border text-white text-[14px]'
+                        }`}
+                      >
+                        <option value="Cliente no responde / Apagado / No contestó" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Cliente no responde / Apagado</option>
+                        <option value="Dirección incorrecta / incompleta / Sin cobertura" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Dirección incorrecta / Sin cobertura</option>
+                        <option value="Rechazado por precio / Falta de dinero" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Rechazado por precio / Falta de dinero</option>
+                        <option value="Paquete dañado / averiado por transportadora" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Paquete dañado por transportadora</option>
+                        <option value="Error en producto (Mala calidad, talla, color incorrecto)" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Error en producto (Fallas, color, talla)</option>
+                        <option value="Rechazado porque demoró mucho en llegar" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Demora excesiva en entrega</option>
+                        <option value="Estafa de entrega / Cliente arrepentido / No pidió" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Estafa de entrega / Cliente arrepentido / No pidió</option>
+                        <option value="Otro motivo de logística" className={isLightWhite ? 'bg-white text-slate-800' : 'bg-[#111] text-white'}>Otro motivo de logística</option>
+                        {customOrigines.map((cause, idx) => (
+                          <option key={idx} value={cause} className={isLightWhite ? 'bg-white text-cyan-600 font-sans' : 'bg-[#111] text-cyan-400 font-sans'}>
+                            {cause}
+                          </option>
+                        ))}
+                        <option value="ADD_NEW" className="text-gold font-bold font-sans">+ Agregar causa personalizada...</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomCauseInput(true)}
+                        className={`p-2.5 border rounded-xl transition-all flex items-center justify-center shrink-0 ${
+                          isLightWhite 
+                            ? 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100' 
+                            : 'bg-[#111] border-border text-slate-300 hover:bg-white/5'
+                        }`}
+                        title="Agregar Causa Personalizada"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Nueva causa personalizada..."
+                        value={tempCauseName}
+                        onChange={(e) => setTempCauseName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = tempCauseName.trim();
+                            if (val) {
+                              if (!customOrigines.includes(val)) {
+                                setCustomOrigines(prev => [...prev, val]);
+                              }
+                              setFormOrigenNovedad(val);
+                              setTempCauseName('');
+                              setShowCustomCauseInput(false);
+                            }
+                          }
+                        }}
+                        className={`flex-1 border rounded-xl px-4 py-2.5 focus:outline-none focus:border-gold font-sans ${
+                          isLightWhite 
+                            ? 'bg-white border-slate-200 text-slate-800 text-[14px] placeholder-slate-400' 
+                            : 'bg-[#151522] border-border/85 text-white text-xs placeholder-slate-500'
+                        }`}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = tempCauseName.trim();
+                          if (val) {
+                            if (!customOrigines.includes(val)) {
+                              setCustomOrigines(prev => [...prev, val]);
+                            }
+                            setFormOrigenNovedad(val);
+                            setTempCauseName('');
+                            setShowCustomCauseInput(false);
+                          }
+                        }}
+                        className="px-4 py-2.5 bg-gold hover:brightness-110 text-background rounded-xl text-xs font-extrabold uppercase whitespace-nowrap transition-all"
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTempCauseName('');
+                          setShowCustomCauseInput(false);
+                        }}
+                        className={`p-2.5 border rounded-xl transition-all flex items-center justify-center shrink-0 ${
+                          isLightWhite 
+                            ? 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100' 
+                            : 'bg-[#111] border-border text-slate-300 hover:bg-white/5'
+                        }`}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 

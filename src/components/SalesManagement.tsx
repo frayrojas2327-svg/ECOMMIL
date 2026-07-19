@@ -159,6 +159,8 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
   });
   const [newCatName, setNewCatName] = useState('');
   const [showNewCatInput, setShowNewCatInput] = useState(false);
+  const [showQuickNewCatInput, setShowQuickNewCatInput] = useState(false);
+  const [newQuickCatName, setNewQuickCatName] = useState('');
 
   // Persist categories
   useEffect(() => {
@@ -840,7 +842,7 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
 
           <div className="space-y-8">
             {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 gap-8">
               <div className="glass-card p-6 bg-black">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-display font-bold text-white flex items-center gap-2">
@@ -877,56 +879,6 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
                       <Bar dataKey="Google Ads" stackId="ads" fill="#34A853" radius={[0, 0, 0, 0]} />
                       <Bar dataKey="Otros Ads" stackId="ads" fill="#94a3b8" radius={[4, 4, 0, 0]} />
                     </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="glass-card p-6 bg-black">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-display font-bold text-white flex items-center gap-2">
-                    <TrendingUp size={20} className="text-neon" /> Proyección de Crecimiento
-                  </h3>
-                </div>
-                <div className="h-[350px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={stats.projectionData}>
-                      <defs>
-                        <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f1f2e" vertical={false} />
-                      <XAxis dataKey="name" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} />
-                      <YAxis 
-                        stroke="#475569" 
-                        fontSize={10} 
-                        tickLine={false} 
-                        axisLine={false} 
-                        tickFormatter={(val) => {
-                          if (val === 0) return '0';
-                          const rate = isConversionActive ? (currencies[currency]?.rate || 1) : 1;
-                          const converted = val * rate;
-                          if (converted >= 1000) return `${(converted/1000).toFixed(1)}k`;
-                          return converted.toFixed(0);
-                        }} 
-                      />
-                      <Tooltip 
-                        cursor={{ stroke: '#22c55e', strokeWidth: 2 }}
-                        contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '12px' }}
-                        itemStyle={{ fontSize: '13px', fontFamily: 'JetBrains Mono' }}
-                        formatter={(value: number) => formatCurrency(value)}
-                      />
-                      <Area 
-                        type="monotone" 
-                        dataKey="Profit Neto" 
-                        stroke="#22c55e" 
-                        strokeWidth={3}
-                        fillOpacity={1} 
-                        fill="url(#colorProfit)" 
-                        isAnimationActive={false}
-                      />
-                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -1173,39 +1125,59 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
                     </div>
                     <div className="space-y-1">
                       <label className="text-[18px] text-slate-500 font-bold uppercase">Tipo de Documento</label>
-                      <div className="flex gap-2">
-                        <select 
-                          value={reportFormData.category}
-                          onChange={(e) => {
-                            if (e.target.value === 'ADD_NEW') {
-                              setShowNewCatInput(true);
-                            } else {
-                              setReportFormData({ ...reportFormData, category: e.target.value });
-                            }
-                          }}
-                          className="flex-1 bg-black border border-zinc-800 rounded-lg p-2 text-sm text-white focus:border-neon outline-none"
-                        >
-                          {reportCategories.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                          ))}
-                          <option value="ADD_NEW" className="text-neon font-bold">+ Agregar Nueva...</option>
-                        </select>
-                      </div>
-                      
-                      <AnimatePresence>
-                        {showNewCatInput && (
-                          <motion.div 
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            className="mt-2 flex gap-2"
-                          >
+                      <div className="flex items-center gap-2">
+                        {!showNewCatInput ? (
+                          <>
+                            <select 
+                              value={reportFormData.category}
+                              onChange={(e) => {
+                                if (e.target.value === 'ADD_NEW') {
+                                  setShowNewCatInput(true);
+                                } else {
+                                  setReportFormData({ ...reportFormData, category: e.target.value });
+                                }
+                              }}
+                              className="flex-1 bg-black border border-zinc-800 rounded-lg p-2 text-sm text-white focus:border-neon outline-none"
+                            >
+                              {reportCategories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                              <option value="ADD_NEW" className="text-neon font-bold">+ Agregar Nueva...</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => setShowNewCatInput(true)}
+                              className="p-2.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-slate-400 hover:text-neon rounded-lg transition-all"
+                              title="Agregar Nueva Categoría"
+                            >
+                              <Plus size={14} />
+                            </button>
+                            {reportFormData.category && reportFormData.category !== 'Otros' && reportCategories.includes(reportFormData.category) && (
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  if (reportFormData.category && reportFormData.category !== 'Otros' && reportCategories.includes(reportFormData.category)) {
+                                    const filtered = reportCategories.filter(c => c !== reportFormData.category);
+                                    setReportCategories(filtered);
+                                    setReportFormData({ ...reportFormData, category: filtered[0] || 'Otros' });
+                                  }
+                                }}
+                                className="p-2.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg hover:bg-red-500 hover:text-white transition-all"
+                                title="Eliminar categoría actual"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex-1 flex gap-2">
                             <input 
                               type="text"
                               placeholder="Nueva categoría..."
                               value={newCatName}
                               onChange={(e) => setNewCatName(e.target.value)}
                               className="flex-1 bg-zinc-900 border border-neon/30 rounded-lg p-2 text-sm text-white outline-none focus:border-neon"
+                              autoFocus
                             />
                             <button 
                               type="button"
@@ -1220,34 +1192,20 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
                                   setShowNewCatInput(false);
                                 }
                               }}
-                              className="px-3 bg-neon text-background rounded-lg text-xs font-black"
+                              className="px-3 bg-neon text-background rounded-lg text-xs font-black uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all"
                             >
-                              Add
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => {
-                                if (reportFormData.category && reportFormData.category !== 'Otros' && reportCategories.includes(reportFormData.category)) {
-                                  const filtered = reportCategories.filter(c => c !== reportFormData.category);
-                                  setReportCategories(filtered);
-                                  setReportFormData({ ...reportFormData, category: filtered[0] || 'Otros' });
-                                }
-                              }}
-                              className="px-3 bg-red-500/20 text-red-500 rounded-lg text-xs font-black hover:bg-red-500 hover:text-white transition-all"
-                              title="Eliminar categoría actual"
-                            >
-                              <Trash2 size={12} />
+                              Guardar
                             </button>
                             <button 
                               type="button"
                               onClick={() => setShowNewCatInput(false)}
-                              className="p-2 text-slate-500"
+                              className="p-2.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-slate-400 hover:text-white rounded-lg transition-all"
                             >
                               <X size={14} />
                             </button>
-                          </motion.div>
+                          </div>
                         )}
-                      </AnimatePresence>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <label className="text-[18px] text-slate-500 font-bold uppercase">Fecha</label>
@@ -2500,56 +2458,34 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] text-zinc-500 font-black uppercase tracking-widest pl-1">Categoría</label>
-                    <div className="flex flex-col gap-2">
-                      <select 
-                        value={quickAddData.category}
-                        onChange={(e) => {
-                          if (e.target.value === 'ADD_NEW') {
-                            setShowNewCatInput(true);
-                          } else {
-                            setQuickAddData({ ...quickAddData, category: e.target.value });
-                          }
-                        }}
-                        className="w-full bg-black/50 border border-white/10 rounded-2xl p-4 text-sm text-white focus:border-neon outline-none"
-                      >
-                        {reportCategories.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                        <option value="ADD_NEW" className="text-neon font-bold">+ Agregar Nueva...</option>
-                      </select>
-
-                      <AnimatePresence>
-                        {showNewCatInput && (
-                          <motion.div 
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="flex gap-2 p-2 bg-black/30 rounded-xl border border-neon/20"
+                    <div className="flex items-center gap-2">
+                      {!showQuickNewCatInput ? (
+                        <>
+                          <select 
+                            value={quickAddData.category}
+                            onChange={(e) => {
+                              if (e.target.value === 'ADD_NEW') {
+                                setShowQuickNewCatInput(true);
+                              } else {
+                                setQuickAddData({ ...quickAddData, category: e.target.value });
+                              }
+                            }}
+                            className="flex-1 bg-black/50 border border-white/10 rounded-2xl p-4 text-sm text-white focus:border-neon outline-none"
                           >
-                            <input 
-                              type="text"
-                              placeholder="Nombre de categoría..."
-                              value={newCatName}
-                              onChange={(e) => setNewCatName(e.target.value)}
-                              className="flex-1 bg-transparent text-sm text-white outline-none px-2"
-                            />
-                            <button 
-                              type="button"
-                              onClick={() => {
-                                if (newCatName.trim()) {
-                                  const name = newCatName.trim();
-                                  if (!reportCategories.includes(name)) {
-                                    setReportCategories([...reportCategories, name]);
-                                  }
-                                  setQuickAddData({ ...quickAddData, category: name });
-                                  setNewCatName('');
-                                  setShowNewCatInput(false);
-                                }
-                              }}
-                              className="px-4 py-2 bg-neon text-background rounded-lg text-[10px] font-black uppercase tracking-widest"
-                            >
-                              Agregar
-                            </button>
+                            {reportCategories.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                            <option value="ADD_NEW" className="text-neon font-bold">+ Agregar Nueva...</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => setShowQuickNewCatInput(true)}
+                            className="p-3.5 bg-white/5 border border-white/10 hover:border-white/20 text-slate-400 hover:text-neon rounded-2xl transition-all"
+                            title="Agregar Nueva Categoría"
+                          >
+                            <Plus size={16} />
+                          </button>
+                          {quickAddData.category && quickAddData.category !== 'Otros' && reportCategories.includes(quickAddData.category) && (
                             <button 
                               type="button"
                               onClick={() => {
@@ -2559,21 +2495,49 @@ const SalesManagement: React.FC<SalesManagementProps> = ({
                                   setQuickAddData({ ...quickAddData, category: filtered[0] || 'Otros' });
                                 }
                               }}
-                              className="px-4 py-2 bg-red-500/20 text-red-500 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
+                              className="p-3.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
                               title="Eliminar categoría actual"
                             >
-                              <Trash2 size={12} />
+                              <Trash2 size={16} />
                             </button>
-                            <button 
-                              type="button"
-                              onClick={() => setShowNewCatInput(false)}
-                              className="p-2 text-slate-500"
-                            >
-                              <X size={16} />
-                            </button>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex-1 flex gap-2">
+                          <input 
+                            type="text"
+                            placeholder="Nueva categoría..."
+                            value={newQuickCatName}
+                            onChange={(e) => setNewQuickCatName(e.target.value)}
+                            className="flex-1 bg-zinc-900 border border-neon/30 rounded-2xl p-4 text-sm text-white outline-none focus:border-neon"
+                            autoFocus
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (newQuickCatName.trim()) {
+                                const name = newQuickCatName.trim();
+                                if (!reportCategories.includes(name)) {
+                                  setReportCategories([...reportCategories, name]);
+                                }
+                                setQuickAddData({ ...quickAddData, category: name });
+                                setNewQuickCatName('');
+                                setShowQuickNewCatInput(false);
+                              }
+                            }}
+                            className="px-4 py-2 bg-neon text-background rounded-2xl text-[10px] font-black uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all"
+                          >
+                            Agregar
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => setShowQuickNewCatInput(false)}
+                            className="p-3.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-slate-400 hover:text-white rounded-2xl transition-all"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

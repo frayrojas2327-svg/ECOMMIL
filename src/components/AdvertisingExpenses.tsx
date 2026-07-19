@@ -97,16 +97,50 @@ const MONTH_NAMES = [
 
 const YEAR_OPTIONS = ['2024', '2025', '2026', '2027', '2028'];
 
+const MONTH_COLORS: Record<string, { bg: string, text: string, border: string }> = {
+  '01': { bg: 'bg-sky-500/10', text: 'text-sky-400', border: 'border-sky-500/20' }, // Enero
+  '02': { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/20' }, // Febrero
+  '03': { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/20' }, // Marzo
+  '04': { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' }, // Abril
+  '05': { bg: 'bg-teal-500/10', text: 'text-teal-400', border: 'border-teal-500/20' }, // Mayo
+  '06': { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' }, // Junio
+  '07': { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20' }, // Julio
+  '08': { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' }, // Agosto
+  '09': { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20' }, // Septiembre
+  '10': { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/20' }, // Octubre
+  '11': { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20' }, // Noviembre
+  '12': { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20' }, // Diciembre
+};
+
+const getMonthDetails = (dateStr: string) => {
+  if (!dateStr) return { name: 'Desconocido', styles: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' } };
+  const parts = dateStr.split('-');
+  if (parts.length < 2) return { name: 'Desconocido', styles: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' } };
+  const monthVal = parts[1];
+  const monthObj = MONTH_NAMES.find(m => m.value === monthVal);
+  const name = monthObj ? monthObj.label : 'Desconocido';
+  const styles = MONTH_COLORS[monthVal] || { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' };
+  return { name, styles };
+};
+
 export default function AdvertisingExpenses({ 
   formatCurrency,
   currency,
   currencies,
-  isConversionActive 
+  isConversionActive,
+  selectedYear: propSelectedYear,
+  setSelectedYear: propSetSelectedYear,
+  selectedMonth: propSelectedMonth,
+  setSelectedMonth: propSetSelectedMonth
 }: { 
   formatCurrency: (amount: number) => string,
   currency: CurrencyCode,
   currencies: any,
-  isConversionActive: boolean
+  isConversionActive: boolean,
+  selectedYear?: string,
+  setSelectedYear?: React.Dispatch<React.SetStateAction<string>>,
+  selectedMonth?: string,
+  setSelectedMonth?: React.Dispatch<React.SetStateAction<string>>
 }) {
   const { user } = useAuth();
 
@@ -170,14 +204,20 @@ export default function AdvertisingExpenses({
   const [accountFilter, setAccountFilter] = useState('');
 
   // Month-by-month filtering states
-  const [selectedYear, setSelectedYear] = useState(() => {
+  const [localSelectedYear, localSetSelectedYear] = useState(() => {
     const now = new Date();
     return now.getFullYear().toString();
   });
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  const [localSelectedMonth, localSetSelectedMonth] = useState(() => {
     const now = new Date();
     return String(now.getMonth() + 1).padStart(2, '0');
   });
+
+  const selectedYear = (propSelectedYear && propSelectedYear !== '') ? propSelectedYear : localSelectedYear;
+  const setSelectedYear = propSetSelectedYear !== undefined ? propSetSelectedYear : localSetSelectedYear;
+  const selectedMonth = (propSelectedMonth && propSelectedMonth !== '') ? propSelectedMonth : localSelectedMonth;
+  const setSelectedMonth = propSetSelectedMonth !== undefined ? propSetSelectedMonth : localSetSelectedMonth;
+
   const [isMonthFilterActive, setIsMonthFilterActive] = useState(true);
   
   const uniqueAccounts = useMemo(() => {
@@ -984,6 +1024,7 @@ export default function AdvertisingExpenses({
             <thead>
               <tr className="bg-background/50 text-[13px] uppercase tracking-widest text-slate-500 font-display">
                 <th className="p-4 font-bold border-b border-border">Fecha</th>
+                <th className="p-4 font-bold border-b border-border">Mes</th>
                 <th className="p-4 font-bold border-b border-border">Producto</th>
                 <th className="p-4 font-bold border-b border-border">Plataforma</th>
                 <th className="p-4 font-bold border-b border-border">Detalles</th>
@@ -994,7 +1035,7 @@ export default function AdvertisingExpenses({
             <tbody className="text-[15px] font-mono">
               {filteredExpenses.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-slate-500 italic">
+                  <td colSpan={7} className="p-12 text-center text-slate-500 italic">
                     {expenses.length === 0 ? 'No hay gastos registrados aún.' : 'No se encontraron gastos con estos filtros.'}
                   </td>
                 </tr>
@@ -1040,6 +1081,17 @@ export default function AdvertisingExpenses({
                           }
                         })()
                       )}
+                    </td>
+                    <td className="p-4">
+                      {(() => {
+                        const dateVal = editingId === expense.id && tempEdit?.date ? tempEdit.date : expense.date;
+                        const { name: monthLabel, styles: monthStyles } = getMonthDetails(dateVal);
+                        return (
+                          <span className={`px-2.5 py-1 rounded-full border text-[11px] font-black uppercase tracking-wider ${monthStyles.bg} ${monthStyles.text} ${monthStyles.border}`}>
+                            {monthLabel}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-4">
                       {editingId === expense.id ? (

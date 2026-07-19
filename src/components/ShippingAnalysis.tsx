@@ -84,7 +84,11 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     }
     
     if (productFilter && productFilter !== 'all') {
-      res = res.filter(o => o.product === productFilter);
+      if (productFilter === 'sin_producto') {
+        res = res.filter(o => !o.product || o.product.trim() === '');
+      } else {
+        res = res.filter(o => o.product === productFilter);
+      }
     }
     
     return res;
@@ -643,6 +647,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                     className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-[180px] xl:w-[180px] occurrence-none appearance-none font-bold truncate"
                   >
                     <option value="all">📦 Producto: Todos</option>
+                    <option value="sin_producto">📦 Sin producto</option>
                     {uniqueProducts.map(prod => (
                       <option key={prod} value={prod}>
                         {prod}

@@ -84,14 +84,71 @@ const CURRENCY_OPTIONS = [
   'cl $ - Peso chileno ($)',
   'pe S/ - Sol peruano (S/)',
   'ec $ - Dólar ecuatoriano ($)',
-  'us $ - Dólar estadounidense ($)'
+  'us $ - Dólar estadounidense ($)',
+  'gt Q - Quetzal guatemalteco (Q)'
 ];
 
-export default function MarketResearch() {
+interface MarketResearchProps {
+  timerMinutes: number;
+  setTimerMinutes: React.Dispatch<React.SetStateAction<number>>;
+  timeRemaining: number;
+  setTimeRemaining: React.Dispatch<React.SetStateAction<number>>;
+  timerIsActive: boolean;
+  setTimerIsActive: React.Dispatch<React.SetStateAction<boolean>>;
+  timerMode: 'work' | 'break';
+  setTimerMode: React.Dispatch<React.SetStateAction<'work' | 'break'>>;
+  focusTask: string;
+  setFocusTask: React.Dispatch<React.SetStateAction<string>>;
+  completedPomodoros: number;
+  setCompletedPomodoros: React.Dispatch<React.SetStateAction<number>>;
+  notificationPermission: string;
+  requestNotificationPermission: () => Promise<void>;
+  showDesktopNotification: (title: string, body: string) => void;
+  playCompletionSound: () => void;
+}
+
+export default function MarketResearch({
+  timerMinutes,
+  setTimerMinutes,
+  timeRemaining,
+  setTimeRemaining,
+  timerIsActive,
+  setTimerIsActive,
+  timerMode,
+  setTimerMode,
+  focusTask,
+  setFocusTask,
+  completedPomodoros,
+  setCompletedPomodoros,
+  notificationPermission,
+  requestNotificationPermission,
+  showDesktopNotification,
+  playCompletionSound
+}: MarketResearchProps) {
   const { user, isDemoMode } = useAuth();
   const [researchList, setResearchList] = useState<MarketResearchEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [textSize, setTextSize] = useState<number>(18);
+  const textSize = 14;
+
+  const [calcProducts, setCalcProducts] = useState<any[]>([]);
+
+  // Load products from ProfitCalculator (1 unit)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ecommil_saved_products');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Filter for 1 unit products: packUnits === '1' or undefined/null/empty/missing
+        const oneUnitProducts = parsed.filter((p: any) => {
+          const units = p.packUnits || '1';
+          return units === '1';
+        });
+        setCalcProducts(oneUnitProducts);
+      }
+    } catch (e) {
+      console.error('Error loading products from calculator:', e);
+    }
+  }, []);
 
   // Active Workspace / Form State
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -120,14 +177,6 @@ export default function MarketResearch() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTaskText, setEditingTaskText] = useState('');
   const [editingTaskDesc, setEditingTaskDesc] = useState('');
-
-  // Pomodoro state
-  const [timerMinutes, setTimerMinutes] = useState(25);
-  const [timeRemaining, setTimeRemaining] = useState(25 * 60);
-  const [timerIsActive, setTimerIsActive] = useState(false);
-  const [timerMode, setTimerMode] = useState<'work' | 'break'>('work');
-  const [focusTask, setFocusTask] = useState('Busca nuevos productos');
-  const [completedPomodoros, setCompletedPomodoros] = useState(0);
 
   // Search History State
   const [searchHistoryTerm, setSearchHistoryTerm] = useState('');
@@ -173,59 +222,15 @@ export default function MarketResearch() {
     }
   }, [researchList, isDemoMode]);
 
-  // Pomodoro Interval Timer Tick
-  useEffect(() => {
-    let interval: any = null;
-    if (timerIsActive && timeRemaining > 0) {
-      interval = setInterval(() => {
-        setTimeRemaining(prev => prev - 1);
-      }, 1000);
-    } else if (timeRemaining === 0 && timerIsActive) {
-      setTimerIsActive(false);
-      playCompletionSound();
-      if (timerMode === 'work') {
-        setCompletedPomodoros(prev => prev + 1);
-        setTimerMode('break');
-        setTimerMinutes(5);
-        setTimeRemaining(5 * 60);
-        alert('🎯 ¡Sesión Pomodoro Terminada! Tómate un descanso de 5 minutos.');
-      } else {
-        setTimerMode('work');
-        setTimerMinutes(25);
-        setTimeRemaining(25 * 60);
-        alert('💪 ¡Descanso Terminado! De vuelta al enfoque.');
-      }
-    }
-    return () => clearInterval(interval);
-  }, [timerIsActive, timeRemaining, timerMode]);
-
-  // Sound beep function on timer completion
-  const playCompletionSound = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-      oscillator.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.15); // E5
-      oscillator.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.3); // G5
-      oscillator.frequency.setValueAtTime(1046.50, audioCtx.currentTime + 0.45); // C6
-      
-      gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.8);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   const testAlertSound = () => {
     playCompletionSound();
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        showDesktopNotification('⚡ Prueba de Alerta Ecommil', '¡Tu sonido y notificación de escritorio están funcionando correctamente!');
+      } else {
+        requestNotificationPermission();
+      }
+    }
   };
 
   // Timer controls helpers
@@ -257,11 +262,6 @@ export default function MarketResearch() {
   const resetTimer = (mins: number) => {
     setTimerIsActive(false);
     setTimeRemaining(mins * 60);
-  };
-
-  // Text size control helpers
-  const adjustTextSize = (delta: number) => {
-    setTextSize(prev => Math.max(12, Math.min(20, prev + delta)));
   };
 
   // Form URL list helpers
@@ -358,6 +358,13 @@ export default function MarketResearch() {
 
   const deleteChecklistItem = (id: string) => {
     setChecklist(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleSelectTaskForFocus = (taskText: string) => {
+    setFocusTask(taskText);
+    setTimerMode('work');
+    setTimeRemaining(timerMinutes * 60);
+    setTimerIsActive(true);
   };
 
   // Clear active form
@@ -534,7 +541,7 @@ export default function MarketResearch() {
   }
 
   return (
-    <div className="market-research-container space-y-6 text-slate-100 bg-[#000000] p-6 md:p-8 rounded-3xl border border-[#1a1a1a]" style={{ backgroundColor: '#000000', fontSize: `${textSize}px` }}>
+    <div className="market-research-container space-y-[15px] text-slate-100 bg-[#000000] p-6 md:p-8 rounded-3xl border border-[#1a1a1a]" style={{ backgroundColor: '#000000', fontSize: `${textSize}px` }}>
       <style>{`
         .market-research-container, 
         .market-research-container *, 
@@ -570,24 +577,6 @@ export default function MarketResearch() {
         
         {/* Header Actions */}
         <div className="flex flex-wrap items-center gap-2 lg:self-end">
-          <div className="flex items-center gap-1.5 bg-[#000000] p-1 rounded-xl border border-[#1a1a1a]" style={{ backgroundColor: '#000000' }}>
-            <button 
-              onClick={() => adjustTextSize(-1)} 
-              className="px-2 py-1 bg-white/5 border border-[#1a1a1a] hover:bg-white/10 text-slate-300 text-xs rounded-lg font-mono font-bold transition-all active:scale-95"
-              title="Reducir fuente"
-            >
-              A-
-            </button>
-            <span className="text-xs text-slate-400 font-mono font-bold px-1">{textSize}px</span>
-            <button 
-              onClick={() => adjustTextSize(1)} 
-              className="px-2 py-1 bg-white/5 border border-[#1a1a1a] hover:bg-white/10 text-slate-300 text-xs rounded-lg font-mono font-bold transition-all active:scale-95"
-              title="Aumentar fuente"
-            >
-              A+
-            </button>
-          </div>
-          
           <button 
             onClick={handleClearForm} 
             className="px-3.5 py-2 rounded-xl border border-[#1a1a1a] hover:border-slate-700 bg-[#000000] hover:bg-white/5 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
@@ -621,6 +610,75 @@ export default function MarketResearch() {
             </h3>
  
             <div className="space-y-4">
+              {calcProducts.length > 0 && (
+                <div className="space-y-1 bg-orange-500/5 border border-orange-500/15 p-3 rounded-xl mb-3">
+                  <label className="text-[10px] uppercase tracking-widest text-orange-400 font-black flex items-center gap-1.5">
+                    <Sparkles size={12} className="text-orange-500 animate-pulse" /> Autocompletar desde la Calculadora (1 Ud.)
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      if (!selectedId) return;
+                      const prod = calcProducts.find(p => p.id === selectedId);
+                      if (prod) {
+                        setProductName(prod.name);
+                        
+                        // Calculate recommended Selling Price (PV)
+                        let priceVal = '';
+                        if (prod.costPerUnit !== undefined) {
+                          const uUnits = parseFloat(prod.packUnits || '1') || 1;
+                          const cUnit = parseFloat(prod.costPerUnit || '0') || 0;
+                          const sBase = parseFloat(prod.shippingBase || '0') || 0;
+                          const dDispatch = parseFloat(prod.deliveryDispatchPercent || '100') || 100;
+                          const admin = parseFloat(prod.adminCosts || '0') || 0;
+                          const fulfillment = parseFloat(prod.fulfillment || '0') || 0;
+                          const cpa = parseFloat(prod.cpaAds || '0') || 0;
+                          const fDelivery = parseFloat(prod.finalDeliveryPercent || '100') || 100;
+                          const profitPct = parseFloat(prod.desiredProfitPercent || '0') || 0;
+
+                          const proveedor = cUnit * uUnits;
+                          const fleteDev = dDispatch > 0 ? sBase / (dDispatch / 100) : sBase;
+                          const cpaCosteado = fDelivery > 0 ? cpa / (fDelivery / 100) : cpa;
+                          const totalCost = proveedor + fleteDev + cpaCosteado + admin + fulfillment;
+                          const pv = profitPct < 100 ? totalCost / (1 - (profitPct / 100)) : totalCost;
+                          priceVal = String(Math.round(pv));
+                        } else if (prod.inputs?.price) {
+                          priceVal = String(prod.inputs.price);
+                        }
+                        if (priceVal) {
+                          setSuggestedPrice(priceVal);
+                        }
+                        
+                        // Set currency
+                        const prodCurrency = prod.currency || 'COP';
+                        let mappedOption = '';
+                        if (prodCurrency === 'COP') mappedOption = 'co $ - Peso colombiano ($)';
+                        else if (prodCurrency === 'MXN') mappedOption = 'mx $ - Peso mexicano ($)';
+                        else if (prodCurrency === 'CLP') mappedOption = 'cl $ - Peso chileno ($)';
+                        else if (prodCurrency === 'PEN') mappedOption = 'pe S/ - Sol peruano (S/)';
+                        else if (prodCurrency === 'USD') mappedOption = 'us $ - Dólar estadounidense ($)';
+                        else if (prodCurrency === 'GTQ') mappedOption = 'gt Q - Quetzal guatemalteco (Q)';
+                        
+                        if (mappedOption) {
+                          setCurrency(mappedOption);
+                        }
+                      }
+                      // Clear the value so user can re-select if needed
+                      e.target.value = '';
+                    }}
+                    className="w-full bg-[#000000] border border-orange-500/20 hover:border-orange-500/40 rounded-xl px-3 py-2 text-xs text-orange-300 focus:border-orange-500 outline-none transition-all cursor-pointer font-bold"
+                    style={{ backgroundColor: '#000000' }}
+                  >
+                    <option value="" className="text-slate-500">-- Seleccionar producto de 1 unidad --</option>
+                    {calcProducts.map((p) => (
+                      <option key={p.id} value={p.id} className="text-white bg-black">
+                        {p.name} ({p.currency})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Nombre del Producto / Oferta</label>
                 <input 
@@ -632,18 +690,20 @@ export default function MarketResearch() {
                   style={{ backgroundColor: '#000000' }}
                 />
               </div>
- 
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Precio de Venta Sugerido</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">
+                      {currency.includes('(Q)') ? 'Q' : currency.includes('(S/)') ? 'S/' : '$'}
+                    </span>
                     <input 
                       type="number"
                       placeholder="Ej: 79900"
                       value={suggestedPrice}
                       onChange={(e) => setSuggestedPrice(e.target.value)}
-                      className="w-full bg-[#000000] border border-[#1a1a1a] rounded-xl py-2 pl-7 pr-3 text-xs text-white placeholder-slate-600 focus:border-slate-700 outline-none font-mono"
+                      className={`w-full bg-[#000000] border border-[#1a1a1a] rounded-xl py-2 ${currency.includes('(S/)') ? 'pl-9' : 'pl-7'} pr-3 text-xs text-white placeholder-slate-600 focus:border-slate-700 outline-none font-mono`}
                       style={{ backgroundColor: '#000000' }}
                     />
                   </div>
@@ -1016,6 +1076,36 @@ export default function MarketResearch() {
                 Completados: <span className="text-white font-mono font-bold bg-orange-500/15 px-1.5 py-0.5 rounded border border-orange-500/30">{completedPomodoros} 🍅</span>
               </span>
             </div>
+
+            {/* Desktop Notification Request/Status Block */}
+            <div className="mt-2 pt-2 border-t border-[#1a1a1a]">
+              {typeof window !== 'undefined' && 'Notification' in window ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9px] text-slate-500 uppercase font-mono tracking-wider font-bold">Notificaciones de PC:</span>
+                  {notificationPermission === 'default' ? (
+                    <button
+                      type="button"
+                      onClick={requestNotificationPermission}
+                      className="px-2 py-0.5 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/35 text-orange-400 font-bold text-[9px] rounded-lg transition-all active:scale-95"
+                    >
+                      🔔 Activar
+                    </button>
+                  ) : notificationPermission === 'denied' ? (
+                    <span className="text-[9px] text-red-500/80 font-bold" title="Habilita las notificaciones en la configuración de candado de tu navegador">
+                      ❌ Bloqueadas
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activas
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-[8px] text-slate-500 block text-center">
+                  ⚠️ Tu navegador no soporta notificaciones de PC
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Card 5: Launch Checklist */}
@@ -1039,88 +1129,105 @@ export default function MarketResearch() {
 
             {/* Task list */}
             <div className="space-y-2 mb-6">
-              {checklist.map((task) => (
-                <div 
-                  key={task.id} 
-                  className={`flex items-start justify-between p-3 rounded-xl border transition-all ${task.completed ? 'bg-emerald-500/5 border-emerald-500/15 text-slate-400' : 'bg-[#000000] border-[#1a1a1a] text-slate-200 hover:border-slate-800'}`}
-                  style={{ backgroundColor: task.completed ? undefined : '#000000' }}
-                >
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <button 
-                      type="button"
-                      onClick={() => toggleChecklistCompleted(task.id)}
-                      className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-all shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-400 text-black' : 'border-slate-700 hover:border-slate-500 bg-[#000000]'}`}
-                      style={{ backgroundColor: '#000000' }}
-                    >
-                      {task.completed && <Check size={10} strokeWidth={4} />}
-                    </button>
-                    
-                    <div className="flex-1 min-w-0">
-                      {editingTaskId === task.id ? (
-                        <div className="space-y-2 mt-0.5">
-                          <input 
-                            type="text"
-                            value={editingTaskText}
-                            onChange={(e) => setEditingTaskText(e.target.value)}
-                            className="w-full bg-[#000000] border border-slate-800 rounded px-2.5 py-1 text-xs text-white"
-                            style={{ backgroundColor: '#000000' }}
-                          />
-                          <textarea 
-                            value={editingTaskDesc}
-                            onChange={(e) => setEditingTaskDesc(e.target.value)}
-                            className="w-full bg-[#000000] border border-slate-800 rounded px-2.5 py-1 text-[11px] text-slate-400 resize-none leading-relaxed"
-                            style={{ backgroundColor: '#000000' }}
-                            rows={2}
-                          />
-                          <div className="flex gap-1.5">
-                            <button onClick={saveEditingTask} className="px-2.5 py-1 bg-emerald-500 text-black font-bold text-[10px] rounded-lg hover:brightness-110 active:scale-95 transition-all">Guardar</button>
-                            <button onClick={() => setEditingTaskId(null)} className="px-2.5 py-1 bg-slate-800 text-slate-300 text-[10px] rounded-lg hover:bg-slate-700 active:scale-95 transition-all">Cancelar</button>
+              {checklist.map((task) => {
+                const isFocused = focusTask === task.text && !task.completed && timerIsActive;
+                return (
+                  <div 
+                    key={task.id} 
+                    className={`flex items-start justify-between p-3 rounded-xl border transition-all ${
+                      task.completed 
+                        ? 'bg-emerald-500/5 border-emerald-500/15 text-slate-400' 
+                        : isFocused 
+                          ? 'bg-orange-500/5 border-orange-500/40 text-slate-200 ring-1 ring-orange-500/20' 
+                          : 'bg-[#000000] border-[#1a1a1a] text-slate-200 hover:border-slate-800'
+                    }`}
+                    style={{ backgroundColor: task.completed ? undefined : isFocused ? 'rgba(249, 115, 22, 0.05)' : '#000000' }}
+                  >
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <button 
+                        type="button"
+                        onClick={() => toggleChecklistCompleted(task.id)}
+                        className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-all shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-400 text-black' : 'border-slate-700 hover:border-slate-500 bg-[#000000]'}`}
+                        style={{ backgroundColor: '#000000' }}
+                      >
+                        {task.completed && <Check size={10} strokeWidth={4} />}
+                      </button>
+                      
+                      <div 
+                        className={`flex-1 min-w-0 ${!task.completed ? 'cursor-pointer' : ''}`}
+                        onClick={() => !task.completed && handleSelectTaskForFocus(task.text)}
+                      >
+                        {editingTaskId === task.id ? (
+                          <div className="space-y-2 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                            <input 
+                              type="text"
+                              value={editingTaskText}
+                              onChange={(e) => setEditingTaskText(e.target.value)}
+                              className="w-full bg-[#000000] border border-slate-800 rounded px-2.5 py-1 text-xs text-white"
+                              style={{ backgroundColor: '#000000' }}
+                            />
+                            <textarea 
+                              value={editingTaskDesc}
+                              onChange={(e) => setEditingTaskDesc(e.target.value)}
+                              className="w-full bg-[#000000] border border-slate-800 rounded px-2.5 py-1 text-[11px] text-slate-400 resize-none leading-relaxed"
+                              style={{ backgroundColor: '#000000' }}
+                              rows={2}
+                            />
+                            <div className="flex gap-1.5">
+                              <button onClick={saveEditingTask} className="px-2.5 py-1 bg-emerald-500 text-black font-bold text-[10px] rounded-lg hover:brightness-110 active:scale-95 transition-all">Guardar</button>
+                              <button onClick={() => setEditingTaskId(null)} className="px-2.5 py-1 bg-slate-800 text-slate-300 text-[10px] rounded-lg hover:bg-slate-700 active:scale-95 transition-all">Cancelar</button>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className={`font-bold text-xs ${task.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
-                            {task.text}
-                          </div>
-                          {task.description && (
-                            <p className={`text-[10px] mt-0.5 leading-relaxed ${task.completed ? 'text-slate-600' : 'text-slate-500'}`}>
-                              {task.description}
-                            </p>
-                          )}
-                        </>
-                      )}
+                        ) : (
+                          <>
+                            <div className={`font-bold text-xs ${task.completed ? 'line-through text-slate-500' : isFocused ? 'text-orange-400' : 'text-slate-200'} flex flex-wrap items-center gap-1.5`}>
+                              {task.text}
+                              {isFocused && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 text-[8px] font-black uppercase tracking-wider animate-pulse">
+                                  ⏱️ EN FOCO
+                                </span>
+                              )}
+                            </div>
+                            {task.description && (
+                              <p className={`text-[10px] mt-0.5 leading-relaxed ${task.completed ? 'text-slate-600' : isFocused ? 'text-orange-200/60' : 'text-slate-500'}`}>
+                                {task.description}
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Task Actions */}
+                    <div className="flex items-center gap-1 ml-2 self-start shrink-0">
+                      <button 
+                        type="button"
+                        onClick={() => handleSelectTaskForFocus(task.text)}
+                        className={`p-1 transition-colors ${isFocused ? 'text-orange-400' : 'text-slate-500 hover:text-orange-400'}`}
+                        title="Enfocar con Pomodoro"
+                      >
+                        <Clock size={11} />
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => startEditingTask(task)}
+                        className="p-1 text-slate-500 hover:text-blue-400 transition-colors"
+                        title="Editar"
+                      >
+                        <Edit2 size={11} />
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => deleteChecklistItem(task.id)}
+                        className="p-1 text-slate-500 hover:text-red-500 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   </div>
-
-                  {/* Task Actions */}
-                  <div className="flex items-center gap-1 ml-2 self-start shrink-0">
-                    <button 
-                      type="button"
-                      onClick={() => { setFocusTask(task.text); setTimerIsActive(true); }}
-                      className="p-1 text-slate-500 hover:text-orange-400 transition-colors"
-                      title="Enfocar con Pomodoro"
-                    >
-                      <Clock size={11} />
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => startEditingTask(task)}
-                      className="p-1 text-slate-500 hover:text-blue-400 transition-colors"
-                      title="Editar"
-                    >
-                      <Edit2 size={11} />
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => deleteChecklistItem(task.id)}
-                      className="p-1 text-slate-500 hover:text-red-500 transition-colors"
-                      title="Eliminar"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Add Custom task block */}
@@ -1247,7 +1354,8 @@ export default function MarketResearch() {
                     <td className="py-4 text-right font-mono font-bold text-emerald-400">
                       {item.price ? (
                         <span>
-                          {item.currency?.includes('($)') ? '$' : ''}{item.price.toLocaleString()}{item.currency?.replace(/.*\((.*)\).*/, ' $1') || ''}
+                          {item.currency?.includes('(Q)') ? 'Q ' : item.currency?.includes('(S/)') ? 'S/ ' : item.currency?.includes('($)') ? '$ ' : ''}
+                          {item.price.toLocaleString()}
                         </span>
                       ) : (
                         <span className="text-slate-600">-</span>

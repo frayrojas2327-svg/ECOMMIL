@@ -30,6 +30,14 @@ interface FinancialSummaryProps {
   currency?: CurrencyCode;
   currencies?: any;
   isConversionActive?: boolean;
+  fixedExpenses: any[];
+  setFixedExpenses: React.Dispatch<React.SetStateAction<any[]>>;
+  variableExpenses: any[];
+  setVariableExpenses: React.Dispatch<React.SetStateAction<any[]>>;
+  selectedYear?: string;
+  setSelectedYear?: React.Dispatch<React.SetStateAction<string>>;
+  selectedMonth?: string;
+  setSelectedMonth?: React.Dispatch<React.SetStateAction<string>>;
 }
 
 const matchDatePrefix = (dateStr: string, prefix: string) => {
@@ -64,7 +72,15 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
   formatCurrency, 
   currency = 'USD', 
   currencies = {}, 
-  isConversionActive = false 
+  isConversionActive = false,
+  fixedExpenses,
+  setFixedExpenses,
+  variableExpenses,
+  setVariableExpenses,
+  selectedYear: propSelectedYear,
+  setSelectedYear: propSetSelectedYear,
+  selectedMonth: propSelectedMonth,
+  setSelectedMonth: propSetSelectedMonth
 }) => {
   const { user, isDemoMode } = useAuth();
   
@@ -137,13 +153,25 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     };
   }, [orders]);
 
-  const [selectedYear, setSelectedYear] = useState(defaultYearMonth.year);
-  const [selectedMonth, setSelectedMonth] = useState(defaultYearMonth.month);
+  const [localSelectedYear, localSetSelectedYear] = useState(defaultYearMonth.year);
+  const [localSelectedMonth, localSetSelectedMonth] = useState(defaultYearMonth.month);
+
+  const selectedYear = (propSelectedYear && propSelectedYear !== '') ? propSelectedYear : localSelectedYear;
+  const setSelectedYear = propSetSelectedYear !== undefined ? propSetSelectedYear : localSetSelectedYear;
+  const selectedMonth = (propSelectedMonth && propSelectedMonth !== '') ? propSelectedMonth : localSelectedMonth;
+  const setSelectedMonth = propSetSelectedMonth !== undefined ? propSetSelectedMonth : localSetSelectedMonth;
 
   useEffect(() => {
-    setSelectedYear(defaultYearMonth.year);
-    setSelectedMonth(defaultYearMonth.month);
-  }, [defaultYearMonth]);
+    if (propSelectedYear === undefined) {
+      localSetSelectedYear(defaultYearMonth.year);
+    }
+    if (propSelectedMonth === undefined) {
+      localSetSelectedMonth(defaultYearMonth.month);
+    }
+  }, [defaultYearMonth, propSelectedYear, propSelectedMonth]);
+
+  const [showFeesDetail, setShowFeesDetail] = useState(false);
+  const [showOtherDetail, setShowOtherDetail] = useState(false);
 
   const monthKey = `${selectedYear}-${selectedMonth}`;
 
@@ -283,6 +311,46 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     };
   }, [filteredOrders, adExpenses, selectedYear, selectedMonth]);
 
+  // Combine, deduplicate, and sort all expenses for the selected month in memory
+  const unifiedExpenses = useMemo(() => {
+    const monthPrefix = `${selectedYear}-${selectedMonth}`;
+    
+    const mFixed = fixedExpenses
+      .filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix))
+      .map(e => ({
+        ...e,
+        source: 'fixed' as const,
+        typeLabel: 'Fijo (Plataforma)',
+        date: e.startDate
+      }));
+
+    const mVariable = variableExpenses
+      .filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix))
+      .map(e => ({
+        ...e,
+        source: 'variable' as const,
+        typeLabel: 'Variable (Plataforma)',
+        date: e.startDate
+      }));
+
+    // Deduplicate manual other expenses against fixed/variable
+    const mOther = otherExpenses
+      .filter(e => e.date && matchDatePrefix(e.date, monthPrefix))
+      .filter(e => {
+        const isDuplicateOfFixed = mFixed.some(f => f.name.toLowerCase().trim() === e.name.toLowerCase().trim() && Math.abs(fromUSD(f.amount) - fromUSD(e.amount)) < 0.05);
+        const isDuplicateOfVariable = mVariable.some(v => v.name.toLowerCase().trim() === e.name.toLowerCase().trim() && Math.abs(fromUSD(v.amount) - fromUSD(e.amount)) < 0.05);
+        return !isDuplicateOfFixed && !isDuplicateOfVariable;
+      })
+      .map(e => ({
+        ...e,
+        source: 'other' as const,
+        typeLabel: 'Manual',
+        date: e.date
+      }));
+
+    return [...mFixed, ...mVariable, ...mOther].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [fixedExpenses, variableExpenses, otherExpenses, selectedYear, selectedMonth]);
+
   // System raw calculations for selected month in USD (Direct integration with Dropi uploads)
   const systemCalculatedDataUSD = useMemo(() => {
     let revenue = 0;
@@ -326,11 +394,10 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     const monthlyAdExpenses = adExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
     ads = monthlyAdExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    const monthlyOther = otherExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
-    const otherExpensesSum = monthlyOther.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const otherExpensesSum = unifiedExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
     return { revenue, cogs, shipping, ads, fees, returnsLoss, otherExpenses: otherExpensesSum };
-  }, [filteredOrders, adExpenses, otherExpenses, selectedYear, selectedMonth]);
+  }, [filteredOrders, adExpenses, unifiedExpenses, selectedYear, selectedMonth]);
 
   // Load Overrides state
   const [overrides, setOverrides] = useState<Record<string, {
@@ -523,6 +590,13 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
         }
       });
 
+      // Add fixed & variable platform expenses for this specific month key to otherExpensesUSD instead of sysFees
+      const mFixed = fixedExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, mKey));
+      const mVariable = variableExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, mKey));
+      const mPlatExpUSD = mFixed.reduce((sum, e) => sum + (e.amount || 0), 0) + 
+                          mVariable.reduce((sum, e) => sum + (e.amount || 0), 0);
+      const finalOtherExpensesUSD = otherExpensesUSD + mPlatExpUSD;
+
       const override = overrides[mKey];
       const base = override || {
         revenue: sysRevenue,
@@ -531,7 +605,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
         ads: adsUSD,
         fees: sysFees,
         returnsLoss: sysReturnsLoss,
-        otherExpenses: otherExpensesUSD
+        otherExpenses: finalOtherExpensesUSD
       };
 
       const finalRev = base.revenue;
@@ -540,7 +614,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       const finalAds = base.ads ?? adsUSD;
       const finalFees = base.fees;
       const finalReturnsLoss = base.returnsLoss;
-      const finalOther = base.otherExpenses ?? otherExpensesUSD;
+      const finalOther = base.otherExpenses ?? finalOtherExpensesUSD;
 
       const grossProfit = finalRev - finalCogs;
       const netProfit = grossProfit - finalShipping - finalAds - finalFees - finalReturnsLoss - finalOther;
@@ -578,7 +652,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       }
     }
     return deDuplicated;
-  }, [orders, overrides, adExpenses, otherExpenses, selectedYear, selectedMonth]);
+  }, [orders, overrides, adExpenses, otherExpenses, selectedYear, selectedMonth, fixedExpenses, variableExpenses]);
 
   // Local editing states (maintained in display currency for the user's convenience)
   const [isEditing, setIsEditing] = useState(false);
@@ -689,6 +763,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
 
   const [showAdsDetail, setShowAdsDetail] = useState(false);
   const [showAddOtherForm, setShowAddOtherForm] = useState(false);
+  const [newExpenseType, setNewExpenseType] = useState<'other' | 'fixed' | 'variable'>('other');
   const [newOtherExpense, setNewOtherExpense] = useState({
     name: '',
     category: 'Software',
@@ -712,23 +787,59 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     const amtInDisplay = Number(newOtherExpense.amount);
     const amtInUSD = toUSD(amtInDisplay);
 
-    const expenseObj = {
-      uid: user?.uid || 'demo',
-      name: newOtherExpense.name,
-      category: newOtherExpense.category,
-      amount: amtInUSD,
-      date: newOtherExpense.date,
-      timestamp: Date.now()
-    };
+    // Enforce that it saves in the currently selected year & month
+    let finalDate = newOtherExpense.date;
+    const expectedPrefix = `${selectedYear}-${selectedMonth}`;
+    if (!finalDate.startsWith(expectedPrefix)) {
+      const dayPart = finalDate.split('-')[2] || '01';
+      finalDate = `${expectedPrefix}-${dayPart}`;
+    }
 
     try {
-      if (user && !isDemoMode && isFirebaseConfigValid) {
-        await addDoc(collection(db, 'other_platform_expenses'), expenseObj);
-      } else {
-        // Local state offline update
-        const localItems = [...otherExpenses, { id: 'local_' + Date.now(), ...expenseObj }];
-        setOtherExpenses(localItems);
-        localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(localItems));
+      if (newExpenseType === 'other') {
+        const expenseObj = {
+          uid: user?.uid || 'demo',
+          name: newOtherExpense.name,
+          category: newOtherExpense.category,
+          amount: amtInUSD,
+          date: finalDate,
+          timestamp: Date.now()
+        };
+
+        if (user && !isDemoMode && isFirebaseConfigValid) {
+          await addDoc(collection(db, 'other_platform_expenses'), expenseObj);
+        } else {
+          // Local state offline update
+          const localItems = [...otherExpenses, { id: 'local_' + Date.now(), ...expenseObj }];
+          setOtherExpenses(localItems);
+          localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(localItems));
+        }
+      } else if (newExpenseType === 'fixed') {
+        const newId = 'fixed_' + Math.random().toString(36).substring(2, 9);
+        const fixedItem = {
+          id: newId,
+          name: newOtherExpense.name,
+          category: newOtherExpense.category,
+          amount: amtInUSD,
+          originalAmount: amtInDisplay,
+          originalCurrency: currency,
+          frequency: 'monthly' as const,
+          startDate: finalDate,
+          endDate: ''
+        };
+        setFixedExpenses(prev => [...prev, fixedItem]);
+      } else if (newExpenseType === 'variable') {
+        const newId = 'var_' + Math.random().toString(36).substring(2, 9);
+        const variableItem = {
+          id: newId,
+          name: newOtherExpense.name,
+          amount: amtInUSD,
+          originalAmount: amtInDisplay,
+          originalCurrency: currency,
+          startDate: finalDate,
+          endDate: ''
+        };
+        setVariableExpenses(prev => [...prev, variableItem]);
       }
 
       // Reset form
@@ -740,24 +851,132 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       });
       setShowAddOtherForm(false);
     } catch (err) {
-      console.error("Error adding other expense:", err);
+      console.error("Error adding expense:", err);
       alert("Error al guardar el gasto");
     }
   };
 
-  const handleDeleteOtherExpense = async (id: string) => {
-    if (!window.confirm('¿Seguro que deseas eliminar este gasto?')) return;
+  const handleImportAllPlatformExpenses = async () => {
+    const monthPrefix = `${selectedYear}-${selectedMonth}`;
+    const mFixed = fixedExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix));
+    const mVariable = variableExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix));
+    
+    if (mFixed.length === 0 && mVariable.length === 0) {
+      alert("No hay gastos fijos ni variables registrados en este mes para importar.");
+      return;
+    }
+
+    const currentMonthOthers = otherExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
+    
+    let importedCount = 0;
+    const toImport = [];
+
+    // Filter out duplicates
+    for (const e of mFixed) {
+      const isDuplicate = currentMonthOthers.some(existing => 
+        existing.name.toLowerCase() === e.name.toLowerCase() && 
+        Math.abs(fromUSD(existing.amount) - fromUSD(e.amount)) < 0.01
+      );
+      if (!isDuplicate) {
+        toImport.push({
+          uid: user?.uid || 'demo',
+          name: e.name,
+          category: e.category || 'Software',
+          amount: e.amount, // base in USD
+          date: e.startDate || `${selectedYear}-${selectedMonth}-01`,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    for (const e of mVariable) {
+      const isDuplicate = currentMonthOthers.some(existing => 
+        existing.name.toLowerCase() === e.name.toLowerCase() && 
+        Math.abs(fromUSD(existing.amount) - fromUSD(e.amount)) < 0.01
+      );
+      if (!isDuplicate) {
+        toImport.push({
+          uid: user?.uid || 'demo',
+          name: e.name,
+          category: 'Software',
+          amount: e.amount, // base in USD
+          date: e.startDate || `${selectedYear}-${selectedMonth}-01`,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    if (toImport.length === 0) {
+      alert("Todos los gastos de plataforma de este mes ya fueron importados.");
+      return;
+    }
 
     try {
       if (user && !isDemoMode && isFirebaseConfigValid) {
-        await deleteDoc(doc(db, 'other_platform_expenses', id));
+        // Save to Firebase
+        for (const item of toImport) {
+          await addDoc(collection(db, 'other_platform_expenses'), item);
+          importedCount++;
+        }
       } else {
-        const updated = otherExpenses.filter(e => e.id !== id);
-        setOtherExpenses(updated);
-        localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(updated));
+        // Local state offline update
+        const newItems = [...otherExpenses];
+        for (const item of toImport) {
+          newItems.push({ id: 'local_' + Date.now() + '_' + Math.random(), ...item });
+          importedCount++;
+        }
+        setOtherExpenses(newItems);
+        localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(newItems));
+      }
+      alert(`Se importaron con éxito ${importedCount} gastos de plataforma para ${currentMonthLabel} ${selectedYear}`);
+    } catch (err) {
+      console.error("Error importing platform expenses:", err);
+      alert("Error al importar los gastos");
+    }
+  };
+
+  const handleDirectAddOtherExpense = async (expenseObj: {
+    uid: string;
+    name: string;
+    category: string;
+    amount: number;
+    date: string;
+    timestamp: number;
+  }) => {
+    try {
+      if (user && !isDemoMode && isFirebaseConfigValid) {
+        await addDoc(collection(db, 'other_platform_expenses'), expenseObj);
+      } else {
+        // Local state offline update
+        const localItems = [...otherExpenses, { id: 'local_' + Date.now(), ...expenseObj }];
+        setOtherExpenses(localItems);
+        localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(localItems));
       }
     } catch (err) {
-      console.error("Error deleting other expense:", err);
+      console.error("Error copying platform expense:", err);
+      alert("Error al copiar el gasto");
+    }
+  };
+
+  const handleDeleteOtherExpense = async (expense: any) => {
+    if (!window.confirm(`¿Seguro que deseas eliminar este gasto (${expense.name})?`)) return;
+
+    try {
+      if (expense.source === 'other') {
+        if (user && !isDemoMode && isFirebaseConfigValid) {
+          await deleteDoc(doc(db, 'other_platform_expenses', expense.id));
+        } else {
+          const updated = otherExpenses.filter(e => e.id !== expense.id);
+          setOtherExpenses(updated);
+          localStorage.setItem('ecommil_other_platform_expenses', JSON.stringify(updated));
+        }
+      } else if (expense.source === 'fixed') {
+        setFixedExpenses(prev => prev.filter(e => e.id !== expense.id));
+      } else if (expense.source === 'variable') {
+        setVariableExpenses(prev => prev.filter(e => e.id !== expense.id));
+      }
+    } catch (err) {
+      console.error("Error deleting expense:", err);
     }
   };
 
@@ -958,6 +1177,23 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                   >
                     <Edit2 size={14} /> Editar Valores
                   </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowAddOtherForm(true);
+                      setTimeout(() => {
+                        const element = document.getElementById('other-expenses-section');
+                        if (element) {
+                          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          const nameInput = document.getElementById('new-expense-name-input');
+                          if (nameInput) nameInput.focus();
+                        }
+                      }, 100);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm rounded-lg transition-all active:scale-95 cursor-pointer"
+                  >
+                    <span>➕ Agregar Gasto</span>
+                  </button>
                   {activeData.isOverridden && (
                     <button 
                       onClick={handleResetToSystem}
@@ -982,6 +1218,23 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                     Guardar
                   </button>
                   <button 
+                    type="button"
+                    onClick={() => {
+                      setShowAddOtherForm(true);
+                      setTimeout(() => {
+                        const element = document.getElementById('other-expenses-section');
+                        if (element) {
+                          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          const nameInput = document.getElementById('new-expense-name-input');
+                          if (nameInput) nameInput.focus();
+                        }
+                      }, 100);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm rounded-lg transition-all active:scale-95 cursor-pointer"
+                  >
+                    <span>➕ Agregar Gasto</span>
+                  </button>
+                  <button 
                     onClick={() => setIsEditing(false)}
                     disabled={saving}
                     className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-800 text-slate-400 hover:bg-slate-900 text-sm rounded-lg font-bold transition-all"
@@ -998,7 +1251,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             {/* INGRESO ROW */}
             <div className="flex justify-between items-start py-2 border-b border-slate-900 gap-4">
               <div>
-                <span className="text-base text-slate-300 block text-left">Ingresos Totales (Ventas)</span>
+                <span className="text-[15px] text-slate-300 block text-left">Ingresos Totales (Ventas)</span>
                 <span className="text-[11px] text-slate-500 font-mono block text-left">
                   Suma de {systemExplainer.deliveredCount} pedidos &quot;Entregado&quot; para este mes
                 </span>
@@ -1010,12 +1263,12 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                     type="number"
                     value={editedRevenue}
                     onChange={(e) => setEditedRevenue(Number(e.target.value))}
-                    className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
+                    className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
                     placeholder="0"
                   />
                 </div>
               ) : (
-                <span className="text-base font-mono font-bold text-emerald-400 shrink-0">
+                <span className="text-[15px] font-mono font-bold text-emerald-400 shrink-0">
                   {localFormatCurrency(activeData.revenue)}
                 </span>
               )}
@@ -1024,7 +1277,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             {/* COGS ROW */}
             <div className="flex justify-between items-start py-2 border-b border-slate-900 gap-4">
               <div>
-                <span className="text-base text-slate-400 block text-left">(-) Costo de Mercadería (COGS)</span>
+                <span className="text-[15px] text-slate-400 block text-left">(-) Costo de Mercadería (COGS)</span>
                 <span className="text-[11px] text-slate-500 font-mono block text-left">
                   Costo de importación/compra de {systemExplainer.deliveredCount} pedidos entregados
                 </span>
@@ -1036,12 +1289,12 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                     type="number"
                     value={editedCogs}
                     onChange={(e) => setEditedCogs(Number(e.target.value))}
-                    className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
+                    className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
                     placeholder="0"
                   />
                 </div>
               ) : (
-                <span className="text-base font-mono text-red-500 shrink-0">
+                <span className="text-[15px] font-mono text-red-500 shrink-0">
                   ({localFormatCurrency(activeData.cogs)})
                 </span>
               )}
@@ -1049,8 +1302,8 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
 
             {/* GROSS PROFIT ROW (CALCULATED LIVE) */}
             <div className="flex justify-between items-center py-3 bg-neon/5 px-4 rounded-xl border border-neon/10">
-              <span className="text-base font-bold text-neon">Utilidad Bruta</span>
-              <span className="text-base font-mono font-bold text-neon">
+              <span className="text-[15px] font-bold text-neon">Utilidad Bruta</span>
+              <span className="text-[15px] font-mono font-bold text-neon">
                 {localFormatCurrency(liveGrossProfit)}
               </span>
             </div>
@@ -1061,7 +1314,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
               {/* SHIPPING cost */}
               <div className="flex justify-between items-start py-1 gap-4">
                 <div>
-                  <span className="text-base text-slate-400 block text-left">(-) Gastos de Envío (Fletes)</span>
+                  <span className="text-[15px] text-slate-400 block text-left">(-) Gastos de Envío (Fletes)</span>
                   <span className="text-[11px] text-slate-500 font-mono block text-left">
                     Fletes reales de transportadoras para {systemExplainer.shippedCount} despachos reales
                   </span>
@@ -1073,12 +1326,12 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                       type="number"
                       value={editedShipping}
                       onChange={(e) => setEditedShipping(Number(e.target.value))}
-                      className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
+                      className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
                       placeholder="0"
                     />
                   </div>
                 ) : (
-                  <span className="text-base font-mono text-slate-300 shrink-0">
+                  <span className="text-[15px] font-mono text-slate-300 shrink-0">
                     {localFormatCurrency(activeData.shipping)}
                   </span>
                 )}
@@ -1089,7 +1342,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                 <div className="flex justify-between items-start py-1 gap-4">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-base text-slate-400 block text-left">(-) Inversión Ads & Marketing</span>
+                      <span className="text-[15px] text-slate-400 block text-left">(-) Inversión Ads & Marketing</span>
                       {isEditing && (
                         <button
                           type="button"
@@ -1120,12 +1373,12 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                         type="number"
                         value={editedAds}
                         onChange={(e) => setEditedAds(Number(e.target.value))}
-                        className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
+                        className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
                         placeholder="0"
                       />
                     </div>
                   ) : (
-                    <span className="text-base font-mono text-slate-300 shrink-0">
+                    <span className="text-[15px] font-mono text-slate-300 shrink-0">
                       {localFormatCurrency(activeData.ads)}
                     </span>
                   )}
@@ -1173,35 +1426,129 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
               </div>
 
               {/* PLATFORM COMMISSIONS */}
-              <div className="flex justify-between items-start py-1 gap-4">
-                <div>
-                  <span className="text-base text-slate-400 block text-left">(-) Comisiones de Plataforma</span>
-                  <span className="text-[11px] text-slate-500 font-mono block text-left">
-                    Comisión de vendedor y costos tecnológicos cobrados por Dropi / pasarelas
-                  </span>
-                </div>
-                {isEditing ? (
-                  <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
-                    <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
-                    <input 
-                      type="number"
-                      value={editedPlatformFees}
-                      onChange={(e) => setEditedPlatformFees(Number(e.target.value))}
-                      className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
-                      placeholder="0"
-                    />
+              <div className="border-b border-slate-900/40 pb-2">
+                <div className="flex justify-between items-start py-1 gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] text-slate-400 block text-left">(-) Comisiones de Plataforma</span>
+                      {isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => setEditedPlatformFees(Math.round(fromUSD(systemCalculatedDataUSD.fees) * 100) / 100)}
+                          className="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                          title="Jalar el valor automático calculado para este mes"
+                        >
+                          🔄 Jalar de Plataforma
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowFeesDetail(!showFeesDetail)}
+                        className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                        title="Ver desglose de comisiones y gastos operativos de plataforma"
+                      >
+                        📊 {showFeesDetail ? 'Ocultar' : 'Ver'} Detalle ({
+                          (() => {
+                            const monthPrefix = `${selectedYear}-${selectedMonth}`;
+                            const orderCommissionsCount = filteredOrders.filter(o => o.status !== 'Cancelado' && (Number(o.comision || 0) > 0 || (o.price * (o.platformFee || 0)) > 0)).length;
+                            const mFixed = fixedExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix));
+                            const mVariable = variableExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix));
+                            return (orderCommissionsCount > 0 ? 1 : 0) + mFixed.length + mVariable.length;
+                          })()
+                        })
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-slate-500 font-mono block text-left">
+                      Comisión de vendedor y costos tecnológicos cobrados por Dropi / pasarelas, más gastos de plataforma registrados
+                    </span>
                   </div>
-                ) : (
-                  <span className="text-base font-mono text-slate-300 shrink-0">
-                    {localFormatCurrency(activeData.fees)}
-                  </span>
+                  {isEditing ? (
+                    <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
+                      <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
+                      <input 
+                        type="number"
+                        value={editedPlatformFees}
+                        onChange={(e) => setEditedPlatformFees(Number(e.target.value))}
+                        className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
+                        placeholder="0"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-[15px] font-mono text-slate-300 shrink-0">
+                      {localFormatCurrency(activeData.fees)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Inline Collapsible Platform Expenses Detail */}
+                {showFeesDetail && (
+                  <div className="mt-3 p-4 bg-slate-950 border border-slate-900 rounded-xl space-y-2.5 text-xs font-mono animate-fadeIn">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Gastos de Plataforma - {currentMonthLabel} {selectedYear}</span>
+                      <span className="text-slate-500 text-[10px]">Detalle por Plataforma y Concepto</span>
+                    </div>
+                    {(() => {
+                      const monthPrefix = `${selectedYear}-${selectedMonth}`;
+                      
+                      // Calculate and group order-level fees by platform provider name
+                      const platformFeesGrouped: Record<string, number> = {};
+                      let sysOrderFees = 0;
+                      
+                      filteredOrders.forEach(o => {
+                        if (o.status !== 'Cancelado') {
+                          const platform = o.provider || o.tienda || o.tipoTienda || 'Otros';
+                          const comisionVal = Number(o.comision || 0);
+                          const feeAmt = comisionVal > 0 ? comisionVal : o.price * (o.platformFee || 0);
+                          if (feeAmt > 0) {
+                            platformFeesGrouped[platform] = (platformFeesGrouped[platform] || 0) + feeAmt;
+                            sysOrderFees += feeAmt;
+                          }
+                        }
+                      });
+
+                      const noData = sysOrderFees === 0;
+
+                      if (noData) {
+                        return (
+                          <div className="text-center py-4 text-slate-500">
+                            No hay comisiones de pedidos registradas para este mes.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                          {/* Order commissions grouped by platform name */}
+                          {Object.keys(platformFeesGrouped).length > 0 && (
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] text-blue-400 uppercase font-black tracking-wider block text-left">🛒 Comisiones de Pedidos</span>
+                              {Object.entries(platformFeesGrouped).map(([platformName, amt]) => (
+                                <div key={platformName} className="flex justify-between items-center text-[11px] pl-2">
+                                  <div className="flex flex-col text-left">
+                                    <span className="text-slate-300 font-bold">{platformName}</span>
+                                    <span className="text-slate-500 text-[9px]">Cálculo automático de pedidos</span>
+                                  </div>
+                                  <span className="text-slate-300 font-bold">{localFormatCurrency(fromUSD(amt))}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-center border-t border-slate-900 pt-2 font-bold text-neon">
+                            <span>Suma Total Plataforma:</span>
+                            <span>{localFormatCurrency(fromUSD(sysOrderFees))}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 )}
               </div>
 
               {/* LOGISTICA DE DEVOLUCIONES */}
               <div className="flex justify-between items-start py-1 gap-4">
                 <div>
-                  <span className="text-base text-slate-400 block text-left">(-) Logística de Devoluciones</span>
+                  <span className="text-[15px] text-slate-400 block text-left">(-) Logística de Devoluciones</span>
                   <span className="text-[11px] text-slate-500 font-mono block text-left">
                     Flete de devolución de {systemExplainer.returnedCount} pedidos con novedad o devueltos
                   </span>
@@ -1213,40 +1560,115 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                       type="number"
                       value={editedReturnsLoss}
                       onChange={(e) => setEditedReturnsLoss(Number(e.target.value))}
-                      className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
+                      className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
                       placeholder="0"
                     />
                   </div>
                 ) : (
-                  <span className="text-base font-mono text-slate-300 shrink-0">
+                  <span className="text-[15px] font-mono text-slate-300 shrink-0">
                     {localFormatCurrency(activeData.returnsLoss)}
                   </span>
                 )}
               </div>
 
               {/* OTRAS PLATAFORMAS Y GASTOS OPERATIVOS */}
-              <div className="flex justify-between items-start py-1 gap-4">
-                <div>
-                  <span className="text-base text-slate-400 block text-left">(-) Otras Plataformas y Herramientas</span>
-                  <span className="text-[11px] text-slate-500 font-mono block text-left">
-                    Shopify, hosting, dominios, sueldos, integraciones y otros costos operativos
-                  </span>
-                </div>
-                {isEditing ? (
-                  <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
-                    <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
-                    <input 
-                      type="number"
-                      value={editedOtherExpenses}
-                      onChange={(e) => setEditedOtherExpenses(Number(e.target.value))}
-                      className="bg-transparent text-right outline-none text-white font-mono w-full text-base"
-                      placeholder="0"
-                    />
+              <div className="border-b border-slate-900/40 pb-2">
+                <div className="flex justify-between items-start py-1 gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] text-slate-400 block text-left">(-) Otras Plataformas y Herramientas</span>
+                      {isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => setEditedOtherExpenses(Math.round(fromUSD(systemCalculatedDataUSD.otherExpenses) * 100) / 100)}
+                          className="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                          title="Jalar el valor automático calculado para este mes"
+                        >
+                          🔄 Jalar de Gastos
+                        </button>
+                      )}
+                      {(() => {
+                        const monthPrefix = `${selectedYear}-${selectedMonth}`;
+                        const monthlyOther = otherExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
+                        const mFixed = fixedExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix));
+                        const mVariable = variableExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, monthPrefix));
+                        const totalCount = monthlyOther.length + mFixed.length + mVariable.length;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setShowOtherDetail(!showOtherDetail)}
+                            className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                            title="Ver desglose de otros gastos operativos y herramientas"
+                          >
+                            📊 {showOtherDetail ? 'Ocultar' : 'Ver'} Detalle ({totalCount})
+                          </button>
+                        );
+                      })()}
+                    </div>
+                    <span className="text-[11px] text-slate-500 font-mono block text-left">
+                      Shopify, hosting, dominios, sueldos, integraciones and otros costos operativos registrados
+                    </span>
                   </div>
-                ) : (
-                  <span className="text-base font-mono text-slate-300 shrink-0">
-                    {localFormatCurrency(activeData.otherExpenses)}
-                  </span>
+                  {isEditing ? (
+                    <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
+                      <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
+                      <input 
+                        type="number"
+                        value={editedOtherExpenses}
+                        onChange={(e) => setEditedOtherExpenses(Number(e.target.value))}
+                        className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
+                        placeholder="0"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-[15px] font-mono text-slate-300 shrink-0">
+                      {localFormatCurrency(activeData.otherExpenses)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Inline Collapsible Other Expenses Detail */}
+                {showOtherDetail && (
+                  <div className="mt-3 p-4 bg-slate-950 border border-slate-900 rounded-xl space-y-2.5 text-xs font-mono animate-fadeIn">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Gastos Operativos - {currentMonthLabel} {selectedYear}</span>
+                      <span className="text-slate-500 text-[10px]">🟢 Sincronizado en tiempo real</span>
+                    </div>
+                    {unifiedExpenses.length === 0 ? (
+                      <div className="text-center py-4 text-slate-500">
+                        No hay otros gastos registrados para este mes.
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {unifiedExpenses.map((e) => (
+                          <div key={e.id} className="flex justify-between items-center text-[11px] hover:bg-slate-900/40 rounded py-1 px-2">
+                            <div className="flex flex-col text-left">
+                              <span className="text-slate-300 font-bold">{e.name}</span>
+                              <span className="text-slate-500 text-[9px]">
+                                {e.typeLabel} {e.category ? `• ${e.category}` : ''} • {e.date}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-200 font-bold">{localFormatCurrency(fromUSD(e.amount))}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteOtherExpense(e)}
+                                className="text-slate-500 hover:text-red-400 transition-all cursor-pointer p-0.5"
+                                title="Eliminar gasto"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        <div className="flex justify-between items-center border-t border-slate-900 pt-2 font-bold text-neon">
+                          <span>Suma Total Otros Gastos:</span>
+                          <span>{localFormatCurrency(fromUSD(unifiedExpenses.reduce((sum, e) => sum + (e.amount || 0), 0)))}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1422,32 +1844,107 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       </div>
 
       {/* OTRAS PLATAFORMAS DETAILED LIST & ADD FORM */}
-      <div className="glass-card p-6 bg-black border border-slate-900 rounded-2xl">
+      <div id="other-expenses-section" className="glass-card p-6 bg-black border border-slate-900 rounded-2xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h3 className="text-lg font-display font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <span className="text-neon">💼</span> Otras Plataformas y Gastos Operativos
             </h3>
-            <p className="text-xs text-slate-500 font-mono mt-0.5">
-              Administra suscripciones, software, sueldos y gastos fijos de {currentMonthLabel} {selectedYear}
+            <p className="text-xs text-slate-500 font-mono mt-0.5 text-left">
+              Administra suscripciones, software, sueldos y gastos de plataforma en tiempo real para {currentMonthLabel} {selectedYear}
             </p>
           </div>
-          <button
-            onClick={() => setShowAddOtherForm(!showAddOtherForm)}
-            className="px-4 py-2 bg-neon/10 hover:bg-neon/20 border border-neon/30 text-neon rounded-xl text-sm font-mono font-bold transition-all active:scale-95 shrink-0 flex items-center justify-center gap-2"
-          >
-            {showAddOtherForm ? 'Cancelar' : '+ Agregar Gasto'}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleImportAllPlatformExpenses}
+              className="px-3.5 py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 rounded-xl text-xs font-mono font-bold transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+              title="Jalar automáticamente todos los gastos de plataforma de este mes con su nombre y monto"
+            >
+              ⚡ Jalar Gastos de Plataforma ({
+                fixedExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, `${selectedYear}-${selectedMonth}`)).length + 
+                variableExpenses.filter(e => e.startDate && matchDatePrefix(e.startDate, `${selectedYear}-${selectedMonth}`)).length
+              })
+            </button>
+            <button
+              onClick={() => setShowAddOtherForm(!showAddOtherForm)}
+              className="px-4 py-2 bg-neon/10 hover:bg-neon/20 border border-neon/30 text-neon rounded-xl text-sm font-mono font-bold transition-all active:scale-95 shrink-0 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {showAddOtherForm ? 'Cancelar' : '+ Agregar Gasto'}
+            </button>
+          </div>
         </div>
 
         {/* Collapsible Add Form */}
         {showAddOtherForm && (
           <form onSubmit={handleAddOtherExpense} className="mb-6 p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 animate-fadeIn">
-            <h4 className="text-sm font-bold text-slate-300 font-mono uppercase tracking-wider">Nuevo Gasto Operativo</h4>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-900 pb-3 gap-2">
+              <h4 className="text-sm font-bold text-slate-300 font-mono uppercase tracking-wider">Nuevo Gasto</h4>
+              
+              {/* Quick Autocomplete dropdown */}
+              {(fixedExpenses.length > 0 || variableExpenses.length > 0) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-400 font-mono whitespace-nowrap">⚡ Autocompletar:</span>
+                  <select
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      const [type, id] = val.split(':');
+                      const source = type === 'fixed' ? fixedExpenses : variableExpenses;
+                      const found = source.find(item => item.id === id);
+                      if (found) {
+                        setNewOtherExpense({
+                          name: found.name,
+                          category: found.category || 'Software',
+                          amount: String(Math.round(fromUSD(found.amount) * 100) / 100),
+                          date: found.startDate || `${selectedYear}-${selectedMonth}-01`
+                        });
+                        setNewExpenseType(type as any);
+                      }
+                      e.target.value = '';
+                    }}
+                    className="bg-black border border-slate-800 text-slate-300 font-mono text-xs rounded-lg px-2.5 py-1 focus:border-neon outline-none cursor-pointer max-w-xs"
+                  >
+                    <option value="">-- Cargar de Gastos de Plataforma --</option>
+                    {fixedExpenses.length > 0 && (
+                      <optgroup label="🔒 Gastos Fijos">
+                        {fixedExpenses.map(item => (
+                          <option key={`fixed:${item.id}`} value={`fixed:${item.id}`}>
+                            {item.name} ({localFormatCurrency(fromUSD(item.amount))})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {variableExpenses.length > 0 && (
+                      <optgroup label="⚡ Gastos Variables">
+                        {variableExpenses.map(item => (
+                          <option key={`variable:${item.id}`} value={`variable:${item.id}`}>
+                            {item.name} ({localFormatCurrency(fromUSD(item.amount))})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1 font-mono">Tipo de Gasto</label>
+                <select
+                  value={newExpenseType}
+                  onChange={(e) => setNewExpenseType(e.target.value as any)}
+                  className="w-full bg-black border border-slate-800 focus:border-neon rounded-lg px-3 py-2 text-white text-sm outline-none font-mono"
+                >
+                  <option value="other">Gasto Único / Manual</option>
+                  <option value="fixed">🔒 Gasto Fijo (Plataforma)</option>
+                  <option value="variable">⚡ Gasto Variable (Plataforma)</option>
+                </select>
+              </div>
               <div>
                 <label className="block text-xs text-slate-400 mb-1 font-mono">Nombre / Descripción</label>
                 <input
+                  id="new-expense-name-input"
                   type="text"
                   required
                   placeholder="Ej: Shopify Plus, Diseñador, Hosting"
@@ -1497,7 +1994,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             <div className="flex justify-end pt-2">
               <button
                 type="submit"
-                className="px-5 py-2 bg-neon hover:bg-neon/90 text-background font-mono font-bold text-xs rounded-lg transition-all active:scale-95"
+                className="px-5 py-2 bg-neon hover:bg-neon/90 text-background font-mono font-bold text-xs rounded-lg transition-all active:scale-95 cursor-pointer"
               >
                 Guardar Gasto
               </button>
@@ -1507,14 +2004,11 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
 
         {/* Expenses List for current selectedMonth */}
         {(() => {
-          const monthPrefix = `${selectedYear}-${selectedMonth}`;
-          const filteredOtherList = otherExpenses.filter(e => e.date && matchDatePrefix(e.date, monthPrefix));
-
-          if (filteredOtherList.length === 0) {
+          if (unifiedExpenses.length === 0) {
             return (
               <div className="py-8 text-center bg-slate-950/40 border border-slate-900 border-dashed rounded-xl">
                 <p className="text-sm text-slate-500 font-mono">No hay otros gastos registrados para {currentMonthLabel} {selectedYear}.</p>
-                <p className="text-xs text-slate-600 font-mono mt-1">Los gastos fijos o suscripciones de este mes se sumarán automáticamente al P&L.</p>
+                <p className="text-xs text-slate-600 font-mono mt-1">Los gastos fijos, variables o suscripciones de este mes se sumarán y mostrarán aquí en tiempo real.</p>
               </div>
             );
           }
@@ -1525,6 +2019,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                 <thead>
                   <tr className="border-b border-slate-900 text-slate-400 uppercase tracking-wider text-[10px]">
                     <th className="pb-3 pl-2">Descripción</th>
+                    <th className="pb-3">Tipo</th>
                     <th className="pb-3">Categoría</th>
                     <th className="pb-3">Fecha</th>
                     <th className="pb-3 text-right">Monto</th>
@@ -1532,15 +2027,26 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-900">
-                  {filteredOtherList.map((expense) => {
+                  {unifiedExpenses.map((expense) => {
                     // Since stored in USD base, convert to display currency
                     const displayAmt = fromUSD(expense.amount);
                     return (
                       <tr key={expense.id} className="hover:bg-slate-950/40 transition-colors">
                         <td className="py-3.5 pl-2 font-bold text-slate-200">{expense.name}</td>
                         <td className="py-3.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] border ${
+                            expense.source === 'fixed' 
+                              ? 'bg-neon/10 text-neon border-neon/20' 
+                              : expense.source === 'variable' 
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                                : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                          }`}>
+                            {expense.typeLabel}
+                          </span>
+                        </td>
+                        <td className="py-3.5">
                           <span className="px-2 py-0.5 rounded-full bg-slate-900 text-slate-400 text-[10px] border border-slate-800">
-                            {expense.category}
+                            {expense.category || 'Software'}
                           </span>
                         </td>
                         <td className="py-3.5 text-slate-400">{expense.date}</td>
@@ -1548,8 +2054,8 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                         <td className="py-3.5 text-center">
                           <button
                             type="button"
-                            onClick={() => handleDeleteOtherExpense(expense.id)}
-                            className="p-1 hover:text-red-500 text-slate-500 transition-all hover:scale-110 active:scale-95"
+                            onClick={() => handleDeleteOtherExpense(expense)}
+                            className="p-1 hover:text-red-500 text-slate-500 transition-all hover:scale-110 active:scale-95 cursor-pointer"
                             title="Eliminar gasto"
                           >
                             <Trash2 size={14} />
@@ -1561,9 +2067,9 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-slate-800">
-                    <td colSpan={3} className="py-4 pl-2 font-bold text-slate-400">Total de Otras Plataformas y Gastos Operativos:</td>
+                    <td colSpan={4} className="py-4 pl-2 font-bold text-slate-400">Total de Otras Plataformas y Gastos Operativos:</td>
                     <td className="py-4 text-right font-bold text-neon text-sm">
-                      {localFormatCurrency(fromUSD(filteredOtherList.reduce((sum, e) => sum + (e.amount || 0), 0)))}
+                      {localFormatCurrency(fromUSD(unifiedExpenses.reduce((sum, e) => sum + (e.amount || 0), 0)))}
                     </td>
                     <td></td>
                   </tr>

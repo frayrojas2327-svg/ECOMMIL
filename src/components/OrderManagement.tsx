@@ -2147,7 +2147,11 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         : tagFilter === 'SIN ETIQUETA' 
           ? (!order.tags || order.tags.trim() === '') 
           : (order.tags && order.tags.toLowerCase().includes(tagFilter.toLowerCase()));
-      const matchesProduct = !productFilter || (order.product && order.product.toLowerCase().trim() === productFilter.toLowerCase().trim());
+      const matchesProduct = !productFilter 
+        ? true 
+        : productFilter === 'sin_producto'
+          ? (!order.product || order.product.trim() === '' || order.product.toLowerCase().trim() === 'sin producto')
+          : (order.product && order.product.toLowerCase().trim() === productFilter.toLowerCase().trim());
       const matchesSource = sourceFilter === 'All' || 
         (sourceFilter === 'Shopify' && isShopify) ||
         (sourceFilter === 'Dropi' && isDropi) ||
@@ -3864,6 +3868,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222] max-w-[160px]"
                 >
                   <option value="">Todos</option>
+                  <option value="sin_producto">Sin producto</option>
                   {uniqueProductsList.map(prod => (
                     <option key={prod} value={prod}>{prod}</option>
                   ))}

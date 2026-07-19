@@ -118,7 +118,7 @@ export default function AdPanel({ theme = 'theme-dark-green' }: { theme?: string
   const averageCpa = totalSalesCount > 0 ? totalSpend / totalSalesCount : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-[15px]">
       {/* Header */}
       <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 border border-white/5 rounded-3xl p-6 shadow-2xl backdrop-blur-md relative overflow-hidden ${isLight ? 'bg-[#fffbfb]' : 'bg-[#0f0f15]/80'}`}>
         <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none" />
