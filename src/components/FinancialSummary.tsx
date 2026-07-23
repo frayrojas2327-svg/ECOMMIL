@@ -26,6 +26,7 @@ import { Order, calculateOrderProfit, CurrencyCode, CURRENCIES } from '../mockDa
 
 interface FinancialSummaryProps {
   orders: Order[];
+  periods?: any[];
   formatCurrency: (amount: number) => string;
   currency?: CurrencyCode;
   currencies?: any;
@@ -69,6 +70,7 @@ const MONTH_NAMES = [
 
 const FinancialSummary: React.FC<FinancialSummaryProps> = ({ 
   orders, 
+  periods = [],
   formatCurrency, 
   currency = 'USD', 
   currencies = {}, 
@@ -117,14 +119,14 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
 
   const localFormatCurrency = (amount: number) => {
     const targetCurrency = isConversionActive ? currency : 'USD';
-    const rounded = Math.round(amount * 100) / 100;
+    const rounded = Math.round(amount);
     
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: targetCurrency,
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 0,
     }).format(rounded);
   };
 
@@ -367,11 +369,13 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       
       if (isDelivered) {
         revenue += o.price;
-        cogs += o.cost;
+        // Cost of goods is disabled as per user request to delete COGS
+        cogs += 0;
       }
       
       if (o.status !== 'Cancelado') {
-        shipping += o.shippingReal;
+        // Shipping cost fletes is disabled as per user request to delete shipping expenses
+        shipping += 0;
         
         // Exact platform fee / comision from Dropi orders if available
         const comisionVal = Number(o.comision || 0);
@@ -383,9 +387,8 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
       }
       
       if (o.status === 'Devuelto') {
-        const returnPenalty = Math.abs(Number(o.costoDevolucionFlete || 0));
-        // Use real return freight cost if supplied, else use standard fallback
-        returnsLoss += returnPenalty > 0 ? returnPenalty : (o.shippingReal > 0 ? o.shippingReal * 0.5 : 3.88);
+        // Return penalty / loss is disabled as per user request to delete return logistics section
+        returnsLoss += 0;
       }
     });
 
@@ -573,10 +576,12 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
         const isDelivered = o.status === 'Entregado';
         if (isDelivered) {
           sysRevenue += o.price;
-          sysCogs += o.cost;
+          // Cost of goods is disabled as per user request to delete COGS
+          sysCogs += 0;
         }
         if (o.status !== 'Cancelado') {
-          sysShipping += o.shippingReal;
+          // Shipping cost fletes is disabled as per user request to delete shipping expenses
+          sysShipping += 0;
           const comisionVal = Number(o.comision || 0);
           if (comisionVal > 0) {
             sysFees += comisionVal;
@@ -585,8 +590,8 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
           }
         }
         if (o.status === 'Devuelto') {
-          const returnPenalty = Math.abs(Number(o.costoDevolucionFlete || 0));
-          sysReturnsLoss += returnPenalty > 0 ? returnPenalty : (o.shippingReal > 0 ? o.shippingReal * 0.5 : 3.88);
+          // Return penalty / loss is disabled as per user request to delete return logistics section
+          sysReturnsLoss += 0;
         }
       });
 
@@ -666,25 +671,25 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
 
   // Sync inputs with active month details whenever the selected month or edit status triggers
   useEffect(() => {
-    setEditedRevenue(Math.round(activeData.revenue * 100) / 100);
-    setEditedCogs(Math.round(activeData.cogs * 100) / 100);
-    setEditedShipping(Math.round(activeData.shipping * 100) / 100);
-    setEditedAds(Math.round(activeData.ads * 100) / 100);
-    setEditedPlatformFees(Math.round(activeData.fees * 100) / 100);
-    setEditedReturnsLoss(Math.round(activeData.returnsLoss * 100) / 100);
-    setEditedOtherExpenses(Math.round(activeData.otherExpenses * 100) / 100);
+    setEditedRevenue(Math.round(activeData.revenue));
+    setEditedCogs(0);
+    setEditedShipping(0);
+    setEditedAds(Math.round(activeData.ads));
+    setEditedPlatformFees(Math.round(activeData.fees));
+    setEditedReturnsLoss(0);
+    setEditedOtherExpenses(Math.round(activeData.otherExpenses));
   }, [activeData, isEditing]);
 
   const [saving, setSaving] = useState(false);
 
   const handleStartEdit = () => {
-    setEditedRevenue(Math.round(activeData.revenue * 100) / 100);
-    setEditedCogs(Math.round(activeData.cogs * 100) / 100);
-    setEditedShipping(Math.round(activeData.shipping * 100) / 100);
-    setEditedAds(Math.round(activeData.ads * 100) / 100);
-    setEditedPlatformFees(Math.round(activeData.fees * 100) / 100);
-    setEditedReturnsLoss(Math.round(activeData.returnsLoss * 100) / 100);
-    setEditedOtherExpenses(Math.round(activeData.otherExpenses * 100) / 100);
+    setEditedRevenue(Math.round(activeData.revenue));
+    setEditedCogs(0);
+    setEditedShipping(0);
+    setEditedAds(Math.round(activeData.ads));
+    setEditedPlatformFees(Math.round(activeData.fees));
+    setEditedReturnsLoss(0);
+    setEditedOtherExpenses(Math.round(activeData.otherExpenses));
     setIsEditing(true);
   };
 
@@ -692,13 +697,13 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
     setSaving(true);
     // Values converted back to USD base for general database consistency
     const saveObjUSD = {
-      revenue: toUSD(Number(editedRevenue)),
-      cogs: toUSD(Number(editedCogs)),
-      shipping: toUSD(Number(editedShipping)),
-      ads: toUSD(Number(editedAds)),
-      fees: toUSD(Number(editedPlatformFees)),
-      returnsLoss: toUSD(Number(editedReturnsLoss)),
-      otherExpenses: toUSD(Number(editedOtherExpenses))
+      revenue: toUSD(Math.round(Number(editedRevenue))),
+      cogs: toUSD(0),
+      shipping: toUSD(0),
+      ads: toUSD(Math.round(Number(editedAds))),
+      fees: toUSD(Math.round(Number(editedPlatformFees))),
+      returnsLoss: toUSD(0),
+      otherExpenses: toUSD(Math.round(Number(editedOtherExpenses)))
     };
 
     try {
@@ -983,28 +988,22 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
   // Real-time live data for chart rendering (incorporating user edits on-the-fly)
   const chartData = useMemo(() => {
     const rev = isEditing ? Number(editedRevenue) : activeData.revenue;
-    const cog = isEditing ? Number(editedCogs) : activeData.cogs;
-    const ship = isEditing ? Number(editedShipping) : activeData.shipping;
     const ad = isEditing ? Number(editedAds) : activeData.ads;
     const fe = isEditing ? Number(editedPlatformFees) : activeData.fees;
-    const ret = isEditing ? Number(editedReturnsLoss) : activeData.returnsLoss;
     const oth = isEditing ? Number(editedOtherExpenses) : activeData.otherExpenses;
 
     return [
       { name: 'Ingresos', value: rev, color: '#00ff88' },
-      { name: 'COGS', value: -cog, color: '#f5c842' },
-      { name: 'Fletes', value: -ship, color: '#3b82f6' },
       { name: 'Ads', value: -ad, color: '#8b5cf6' },
       { name: 'Comisiones', value: -fe, color: '#64748b' },
-      { name: 'Devoluciones', value: -ret, color: '#ef4444' },
       { name: 'Otras Plat.', value: -oth, color: '#f43f5e' },
     ];
-  }, [isEditing, editedRevenue, editedCogs, editedShipping, editedAds, editedPlatformFees, editedReturnsLoss, editedOtherExpenses, activeData]);
+  }, [isEditing, editedRevenue, editedAds, editedPlatformFees, editedOtherExpenses, activeData]);
 
   // Live P&L derived results
   const liveGrossProfit = isEditing ? (Number(editedRevenue) - Number(editedCogs)) : activeData.grossProfit;
   const liveNetProfit = isEditing ? 
-    (liveGrossProfit - Number(editedShipping) - Number(editedAds) - Number(editedPlatformFees) - Number(editedReturnsLoss) - Number(editedOtherExpenses)) : 
+    (liveGrossProfit - Number(editedAds) - Number(editedPlatformFees) - Number(editedReturnsLoss) - Number(editedOtherExpenses)) : 
     activeData.ebitda;
 
   const currentMonthLabel = MONTH_NAMES.find(m => m.value === selectedMonth)?.label || 'Marzo';
@@ -1083,7 +1082,7 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
               <span className="text-neon">📊</span> Consolidado Mensual de Resultados (P&L)
             </h3>
             <p className="text-[11px] text-slate-500 font-mono mt-0.5 text-left">
-              Suma total de ingresos, costos y utilidad neta por mes. Haz clic en un mes para seleccionarlo y ver su estado de resultados detallado abajo.
+              Suma total de ingresos, gastos y utilidad neta por mes. Haz clic en un mes para seleccionarlo y ver su estado de resultados detallado abajo.
             </p>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-slate-900 shrink-0">
@@ -1251,9 +1250,42 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
             {/* INGRESO ROW */}
             <div className="flex justify-between items-start py-2 border-b border-slate-900 gap-4">
               <div>
-                <span className="text-[15px] text-slate-300 block text-left">Ingresos Totales (Ventas)</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[15px] text-slate-300 block text-left font-medium">Ingresos Totales (Ventas)</span>
+                  {isEditing && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const monthObj = MONTH_NAMES.find(m => m.value === selectedMonth);
+                          const labelLower = monthObj ? monthObj.label.toLowerCase() : '';
+                          const yearLower = selectedYear.toLowerCase();
+                          const matchingPeriods = (periods || []).filter(p => {
+                            if (!p.month) return false;
+                            const pMonthLower = p.month.toLowerCase();
+                            return pMonthLower.includes(labelLower) && pMonthLower.includes(yearLower);
+                          });
+                          const totalBankUSD = matchingPeriods.reduce((sum, p) => sum + (p.withdrawalBank || 0), 0);
+                          setEditedRevenue(Math.round(fromUSD(totalBankUSD)));
+                        }}
+                        className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                        title="Jalar el total recibido en banco desde los periodos de ventas"
+                      >
+                        🏦 Jalar de Banco (Ventas)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditedRevenue(Math.round(fromUSD(systemCalculatedDataUSD.revenue)))}
+                        className="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                        title="Jalar el total de ventas entregadas según los pedidos"
+                      >
+                        📦 Jalar de Pedidos
+                      </button>
+                    </>
+                  )}
+                </div>
                 <span className="text-[11px] text-slate-500 font-mono block text-left">
-                  Suma de {systemExplainer.deliveredCount} pedidos &quot;Entregado&quot; para este mes
+                  Suma de {systemExplainer.deliveredCount} pedidos &quot;Entregado&quot; para este mes, o retiro conciliado en banco
                 </span>
               </div>
               {isEditing ? (
@@ -1274,69 +1306,9 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
               )}
             </div>
 
-            {/* COGS ROW */}
-            <div className="flex justify-between items-start py-2 border-b border-slate-900 gap-4">
-              <div>
-                <span className="text-[15px] text-slate-400 block text-left">(-) Costo de Mercadería (COGS)</span>
-                <span className="text-[11px] text-slate-500 font-mono block text-left">
-                  Costo de importación/compra de {systemExplainer.deliveredCount} pedidos entregados
-                </span>
-              </div>
-              {isEditing ? (
-                <div className="flex items-center bg-black border border-slate-700 focus-within:border-red-500 rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
-                  <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
-                  <input 
-                    type="number"
-                    value={editedCogs}
-                    onChange={(e) => setEditedCogs(Number(e.target.value))}
-                    className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
-                    placeholder="0"
-                  />
-                </div>
-              ) : (
-                <span className="text-[15px] font-mono text-red-500 shrink-0">
-                  ({localFormatCurrency(activeData.cogs)})
-                </span>
-              )}
-            </div>
-
-            {/* GROSS PROFIT ROW (CALCULATED LIVE) */}
-            <div className="flex justify-between items-center py-3 bg-neon/5 px-4 rounded-xl border border-neon/10">
-              <span className="text-[15px] font-bold text-neon">Utilidad Bruta</span>
-              <span className="text-[15px] font-mono font-bold text-neon">
-                {localFormatCurrency(liveGrossProfit)}
-              </span>
-            </div>
-            
             {/* GASTOS BREAKDOWN */}
             <div className="space-y-4 pt-4 border-t border-dashed border-slate-900">
               
-              {/* SHIPPING cost */}
-              <div className="flex justify-between items-start py-1 gap-4">
-                <div>
-                  <span className="text-[15px] text-slate-400 block text-left">(-) Gastos de Envío (Fletes)</span>
-                  <span className="text-[11px] text-slate-500 font-mono block text-left">
-                    Fletes reales de transportadoras para {systemExplainer.shippedCount} despachos reales
-                  </span>
-                </div>
-                {isEditing ? (
-                  <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
-                    <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
-                    <input 
-                      type="number"
-                      value={editedShipping}
-                      onChange={(e) => setEditedShipping(Number(e.target.value))}
-                      className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
-                      placeholder="0"
-                    />
-                  </div>
-                ) : (
-                  <span className="text-[15px] font-mono text-slate-300 shrink-0">
-                    {localFormatCurrency(activeData.shipping)}
-                  </span>
-                )}
-              </div>
-
               {/* OUTWARD MARKETING ETC */}
               <div className="border-b border-slate-900/40 pb-2">
                 <div className="flex justify-between items-start py-1 gap-4">
@@ -1432,14 +1404,35 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[15px] text-slate-400 block text-left">(-) Comisiones de Plataforma</span>
                       {isEditing && (
-                        <button
-                          type="button"
-                          onClick={() => setEditedPlatformFees(Math.round(fromUSD(systemCalculatedDataUSD.fees) * 100) / 100)}
-                          className="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
-                          title="Jalar el valor automático calculado para este mes"
-                        >
-                          🔄 Jalar de Plataforma
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const monthObj = MONTH_NAMES.find(m => m.value === selectedMonth);
+                              const labelLower = monthObj ? monthObj.label.toLowerCase() : '';
+                              const yearLower = selectedYear.toLowerCase();
+                              const matchingPeriods = (periods || []).filter(p => {
+                                if (!p.month) return false;
+                                const pMonthLower = p.month.toLowerCase();
+                                return pMonthLower.includes(labelLower) && pMonthLower.includes(yearLower);
+                              });
+                              const totalCommissionUSD = matchingPeriods.reduce((sum, p) => sum + (p.commission || 0), 0);
+                              setEditedPlatformFees(Math.round(fromUSD(totalCommissionUSD)));
+                            }}
+                            className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                            title="Jalar la comisión calculada desde los periodos de ventas"
+                          >
+                            🏦 Jalar de Ventas (Comisión)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditedPlatformFees(Math.round(fromUSD(systemCalculatedDataUSD.fees)))}
+                            className="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                            title="Jalar el valor automático calculado para este mes desde los pedidos"
+                          >
+                            📦 Jalar de Pedidos
+                          </button>
+                        </>
                       )}
                       <button
                         type="button"
@@ -1542,32 +1535,6 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
                       );
                     })()}
                   </div>
-                )}
-              </div>
-
-              {/* LOGISTICA DE DEVOLUCIONES */}
-              <div className="flex justify-between items-start py-1 gap-4">
-                <div>
-                  <span className="text-[15px] text-slate-400 block text-left">(-) Logística de Devoluciones</span>
-                  <span className="text-[11px] text-slate-500 font-mono block text-left">
-                    Flete de devolución de {systemExplainer.returnedCount} pedidos con novedad o devueltos
-                  </span>
-                </div>
-                {isEditing ? (
-                  <div className="flex items-center bg-black border border-slate-700 focus-within:border-neon rounded-lg px-2.5 py-1 max-w-[190px] w-full transition-all shrink-0">
-                    <span className="text-slate-500 font-mono text-sm mr-1">{currencySymbol}</span>
-                    <input 
-                      type="number"
-                      value={editedReturnsLoss}
-                      onChange={(e) => setEditedReturnsLoss(Number(e.target.value))}
-                      className="bg-transparent text-right outline-none text-white font-mono w-full text-[15px]"
-                      placeholder="0"
-                    />
-                  </div>
-                ) : (
-                  <span className="text-[15px] font-mono text-slate-300 shrink-0">
-                    {localFormatCurrency(activeData.returnsLoss)}
-                  </span>
                 )}
               </div>
 
@@ -1749,11 +1716,8 @@ const FinancialSummary: React.FC<FinancialSummaryProps> = ({
               <span>Gastos Totales:</span>
               <span className="text-red-400">
                 {localFormatCurrency(
-                  (isEditing ? Number(editedCogs) : activeData.cogs) +
-                  (isEditing ? Number(editedShipping) : activeData.shipping) +
                   (isEditing ? Number(editedAds) : activeData.ads) +
                   (isEditing ? Number(editedPlatformFees) : activeData.fees) +
-                  (isEditing ? Number(editedReturnsLoss) : activeData.returnsLoss) +
                   (isEditing ? Number(editedOtherExpenses) : activeData.otherExpenses)
                 )}
               </span>

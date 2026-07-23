@@ -305,24 +305,36 @@ const KPIPanel: React.FC<KPIPanelProps> = ({
     // Count city and department performance
     const cityMap: Record<string, { name: string, entregas: number, devoluciones: number, cancelaciones: number }> = {};
     orders.forEach(o => {
-      const city = o.ciudadDestino || "No especificada";
+      const cityRaw = o.ciudadDestino || "No especificada";
+      const city = cityRaw.trim().toUpperCase();
+      const statusLower = (o.status || '').trim().toLowerCase();
+      const isDelivered = statusLower === 'entregado' || statusLower === 'exitoso' || statusLower === 'finalizado' || statusLower === 'cod pagado';
+      const isReturned = statusLower === 'devuelto' || statusLower === 'devolución' || statusLower === 'devolucion' || statusLower === 'retorno';
+      const isCancelled = statusLower === 'cancelado' || statusLower === 'anulado';
+
       if (!cityMap[city]) {
         cityMap[city] = { name: city, entregas: 0, devoluciones: 0, cancelaciones: 0 };
       }
-      if (o.status === 'Entregado') cityMap[city].entregas++;
-      else if (o.status === 'Devuelto') cityMap[city].devoluciones++;
-      else if (o.status === 'Cancelado') cityMap[city].cancelaciones++;
+      if (isDelivered) cityMap[city].entregas++;
+      else if (isReturned) cityMap[city].devoluciones++;
+      else if (isCancelled) cityMap[city].cancelaciones++;
     });
 
     const deptMap: Record<string, { name: string, entregas: number, devoluciones: number, cancelaciones: number }> = {};
     orders.forEach(o => {
-      const dept = o.departamentoDestino || "No especificado";
+      const deptRaw = o.departamentoDestino || "No especificado";
+      const dept = deptRaw.trim().toUpperCase();
+      const statusLower = (o.status || '').trim().toLowerCase();
+      const isDelivered = statusLower === 'entregado' || statusLower === 'exitoso' || statusLower === 'finalizado' || statusLower === 'cod pagado';
+      const isReturned = statusLower === 'devuelto' || statusLower === 'devolución' || statusLower === 'devolucion' || statusLower === 'retorno';
+      const isCancelled = statusLower === 'cancelado' || statusLower === 'anulado';
+
       if (!deptMap[dept]) {
         deptMap[dept] = { name: dept, entregas: 0, devoluciones: 0, cancelaciones: 0 };
       }
-      if (o.status === 'Entregado') deptMap[dept].entregas++;
-      else if (o.status === 'Devuelto') deptMap[dept].devoluciones++;
-      else if (o.status === 'Cancelado') deptMap[dept].cancelaciones++;
+      if (isDelivered) deptMap[dept].entregas++;
+      else if (isReturned) deptMap[dept].devoluciones++;
+      else if (isCancelled) deptMap[dept].cancelaciones++;
     });
 
     // Take top 8 cities and departments sorted by volume to guarantee focused analysis

@@ -29,7 +29,7 @@ import { parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from './firebase';
-import { generateMockData, CURRENCIES, CurrencyCode, Order, calculateOrderProfit } from './mockData';
+import { generateMockData, CURRENCIES, CurrencyCode, Order, calculateOrderProfit, OrderStatus } from './mockData';
 import { fetchExchangeRates } from './services/currencyService';
 import Dashboard from './components/Dashboard';
 import OrderManagement from './components/OrderManagement';
@@ -476,9 +476,33 @@ function AppContent() {
       const ordersData = snapshot.docs.map(doc => {
         const data = doc.data();
         const oDate = data.date ? new Date(data.date) : new Date();
+        
+        // Normalize status for total consistency across Semáforo and KPI panels
+        const rawStatus = String(data.status || 'Pendiente').trim();
+        let normalizedStatus: OrderStatus = 'Pendiente';
+        const sLower = rawStatus.toLowerCase();
+        if (sLower === 'entregado' || sLower === 'exitoso' || sLower === 'finalizado' || sLower === 'cod pagado') {
+          normalizedStatus = 'Entregado';
+        } else if (sLower === 'devuelto' || sLower === 'devolución' || sLower === 'devolucion' || sLower === 'retorno') {
+          normalizedStatus = 'Devuelto';
+        } else if (sLower === 'cancelado' || sLower === 'anulado') {
+          normalizedStatus = 'Cancelado';
+        } else if (sLower === 'incidencia' || sLower === 'novedad') {
+          normalizedStatus = 'Incidencia';
+        } else if (sLower === 'en tránsito' || sLower === 'en transito' || sLower === 'transito' || sLower === 'despachado') {
+          normalizedStatus = 'En tránsito';
+        } else if (sLower === 'guía generada' || sLower === 'guia generada') {
+          normalizedStatus = 'Guía Generada';
+        } else if (sLower === 'recolectado') {
+          normalizedStatus = 'Recolectado';
+        } else {
+          normalizedStatus = (data.status || 'Pendiente') as OrderStatus;
+        }
+
         return { 
           ...data, 
           id: doc.id,
+          status: normalizedStatus,
           orderId: data.orderId || doc.id.substring(0, 8).toUpperCase(),
           date: oDate,
           originalDate: data.originalDate ? new Date(data.originalDate) : oDate,
@@ -1413,6 +1437,7 @@ function AppContent() {
                 <div className="space-y-[15px]">
                   <FinancialSummary 
                     orders={filteredOrders} 
+                    periods={periods}
                     formatCurrency={formatCurrency} 
                     currency={currency}
                     currencies={dynamicCurrencies}

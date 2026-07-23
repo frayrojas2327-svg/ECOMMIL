@@ -63,14 +63,14 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       converted = amount * rate;
     }
     
-    const rounded = Math.round(converted * 100) / 100;
+    const rounded = Math.round(converted);
     
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: targetCurrency,
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 0,
     }).format(rounded);
   };
 
@@ -116,49 +116,56 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
         absorbedLossCount++;
       }
 
+      const statusLower = (o.status || '').trim().toLowerCase();
+      const isDelivered = statusLower === 'entregado' || statusLower === 'exitoso' || statusLower === 'finalizado' || statusLower === 'cod pagado';
+      const isReturned = statusLower === 'devuelto' || statusLower === 'devolución' || statusLower === 'devolucion' || statusLower === 'retorno';
+
       // Dept aggregate
-      const dept = o.departamentoDestino || 'No especificado';
+      const deptRaw = o.departamentoDestino || 'No especificado';
+      const dept = deptRaw.trim().toUpperCase();
       if (!deptData[dept]) {
         deptData[dept] = { total: 0, delivered: 0, returned: 0, charged: 0, real: 0 };
       }
       deptData[dept].total++;
       deptData[dept].charged += o.shippingCharged;
       deptData[dept].real += o.shippingReal;
-      if (o.status === 'Entregado') deptData[dept].delivered++;
-      else if (o.status === 'Devuelto') deptData[dept].returned++;
+      if (isDelivered) deptData[dept].delivered++;
+      else if (isReturned) deptData[dept].returned++;
 
       // City aggregate
-      const city = o.ciudadDestino || 'No especificada';
+      const cityRaw = o.ciudadDestino || 'No especificada';
+      const city = cityRaw.trim().toUpperCase();
       if (!cityData[city]) {
-        cityData[city] = { total: 0, delivered: 0, returned: 0, dept, charged: 0, real: 0, carriers: new Set() };
+        cityData[city] = { total: 0, delivered: 0, returned: 0, dept: dept, charged: 0, real: 0, carriers: new Set() };
       }
       cityData[city].total++;
       cityData[city].charged += o.shippingCharged;
       cityData[city].real += o.shippingReal;
-      if (o.status === 'Entregado') cityData[city].delivered++;
-      else if (o.status === 'Devuelto') cityData[city].returned++;
+      if (isDelivered) cityData[city].delivered++;
+      else if (isReturned) cityData[city].returned++;
       if (o.transportadora) {
-        cityData[city].carriers.add(o.transportadora);
+        cityData[city].carriers.add(o.transportadora.trim().toUpperCase());
       }
 
       // Carrier aggregate
-      const carrier = o.transportadora || 'No especificada';
+      const carrierRaw = o.transportadora || 'No especificada';
+      const carrier = carrierRaw.trim().toUpperCase();
       if (!carrierData[carrier]) {
         carrierData[carrier] = { total: 0, delivered: 0, returned: 0, active: 0, charged: 0, real: 0, incidentCount: 0, depts: new Set() };
       }
       carrierData[carrier].total++;
       carrierData[carrier].charged += o.shippingCharged;
       carrierData[carrier].real += o.shippingReal;
-      if (o.status === 'Entregado') carrierData[carrier].delivered++;
-      else if (o.status === 'Devuelto') carrierData[carrier].returned++;
+      if (isDelivered) carrierData[carrier].delivered++;
+      else if (isReturned) carrierData[carrier].returned++;
       else {
         carrierData[carrier].active++;
-        if (o.status === 'Incidencia') {
+        if (statusLower === 'incidencia' || statusLower === 'novedad') {
           carrierData[carrier].incidentCount++;
         }
       }
       if (o.departamentoDestino) {
-        carrierData[carrier].depts.add(o.departamentoDestino);
+        carrierData[carrier].depts.add(o.departamentoDestino.trim().toUpperCase());
       }
     });
 
@@ -231,7 +238,10 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       };
     }).sort((a, b) => b.total - a.total);
 
-    const globalDelivered = shippedOrders.filter(o => o.status === 'Entregado').length;
+    const globalDelivered = shippedOrders.filter(o => {
+      const statusLower = (o.status || '').trim().toLowerCase();
+      return statusLower === 'entregado' || statusLower === 'exitoso' || statusLower === 'finalizado' || statusLower === 'cod pagado';
+    }).length;
     const globalRate = totalOrdersCount > 0 ? (globalDelivered / totalOrdersCount) * 100 : 0;
     
     let globalSemaf: 'green' | 'yellow' | 'red' = 'yellow';

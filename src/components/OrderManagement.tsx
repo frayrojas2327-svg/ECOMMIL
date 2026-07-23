@@ -299,8 +299,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const [activeSource, setActiveSource] = useState<'all' | 'shopify' | 'dropi' | 'tiktok' | 'reconciliation' | 'flows'>(
     viewMode === 'TIKTOK' ? 'flows' : 'all'
   );
-  const [shopifyOrders, setShopifyOrders] = useState<Order[]>([]);
-  const [dropiOrders, setDropiOrders] = useState<Order[]>([]);
+  const shopifyOrders = useMemo(() => orders.filter(o => o.provider === 'Shopify'), [orders]);
+  const dropiOrders = useMemo(() => orders.filter(o => o.provider === 'Dropi' && !o.notas?.includes('TIKTOK')), [orders]);
 
   // TikTok Flow Ads State
   interface TikTokAdFlow {
@@ -943,18 +943,18 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     }
     
     // Safety rounding to avoid float precision artifacts
-    const rounded = Math.round(converted * 100) / 100;
+    const rounded = Math.round(converted);
     
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: targetCurrency,
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 0,
     }).format(rounded);
   };
 
-  const reconcile = () => {
+  const reconcile = async () => {
     if (shopifyOrders.length === 0 || dropiOrders.length === 0) return;
 
     // Normalizar teléfono (solo números)
@@ -986,7 +986,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           gananciaManual: inDropi.gananciaManual,
           // Add other Dropi fields if needed
           ciudadDestino: inDropi.ciudadDestino || s.ciudadDestino,
-          departamentoDestino: inDropi.departamentoDestino || s.departamentoDestino
+          departamentoDestino: inDropi.departamentoDestino || s.departamentoDestino,
+          fechaSolicitud: inDropi.fechaSolicitud || s.fechaSolicitud || '---',
+          fechaEntregaDevolucion: inDropi.fechaEntregaDevolucion || s.fechaEntregaDevolucion || '---',
+          transportadora: inDropi.transportadora || s.transportadora || '---'
         };
       } else {
         return { 
@@ -1009,9 +1012,77 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
     // 4. Update the global orders list with the combined result
     setOrders([...reconciledShopify, ...tiktokOrders]);
+
+    // 5. Update Firestore if config is valid and user is logged in
+    if (!isDemoMode && isFirebaseConfigValid && user) {
+      try {
+        let batch = writeBatch(db);
+        let opCount = 0;
+        
+        const commitBatchIfNeeded = async () => {
+          if (opCount >= 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            opCount = 0;
+          }
+        };
+
+        // A. Update reconciled Shopify orders
+        for (const s of reconciledShopify) {
+          const docRef = doc(db, 'orders', s.id);
+          batch.set(docRef, {
+            status: s.status,
+            trackingId: s.trackingId || '',
+            notas: s.notas || '',
+            precioFlete: s.precioFlete || 0,
+            gananciaManual: s.gananciaManual || 0,
+            ciudadDestino: s.ciudadDestino || '',
+            departamentoDestino: s.departamentoDestino || '',
+            fechaSolicitud: s.fechaSolicitud || '---',
+            fechaEntregaDevolucion: s.fechaEntregaDevolucion || '---',
+            transportadora: s.transportadora || '---'
+          }, { merge: true });
+          opCount++;
+          await commitBatchIfNeeded();
+        }
+
+        // B. Update TikTok orders (notas and provider)
+        for (const t of tiktokOrders) {
+          const docRef = doc(db, 'orders', t.id);
+          batch.set(docRef, {
+            notas: t.notas,
+            provider: t.provider
+          }, { merge: true });
+          opCount++;
+          await commitBatchIfNeeded();
+        }
+
+        // C. Delete matched Dropi orders from Firestore to prevent duplicates
+        const matchedDropiOrders = dropiOrders.filter(d => {
+          const dPhone = normalizePhone(d.telefono);
+          return shopifyPhones.has(dPhone);
+        });
+        
+        for (const m of matchedDropiOrders) {
+          const docRef = doc(db, 'orders', m.id);
+          batch.delete(docRef);
+          opCount++;
+          await commitBatchIfNeeded();
+        }
+
+        // Final commit
+        if (opCount > 0) {
+          await batch.commit();
+        }
+      } catch (err) {
+        console.error("Error committing reconciliation batch:", err);
+        handleFirestoreError(err, OperationType.WRITE, 'orders');
+      }
+    }
+
     setActiveSource('all'); // Show global view
     setNotification({ 
-      message: `ANÁLISIS COMPLETADO: ${reconciledShopify.length} pedidos Shopify procesados y ${tiktokOrders.length} ventas TikTok detectadas.`, 
+      message: `ANÁLISIS COMPLETADO: ${reconciledShopify.length} pedidos Shopify procesados y ${tiktokOrders.length} ventas TikTok detectadas. Sincronizado con base de datos.`, 
       type: 'success' 
     });
     setTimeout(() => setNotification(null), 5000);

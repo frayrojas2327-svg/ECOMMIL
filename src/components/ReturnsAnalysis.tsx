@@ -878,14 +878,14 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
       converted = amount * rate;
     }
     
-    const rounded = Math.round(converted * 100) / 100;
+    const rounded = Math.round(converted);
     
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: targetCurrency,
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 0,
     }).format(rounded);
   };
 
