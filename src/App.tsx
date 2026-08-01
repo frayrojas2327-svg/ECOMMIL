@@ -29,7 +29,7 @@ import { parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from './firebase';
-import { generateMockData, CURRENCIES, CurrencyCode, Order, calculateOrderProfit, OrderStatus } from './mockData';
+import { generateMockData, CURRENCIES, CurrencyCode, Order, calculateOrderProfit, OrderStatus, parseFlexibleDate } from './mockData';
 import { fetchExchangeRates } from './services/currencyService';
 import Dashboard from './components/Dashboard';
 import OrderManagement from './components/OrderManagement';
@@ -56,26 +56,6 @@ const GlowingAnalysisIcon = ({ size = 20, className = "" }: { size?: number, cla
     <Activity size={size} className="relative text-neon drop-shadow-[0_0_10px_rgba(34,197,94,0.9)]" />
   </div>
 );
-
-const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
-  if (!dateStr) return null;
-  if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
-    const d = parseISO(dateStr);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  if (dateStr.includes('/')) {
-    const parts = dateStr.split(' ')[0].split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      const d = new Date(year, month, day);
-      return isNaN(d.getTime()) ? null : d;
-    }
-  }
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? null : d;
-};
 
 function AppContent() {
   const { user, loading: authLoading, logout, isDemoMode } = useAuth();
@@ -277,6 +257,12 @@ function AppContent() {
         result = result.filter(o => o.product === globalProductFilter);
       }
     }
+
+    const startDateObj = globalStartDate ? parseFlexibleDate(globalStartDate) : null;
+    const endDateObj = globalEndDate ? parseFlexibleDate(globalEndDate) : null;
+    const startTime = startDateObj ? startOfDay(startDateObj).getTime() : null;
+    const endTime = endDateObj ? startOfDay(endDateObj).getTime() : null;
+
     return result.filter(o => {
       let orderDate: Date | null = null;
       if (globalDateFilterType === 'solicitud') {
@@ -285,8 +271,9 @@ function AppContent() {
           if (parsed && !isNaN(parsed.getTime())) {
             orderDate = parsed;
           }
-        } else {
-          orderDate = o.date; // Fallback
+        }
+        if (!orderDate) {
+          orderDate = o.date ? parseFlexibleDate(o.date) : null;
         }
       } else if (globalDateFilterType === 'entrega_devolucion') {
         if (o.fechaEntregaDevolucion) {
@@ -294,28 +281,23 @@ function AppContent() {
           if (parsed && !isNaN(parsed.getTime())) {
             orderDate = parsed;
           }
-        } else {
-          orderDate = o.date; // Fallback
+        }
+        if (!orderDate) {
+          orderDate = o.date ? parseFlexibleDate(o.date) : null;
         }
       } else {
-        orderDate = o.date;
+        orderDate = o.date ? parseFlexibleDate(o.date) : null;
       }
 
-      // If we have filters but no date could be resolved, exclude it
-      if ((globalStartDate || globalEndDate) && !orderDate) {
+      // If we have date filters active but no order date could be resolved, exclude it
+      if ((startTime !== null || endTime !== null) && !orderDate) {
         return false;
       }
 
       if (orderDate) {
         const orderTime = startOfDay(orderDate).getTime();
-        if (globalStartDate) {
-          const startTime = startOfDay(new Date(globalStartDate)).getTime();
-          if (orderTime < startTime) return false;
-        }
-        if (globalEndDate) {
-          const endTime = startOfDay(new Date(globalEndDate)).getTime();
-          if (orderTime > endTime) return false;
-        }
+        if (startTime !== null && orderTime < startTime) return false;
+        if (endTime !== null && orderTime > endTime) return false;
       }
       return true;
     });
@@ -1338,7 +1320,7 @@ function AppContent() {
               )}
       {activeTab === 'orders' && (
                 <OrderManagement 
-                  orders={orders} 
+                  orders={filteredOrders} 
                   setOrders={setOrders}
                   formatCurrency={formatCurrency} 
                   onDeleteOrders={deleteOrders} 

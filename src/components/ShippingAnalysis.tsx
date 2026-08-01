@@ -96,8 +96,8 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
 
   const stats = useMemo(() => {
     // Exclude cancelled orders for shipping dynamics and deliverability calculations
+    const totalOrdersCount = filteredOrders.length;
     const shippedOrders = filteredOrders.filter(o => o.status !== 'Cancelado');
-    const totalOrdersCount = shippedOrders.length;
     
     let totalCharged = 0;
     let totalReal = 0;
@@ -399,7 +399,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
             <p className="text-xs text-slate-400 mt-1">
               {stats.globalSemaf === 'green' ? 'ðŸŸ¢ OperaciÃ³n altamente eficiente' :
                stats.globalSemaf === 'yellow' ? 'ðŸŸ¡ Rendimiento regular' :
-               'ðŸ”´ Alerta crÃ­tica de logÃ­stica'}
+               'í ½í´´ Alerta crÃ­tica de logÃ­stica'}
             </p>
           </div>
         </div>

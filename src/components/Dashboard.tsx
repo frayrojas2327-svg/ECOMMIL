@@ -5,28 +5,10 @@ import {
 } from 'recharts';
 import { motion } from 'motion/react';
 import { TrendingUp, TrendingDown, DollarSign, Percent, Target, ShoppingBag, Globe, Megaphone, Users } from 'lucide-react';
-import { Order, calculateOrderProfit, CurrencyCode } from '../mockData';
+import { Order, calculateOrderProfit, CurrencyCode, parseFlexibleDate } from '../mockData';
 import { format, startOfDay, eachDayOfInterval, subDays, isSameDay, parseISO } from 'date-fns';
 
-const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
-  if (!dateStr) return null;
-  if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
-    const d = parseISO(dateStr);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  if (dateStr.includes('/')) {
-    const parts = dateStr.split(' ')[0].split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      const d = new Date(year, month, day);
-      return isNaN(d.getTime()) ? null : d;
-    }
-  }
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? null : d;
-};
+
 
 const getOrderTargetDate = (o: Order): Date => {
   if (o.status === 'Entregado' || o.status === 'Devuelto') {

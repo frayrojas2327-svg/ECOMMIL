@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp } from 'lucide-react';
-import { Order, calculateOrderProfit, OrderStatus } from '../mockData';
+import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp, Star } from 'lucide-react';
+import { Order, calculateOrderProfit, OrderStatus, parseFlexibleDate } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -99,31 +99,7 @@ const DetailRow = ({ label, value }: { label: string, value: any }) => (
   </div>
 );
 
-const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
-  if (!dateStr) return null;
-  
-  // If it's already a ISO string that parseISO can handle
-  if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) {
-    const d = parseISO(dateStr);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  
-  // Handle DD/MM/YYYY HH:mm:ss or DD/MM/YYYY
-  if (dateStr.includes('/')) {
-    const parts = dateStr.split(' ')[0].split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      const d = new Date(year, month, day);
-      return isNaN(d.getTime()) ? null : d;
-    }
-  }
 
-  // Last resort attempt
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? null : d;
-};
 
 interface InlineProductEditorProps {
   order: Order;
@@ -1095,12 +1071,97 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const [tagFilter, setTagFilter] = useState('');
   const [productFilter, setProductFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'All' | 'Shopify' | 'Dropi' | 'TikTok'>('All');
+  const [favoriteFilter, setFavoriteFilter] = useState<'All' | 'Favorites' | 'NonFavorites'>('All');
+  const [favoriteOrderIds, setFavoriteOrderIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ecommil_favorite_orders');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [reqDate, setReqDate] = useState('');
   const [delDate, setDelDate] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [showConfirm, setShowConfirm] = useState<{ type: 'selected' | 'all' | 'single', orderId?: string } | null>(null);
   const [isImporting, setIsImporting] = useState<false | 'Dropi' | 'Shopify'>(false);
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+
+  const handleToggleSingleFavorite = async (orderId: string) => {
+    const isCurrentlyFav = favoriteOrderIds.includes(orderId) || orders.find(o => o.id === orderId)?.isFavorite;
+    let updatedFavs: string[];
+    if (isCurrentlyFav) {
+      updatedFavs = favoriteOrderIds.filter(id => id !== orderId);
+    } else {
+      updatedFavs = [...favoriteOrderIds, orderId];
+    }
+    setFavoriteOrderIds(updatedFavs);
+    try {
+      localStorage.setItem('ecommil_favorite_orders', JSON.stringify(updatedFavs));
+    } catch (e) {
+      console.error('Error saving favorite order ids:', e);
+    }
+
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isFavorite: !isCurrentlyFav } : o));
+
+    if (user && db) {
+      try {
+        await setDoc(doc(db, 'orders', orderId), { isFavorite: !isCurrentlyFav }, { merge: true });
+      } catch (e) {
+        console.error('Error updating favorite in Firestore:', e);
+      }
+    }
+
+    setNotification({
+      message: !isCurrentlyFav ? '⭐ Pedido agregado a favoritos' : 'Pedido quitado de favoritos',
+      type: 'success'
+    });
+  };
+
+  const handleToggleBatchFavorite = async () => {
+    if (selectedOrderIds.length === 0) return;
+
+    const allAreFavs = selectedOrderIds.every(id => 
+      favoriteOrderIds.includes(id) || orders.find(o => o.id === id)?.isFavorite
+    );
+    const newFavState = !allAreFavs;
+
+    let updatedFavs: string[];
+    if (newFavState) {
+      const set = new Set([...favoriteOrderIds, ...selectedOrderIds]);
+      updatedFavs = Array.from(set);
+    } else {
+      updatedFavs = favoriteOrderIds.filter(id => !selectedOrderIds.includes(id));
+    }
+
+    setFavoriteOrderIds(updatedFavs);
+    try {
+      localStorage.setItem('ecommil_favorite_orders', JSON.stringify(updatedFavs));
+    } catch (e) {
+      console.error('Error saving favorite order ids:', e);
+    }
+
+    setOrders(prev => prev.map(o => selectedOrderIds.includes(o.id) ? { ...o, isFavorite: newFavState } : o));
+
+    if (user && db) {
+      try {
+        const batch = writeBatch(db);
+        selectedOrderIds.forEach(id => {
+          batch.set(doc(db, 'orders', id), { isFavorite: newFavState }, { merge: true });
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error('Error batch updating favorites in Firestore:', e);
+      }
+    }
+
+    setNotification({
+      message: newFavState 
+        ? `⭐ ${selectedOrderIds.length} pedidos marcados como Favorito` 
+        : `${selectedOrderIds.length} pedidos quitados de Favoritos`,
+      type: 'success'
+    });
+  };
 
   // Date and month batch sync tool states
   const [syncDate, setSyncDate] = useState<string>('');
@@ -1437,6 +1498,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       // 3. If newStatus is 'Devuelto', we must handle return novelties
       if (newStatus === 'Devuelto') {
         const noveltyId = Math.random().toString(36).substring(2, 11);
+        const prevStatusText = originalOrder.status || 'Recolectado';
         const noveltyData: ReturnNovelty = {
           id: noveltyId,
           uid: user?.uid || 'demo-user',
@@ -1445,8 +1507,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           productName: finalOrder.product || '---',
           nombreCliente: finalOrder.nombreCliente || '---',
           fecha: todayYYYYMMDD,
-          origenNovedad: 'Dropi (Modificado de Incidencia)',
-          descripcion: 'Pedido marcado como Devuelto desde Incidencia en Ruta',
+          origenNovedad: `Dropi (Modificado de ${prevStatusText})`,
+          descripcion: `Pedido marcado como Devuelto desde ${prevStatusText}`,
           resolucion: 'Devuelto a bodega',
           timestamp: Date.now(),
           transportadora: finalOrder.transportadora || '---',
@@ -1471,7 +1533,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               await setDoc(existingDoc.ref, {
                 fecha: todayYYYYMMDD,
                 mes: currentMonthSpanish,
-                descripcion: 'Pedido marcado como Devuelto desde Incidencia en Ruta (Actualizado)'
+                descripcion: `Pedido marcado como Devuelto desde ${prevStatusText} (Actualizado)`
               }, { merge: true });
             }
           } catch (errNovelties) {
@@ -1497,20 +1559,24 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               ...localNovelties[existingIndex],
               fecha: todayYYYYMMDD,
               mes: currentMonthSpanish,
-              descripcion: 'Pedido marcado como Devuelto desde Incidencia en Ruta (Actualizado)'
+              descripcion: `Pedido marcado como Devuelto desde ${prevStatusText} (Actualizado)`
             };
           } else {
             localNovelties.unshift(noveltyData);
           }
 
           localStorage.setItem('ecommil_return_novelties', JSON.stringify(localNovelties));
-          
-          // Trigger custom storage and custom updated events
-          window.dispatchEvent(new Event('storage'));
-          window.dispatchEvent(new Event('order-status-updated'));
         } catch (e) {
           console.error('Error updating local return novelties:', e);
         }
+      }
+
+      // Trigger custom storage and order-status-updated events for ALL status changes so all analysis views update immediately
+      try {
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new Event('order-status-updated'));
+      } catch (e) {
+        console.error('Error dispatching status update events:', e);
       }
 
       setNotification({
@@ -2231,9 +2297,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       let matchesReqDate = true;
       if (reqDate) {
         try {
-          if (order.date && !isNaN(order.date.getTime())) {
+          const filterDate = parseFlexibleDate(reqDate);
+          if (order.date && !isNaN(order.date.getTime()) && filterDate) {
             const orderTime = startOfDay(order.date).getTime();
-            const filterTime = startOfDay(parseISO(reqDate)).getTime();
+            const filterTime = startOfDay(filterDate).getTime();
             matchesReqDate = orderTime === filterTime;
           } else {
             matchesReqDate = false;
@@ -2243,9 +2310,16 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         }
       }
 
-      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesTag && matchesProduct && matchesSource && matchesReqDate;
+      const isFav = !!(order.isFavorite || favoriteOrderIds.includes(order.id));
+      const matchesFavorite = favoriteFilter === 'All'
+        ? true
+        : favoriteFilter === 'Favorites'
+          ? isFav
+          : !isFav;
+
+      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesTag && matchesProduct && matchesSource && matchesReqDate && matchesFavorite;
     });
-  }, [orders, searchTerm, statusFilter, deptFilter, cityFilter, tagFilter, productFilter, sourceFilter, reqDate, viewMode]);
+  }, [orders, searchTerm, statusFilter, deptFilter, cityFilter, tagFilter, productFilter, sourceFilter, favoriteFilter, favoriteOrderIds, reqDate, viewMode]);
 
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('order-column-widths');
@@ -2289,9 +2363,34 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   };
 
   const activeColumns = useMemo(() => {
+    const favoriteCol = {
+      id: 'favorite',
+      label: 'FAV',
+      value: (o: Order) => (o.isFavorite || favoriteOrderIds.includes(o.id)) ? 'Favorito' : 'Normal',
+      render: (o: Order) => {
+        const isFav = !!(o.isFavorite || favoriteOrderIds.includes(o.id));
+        return (
+          <div onClick={(e) => e.stopPropagation()} className="flex justify-center items-center">
+            <button
+              type="button"
+              onClick={() => handleToggleSingleFavorite(o.id)}
+              className="p-1.5 rounded-lg hover:bg-amber-500/10 transition-all cursor-pointer active:scale-90"
+              title={isFav ? "Quitar de Favoritos" : "Marcar como Favorito"}
+            >
+              <Star 
+                size={18} 
+                className={isFav ? "fill-amber-400 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]" : "text-slate-600 hover:text-amber-400"} 
+              />
+            </button>
+          </div>
+        );
+      }
+    };
+
     if (viewMode === 'SHOPIFY') {
       return [
         { id: 'orderId', label: 'ID ORDEN', value: (o: Order) => o.orderId, className: 'font-black text-white text-[15px]' },
+        favoriteCol,
         { id: 'nombreCliente', label: 'NOMBRE COMPLETO', value: (o: Order) => o.nombreCliente, className: 'text-white font-black text-[15px]' },
         { id: 'telefono', label: 'TELÉFONO', value: (o: Order) => o.telefono, className: 'text-slate-300' },
         { id: 'ciudadDestino', label: 'CIUDAD', value: (o: Order) => o.ciudadDestino || '---' },
@@ -2318,25 +2417,31 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           value: (o: Order) => o.status, 
           render: (o: Order) => (
             <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
-              {o.status === 'Incidencia' ? (
+              {o.status === 'Incidencia' || o.status === 'Recolectado' ? (
                 <div onClick={(e) => e.stopPropagation()} className="relative z-10">
                   <select
                     value={o.status}
                     onChange={async (e) => {
                       const newStatus = e.target.value as OrderStatus;
-                      if (newStatus !== 'Incidencia') {
+                      if (newStatus !== o.status) {
                         await handleUpdateOrderStatus(o.id, newStatus);
                       }
                     }}
-                    className="bg-red-950/25 border border-red-500/40 hover:border-red-400 text-red-400 font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans"
-                    title="Editar estado de incidencia"
+                    className={`border font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans ${
+                      o.status === 'Incidencia'
+                        ? 'bg-red-950/25 border-red-500/40 hover:border-red-400 text-red-400'
+                        : 'bg-slate-900/40 border-slate-600/40 hover:border-slate-400 text-slate-300'
+                    }`}
+                    title="Editar estado del pedido"
                   >
+                    <option value="Recolectado" className="bg-[#0f0f11] text-slate-300 font-bold">📦 RECOLECTADO</option>
                     <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
                     <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
                     <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                     <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
                     <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                     <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                    <option value="Guía Generada" className="bg-[#0f0f11] text-slate-400 font-bold">📑 GUÍA GENERADA</option>
                   </select>
                 </div>
               ) : (
@@ -2372,6 +2477,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
     const allCols = [
       { id: 'orderId', label: 'ID ORDEN', value: (o: Order) => o.orderId, className: 'font-black text-white text-[15px]' },
+      favoriteCol,
       { id: 'fechaSolicitud', label: 'FECHA SOLICITUD', value: (o: Order) => o.fechaSolicitud || '---', className: 'text-orange-400 font-bold' },
       { id: 'fechaEntregaDevolucion', label: 'FECHA DE ENTREGA O DEVOLUCION', value: (o: Order) => o.fechaEntregaDevolucion || '---', className: 'text-amber-500 font-bold' },
       { id: 'hora', label: 'HORA', value: (o: Order) => o.hora, className: 'text-slate-300' },
@@ -2384,25 +2490,31 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         value: (o: Order) => o.status, 
         render: (o: Order) => (
           <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
-            {o.status === 'Incidencia' ? (
+            {o.status === 'Incidencia' || o.status === 'Recolectado' ? (
               <div onClick={(e) => e.stopPropagation()} className="relative z-10">
                 <select
                   value={o.status}
                   onChange={async (e) => {
                     const newStatus = e.target.value as OrderStatus;
-                    if (newStatus !== 'Incidencia') {
+                    if (newStatus !== o.status) {
                       await handleUpdateOrderStatus(o.id, newStatus);
                     }
                   }}
-                  className="bg-red-950/25 border border-red-500/40 hover:border-red-400 text-red-400 font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans"
-                  title="Editar estado de incidencia"
+                  className={`border font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans ${
+                    o.status === 'Incidencia'
+                      ? 'bg-red-950/25 border-red-500/40 hover:border-red-400 text-red-400'
+                      : 'bg-slate-900/40 border-slate-600/40 hover:border-slate-400 text-slate-300'
+                  }`}
+                  title="Editar estado del pedido"
                 >
+                  <option value="Recolectado" className="bg-[#0f0f11] text-slate-300 font-bold">📦 RECOLECTADO</option>
                   <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
                   <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
                   <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                   <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
                   <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                   <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                  <option value="Guía Generada" className="bg-[#0f0f11] text-slate-400 font-bold">📑 GUÍA GENERADA</option>
                 </select>
               </div>
             ) : (
@@ -2746,7 +2858,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             )}
           </div>
 
-          <div className={`grid grid-cols-1 ${viewMode === 'DROPI' ? 'lg:grid-cols-2' : 'grid-cols-1'} gap-8`}>
+          <div className={`grid grid-cols-1 ${viewMode === 'DROPI' ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-8`}>
             
             {/* SECTION 1: Batch Product Assignment */}
             <div className={`p-5 rounded-xl border flex flex-col justify-between ${
@@ -2929,6 +3041,71 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 </div>
               </div>
             )}
+
+            {/* SECTION 3: Batch Favorites Management */}
+            <div className={`p-5 rounded-xl border flex flex-col justify-between ${
+              isLightWhite ? 'bg-white border-slate-200/60 shadow-sm' : 'bg-black/20 border-white/5'
+            }`}>
+              <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-dashed border-white/5">
+                  <h4 className={`text-xs font-display font-black uppercase tracking-wider flex items-center gap-2 ${
+                    isLightWhite ? 'text-slate-800' : 'text-white'
+                  }`}>
+                    <Star className="text-amber-400 fill-amber-400" size={16} />
+                    Gestión de Favoritos
+                  </h4>
+                  
+                  <button
+                    type="button"
+                    disabled={selectedOrderIds.length === 0}
+                    onClick={handleToggleBatchFavorite}
+                    className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shrink-0 ${
+                      selectedOrderIds.length > 0
+                        ? 'bg-amber-500 text-black hover:bg-amber-400 shadow-lg shadow-amber-500/10 active:scale-95 cursor-pointer'
+                        : 'bg-slate-800 border border-white/5 text-slate-500 cursor-not-allowed opacity-40'
+                    }`}
+                  >
+                    <Star size={12} className="fill-black" />
+                    <span>Marcar / Desmarcar {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                  </button>
+                </div>
+
+                <p className={`text-[11px] mb-4 ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Marca o desmarca manualmente los pedidos seleccionados como <strong className="text-amber-400 font-bold">Favoritos</strong> para destacarlos en la lista.
+                </p>
+
+                {selectedOrderIds.length === 0 ? (
+                  <div className={`p-4 rounded-xl border text-xs font-bold mb-4 leading-relaxed ${
+                    isLightWhite ? 'bg-amber-50/50 border-amber-200 text-amber-800' : 'bg-amber-500/5 border-amber-500/10 text-amber-400/90'
+                  }`}>
+                    💡 <strong>Tip:</strong> Selecciona uno o varios pedidos en la tabla inferior y presiona el botón para marcarlos como favoritos.
+                  </div>
+                ) : (
+                  <div className={`p-3 rounded-xl border text-xs font-bold mb-4 flex items-center justify-between ${
+                    isLightWhite ? 'bg-amber-100/60 border-amber-300 text-amber-900' : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                  }`}>
+                    <span>⭐ {selectedOrderIds.length} pedidos seleccionados listos para agregar a favoritos</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                  <span className={`text-[11px] font-bold ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>
+                    Total Favoritos: <strong className="text-amber-400 font-black">{favoriteOrderIds.length}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFavoriteFilter(prev => prev === 'Favorites' ? 'All' : 'Favorites')}
+                    className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                      favoriteFilter === 'Favorites'
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-sm'
+                        : 'bg-white/5 text-slate-300 border-white/10 hover:border-amber-400/40'
+                    }`}
+                  >
+                    {favoriteFilter === 'Favorites' ? 'Ver Todos los Pedidos' : '⭐ Filtrar Solo Favoritos'}
+                  </button>
+                </div>
+              </div>
+            </div>
 
           </div>
         </div>
@@ -3837,12 +4014,21 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       ) : (
         <div className="flex flex-wrap items-center gap-4 mb-8">
           {selectedOrderIds.length > 0 && (
-            <button 
-              onClick={handleDeleteSelected}
-              className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
-            >
-              <Trash2 size={16} /> Borrar Registros ({selectedOrderIds.length})
-            </button>
+            <>
+              <button 
+                type="button"
+                onClick={handleToggleBatchFavorite}
+                className="flex items-center gap-2 px-6 py-3 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-amber-500/30 transition-all shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95"
+              >
+                <Star size={16} className="fill-amber-400 text-amber-400" /> Marcar / Desmarcar Favorito ({selectedOrderIds.length})
+              </button>
+              <button 
+                onClick={handleDeleteSelected}
+                className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+              >
+                <Trash2 size={16} /> Borrar Registros ({selectedOrderIds.length})
+              </button>
+            </>
           )}
           <button 
             onClick={exportToCSV}
@@ -3957,6 +4143,25 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <option value="Shopify">Shopify</option>
                   <option value="Dropi">Dropi</option>
                   <option value="TikTok">TikTok / Externo</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-amber-400 uppercase tracking-[0.2em] whitespace-nowrap flex items-center gap-1">
+                  <Star size={12} className="fill-amber-400 text-amber-400" /> Favoritos
+                </span>
+                <select 
+                  value={favoriteFilter}
+                  onChange={(e) => setFavoriteFilter(e.target.value as any)}
+                  className={`border rounded-xl py-2.5 px-3 text-[13px] focus:outline-none transition-all font-bold cursor-pointer ${
+                    favoriteFilter === 'Favorites' 
+                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-sm' 
+                      : 'bg-[#111] text-slate-300 border-white/5 hover:bg-[#222]'
+                  }`}
+                >
+                  <option value="All" className="bg-[#0f0f11] text-white font-bold">🔍 TODOS</option>
+                  <option value="Favorites" className="bg-[#0f0f11] text-amber-400 font-bold">⭐ SOLO FAVORITOS</option>
+                  <option value="NonFavorites" className="bg-[#0f0f11] text-slate-400 font-bold">☆ NO FAVORITOS</option>
                 </select>
               </div>
             </div>
@@ -4282,9 +4487,23 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     <p className="text-sm text-slate-500">Información completa de logística y facturación</p>
                   </div>
                 </div>
-                <button onClick={() => setShowDetailModal(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-white">
-                  <X size={24} />
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSingleFavorite(showDetailModal.id)}
+                    className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 border transition-all cursor-pointer ${
+                      (showDetailModal.isFavorite || favoriteOrderIds.includes(showDetailModal.id))
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-sm'
+                        : 'bg-white/5 text-slate-300 border-white/10 hover:border-amber-400/40'
+                    }`}
+                  >
+                    <Star size={16} className={(showDetailModal.isFavorite || favoriteOrderIds.includes(showDetailModal.id)) ? "fill-amber-400 text-amber-400" : ""} />
+                    {(showDetailModal.isFavorite || favoriteOrderIds.includes(showDetailModal.id)) ? 'Favorito' : 'Marcar Favorito'}
+                  </button>
+                  <button onClick={() => setShowDetailModal(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-white">
+                    <X size={24} />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
@@ -4310,27 +4529,33 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     <h4 className="text-[10px] font-black text-[#00df9a] uppercase tracking-[0.2em] mb-4 border-b border-[#00df9a]/20 pb-2">Logística y Envío</h4>
                     <div className="space-y-4">
                       <DetailRow label="Guía" value={showDetailModal.trackingId} />
-                      {showDetailModal.status === 'Incidencia' ? (
+                      {showDetailModal.status === 'Incidencia' || showDetailModal.status === 'Recolectado' ? (
                         <div className="flex flex-col gap-1 border-b border-white/[0.03] pb-2 last:border-0">
                           <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em]">Estado (Editable)</span>
                           <select
                             value={showDetailModal.status}
                             onChange={async (e) => {
                               const newStatus = e.target.value as OrderStatus;
-                              if (newStatus !== 'Incidencia') {
+                              if (newStatus !== showDetailModal.status) {
                                 await handleUpdateOrderStatus(showDetailModal.id, newStatus);
                                 // Update modal state too to reflect instantly
                                 setShowDetailModal(prev => prev ? { ...prev, status: newStatus } : null);
                               }
                             }}
-                            className="w-full bg-red-950/20 border border-red-500/40 hover:border-red-400 text-red-400 font-bold rounded-xl py-2 px-3 text-[13px] focus:outline-none transition-all cursor-pointer"
+                            className={`w-full font-bold rounded-xl py-2 px-3 text-[13px] focus:outline-none transition-all cursor-pointer border ${
+                              showDetailModal.status === 'Incidencia'
+                                ? 'bg-red-950/20 border-red-500/40 text-red-400 hover:border-red-400'
+                                : 'bg-slate-900/40 border-slate-600/40 text-slate-200 hover:border-slate-400'
+                            }`}
                           >
+                            <option value="Recolectado" className="bg-[#0f0f11] text-slate-300 font-bold">📦 RECOLECTADO</option>
                             <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
                             <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
                             <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                             <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
                             <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                             <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                            <option value="Guía Generada" className="bg-[#0f0f11] text-slate-400 font-bold">📑 GUÍA GENERADA</option>
                           </select>
                         </div>
                       ) : (

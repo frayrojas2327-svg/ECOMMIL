@@ -20,6 +20,7 @@ export interface Order {
   country: string;
   trackingId?: string;
   cancellationReason?: string;
+  isFavorite?: boolean;
   
   // High detail logistics fields
   fechaReporte?: string;
@@ -96,6 +97,58 @@ const PRODUCTS = [
 ];
 
 const PROVIDERS = ['AliExpress Direct', 'CJ Dropshipping', 'Local Warehouse', 'Wiio'];
+export const parseFlexibleDate = (dateStr: string | Date | null | undefined): Date | null => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) {
+    return isNaN(dateStr.getTime()) ? null : dateStr;
+  }
+  const str = String(dateStr).trim();
+  if (!str || str === '---' || str === 'undefined' || str === 'null') return null;
+
+  // Handle YYYY-MM-DD or YYYY-MM-DD HH:mm:ss or ISO strings
+  if (str.includes('-') && str.split('-')[0].length === 4) {
+    const parts = str.split(/[T ]/);
+    const dateParts = parts[0].split('-').map(Number);
+    if (dateParts.length === 3) {
+      const year = dateParts[0];
+      const month = dateParts[1] - 1;
+      const day = dateParts[2];
+      let hours = 0, minutes = 0, seconds = 0;
+      if (parts[1]) {
+        const timeParts = parts[1].split(':').map(Number);
+        hours = timeParts[0] || 0;
+        minutes = timeParts[1] || 0;
+        seconds = timeParts[2] || 0;
+      }
+      const d = new Date(year, month, day, hours, minutes, seconds);
+      return isNaN(d.getTime()) ? null : d;
+    }
+  }
+
+  // Handle DD/MM/YYYY or DD/MM/YYYY HH:mm:ss
+  if (str.includes('/')) {
+    const parts = str.split(' ');
+    const dateParts = parts[0].split('/').map(Number);
+    if (dateParts.length === 3) {
+      const day = dateParts[0];
+      const month = dateParts[1] - 1;
+      const year = dateParts[2];
+      let hours = 0, minutes = 0, seconds = 0;
+      if (parts[1]) {
+        const timeParts = parts[1].split(':').map(Number);
+        hours = timeParts[0] || 0;
+        minutes = timeParts[1] || 0;
+        seconds = timeParts[2] || 0;
+      }
+      const d = new Date(year, month, day, hours, minutes, seconds);
+      return isNaN(d.getTime()) ? null : d;
+    }
+  }
+
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 const COUNTRIES = ['Colombia', 'México', 'Chile', 'Perú', 'Ecuador', 'Panamá', 'España', 'Brasil', 'Guatemala'];
 const STATUSES: OrderStatus[] = ['Entregado', 'En tránsito', 'Guía Generada', 'Recolectado', 'Incidencia', 'Devuelto', 'Cancelado', 'Pendiente'];
 const CANCEL_REASONS = ['Cambio de opinión', 'Error en dirección', 'Precio alto', 'Tiempo de entrega', 'Duplicado'];
@@ -104,9 +157,8 @@ export const generateMockData = (): Order[] => {
   const orders: Order[] = [];
   const now = new Date();
   const baseCurrency: CurrencyCode = 'USD';
-  const rate = CURRENCIES[baseCurrency].rate;
 
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 250; i++) {
     const date = subDays(now, Math.floor(Math.random() * 30));
     const product = PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)];
     // Storing in USD base
