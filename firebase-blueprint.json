@@ -221,6 +221,27 @@
         "timestamp": { "type": "number" }
       },
       "required": ["uid", "name", "category", "amount", "date", "timestamp"]
+    },
+    "AdPanelLog": {
+      "title": "Ad Panel Log",
+      "description": "Daily advertisement log tracking spend, sales, CPA, month and product type",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "month": { "type": "string" },
+        "platform": { "type": "string" },
+        "campaignType": { "type": "string", "enum": ["whatsapp", "landing"] },
+        "spend": { "type": "number" },
+        "salesCount": { "type": "number" },
+        "adId": { "type": "string" },
+        "productName": { "type": "string" },
+        "productSource": { "type": "string" },
+        "targetCpa": { "type": "number" },
+        "notes": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["uid", "date", "month", "platform", "campaignType", "spend", "salesCount"]
     }
   },
   "firestore": {
@@ -263,6 +284,10 @@
     "other_platform_expenses/{expenseId}": {
       "schema": "OtherPlatformExpense",
       "description": "Collection of other platform and operational expenses"
+    },
+    "ad_panel_logs/{logId}": {
+      "schema": "AdPanelLog",
+      "description": "Collection of daily advertising logs from the Ad Panel"
     }
   }
 }

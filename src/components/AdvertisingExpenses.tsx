@@ -220,23 +220,43 @@ export default function AdvertisingExpenses({
 
   const [isMonthFilterActive, setIsMonthFilterActive] = useState(true);
   
+  // Default and saved advertising accounts for autocompletion
+  const [defaultAccount, setDefaultAccount] = useState<string>(() => {
+    return localStorage.getItem('ecommil_default_ad_account') || '';
+  });
+
   const uniqueAccounts = useMemo(() => {
-    const list = expenses.map(e => e.accountName?.trim() || 'Sin Cuenta').filter(Boolean);
+    const list = expenses.map(e => e.accountName?.trim() || '').filter(Boolean);
+    if (defaultAccount && !list.includes(defaultAccount)) {
+      list.unshift(defaultAccount);
+    }
     return Array.from(new Set(list)).sort();
-  }, [expenses]);
+  }, [expenses, defaultAccount]);
   
   const [showAddForm, setShowAddForm] = useState(false);
-  const [formData, setFormData] = useState({
-    productId: '',
-    productName: '',
-    date: format(new Date(), 'yyyy-MM-dd'),
-    accountName: '',
-    platform: 'Facebook Ads',
-    customPlatform: '',
-    amount: '',
-    notes: '',
-    color: 'transparent'
+  const [formData, setFormData] = useState(() => {
+    const savedDefault = localStorage.getItem('ecommil_default_ad_account') || '';
+    return {
+      productId: '',
+      productName: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      accountName: savedDefault,
+      platform: 'Facebook Ads',
+      customPlatform: '',
+      amount: '',
+      notes: '',
+      color: 'transparent'
+    };
   });
+
+  // If default account changes or is loaded, keep it synced
+  const handleSetDefaultAccount = (account: string) => {
+    const trimmed = account.trim();
+    if (trimmed) {
+      localStorage.setItem('ecommil_default_ad_account', trimmed);
+      setDefaultAccount(trimmed);
+    }
+  };
 
   // Load saved products from localStorage (from ProfitCalculator)
   useEffect(() => {
@@ -325,13 +345,19 @@ export default function AdvertisingExpenses({
       }
 
       const finalPlatform = formData.platform === 'Otro' ? formData.customPlatform : formData.platform;
+      const finalAccount = formData.accountName.trim() || defaultAccount || 'Cuenta Principal';
+
+      // Save account as default for future autocompletion
+      if (finalAccount) {
+        handleSetDefaultAccount(finalAccount);
+      }
 
       const newExpense = {
         uid: user.uid,
         productId: formData.productId,
         productName: finalProductName || 'Sin Producto',
         date: formData.date,
-        accountName: formData.accountName,
+        accountName: finalAccount,
         platform: finalPlatform || 'Otro',
         amount: normalizedAmount,
         originalAmount: rawAmount,
@@ -349,8 +375,8 @@ export default function AdvertisingExpenses({
         productId: '',
         productName: '',
         date: format(new Date(), 'yyyy-MM-dd'),
-        accountName: '',
-        platform: 'Facebook Ads',
+        accountName: finalAccount, // Keep the account name by default for next entry!
+        platform: formData.platform || 'Facebook Ads',
         customPlatform: '',
         amount: '',
         notes: '',
@@ -717,10 +743,17 @@ export default function AdvertisingExpenses({
                   value={formData.productId}
                   onChange={(e) => {
                     const prod = savedProducts.find(p => p.id === e.target.value);
+                    const pName = prod ? prod.name : '';
+                    let autoAccount = formData.accountName;
+                    if (!autoAccount) {
+                      const pastExp = expenses.find(exp => exp.productId === e.target.value || exp.productName === pName);
+                      autoAccount = pastExp?.accountName || defaultAccount || '';
+                    }
                     setFormData({ 
                       ...formData, 
                       productId: e.target.value,
-                      productName: prod ? prod.name : ''
+                      productName: pName,
+                      accountName: autoAccount
                     });
                   }}
                   className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
@@ -775,15 +808,63 @@ export default function AdvertisingExpenses({
               )}
 
               <div className="space-y-2">
-                <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1">Cuenta Publicitaria</label>
-                <input 
-                  type="text"
-                  required
-                  placeholder="Ej: Cuenta Principal"
-                  value={formData.accountName}
-                  onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
-                  className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
-                />
+                <div className="flex items-center justify-between">
+                  <label className="text-[13px] uppercase tracking-widest text-slate-400 font-bold ml-1 flex items-center gap-1.5">
+                    <span>Cuenta Publicitaria</span>
+                    {formData.accountName && formData.accountName === defaultAccount && (
+                      <span className="text-[10px] bg-primary/20 text-primary border border-primary/30 px-1.5 py-0.5 rounded font-bold">
+                        ⭐ Por defecto
+                      </span>
+                    )}
+                  </label>
+                  {formData.accountName && formData.accountName !== defaultAccount && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetDefaultAccount(formData.accountName)}
+                      className="text-[11px] text-primary/80 hover:text-primary underline font-medium transition-colors cursor-pointer"
+                      title="Fijar esta cuenta como predeterminada"
+                    >
+                      Fijar por defecto
+                    </button>
+                  )}
+                </div>
+                
+                <div className="relative">
+                  <input 
+                    type="text"
+                    required
+                    list="advertising-accounts-list"
+                    placeholder="Ej: Cuenta Principal / BM-01"
+                    value={formData.accountName}
+                    onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
+                    className="w-full bg-background border border-border rounded-xl py-2.5 px-4 text-[15px] text-white focus:border-primary outline-none transition-all"
+                  />
+                  <datalist id="advertising-accounts-list">
+                    {uniqueAccounts.map((acc) => (
+                      <option key={acc} value={acc} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {uniqueAccounts.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[11px] text-slate-500 font-medium">Sugeridas:</span>
+                    {uniqueAccounts.slice(0, 6).map((acc) => (
+                      <button
+                        key={acc}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, accountName: acc })}
+                        className={`text-[11px] px-2.5 py-0.5 rounded-lg border font-mono transition-all cursor-pointer ${
+                          formData.accountName === acc
+                            ? 'bg-primary/20 border-primary text-primary font-bold shadow-sm'
+                            : 'bg-white/5 border-border hover:border-slate-600 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {acc === defaultAccount ? `⭐ ${acc}` : acc}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -1152,6 +1233,7 @@ export default function AdvertisingExpenses({
                         <div className="space-y-2">
                           <input 
                             type="text"
+                            list="advertising-accounts-list"
                             placeholder="Cuenta publicitaria"
                             value={tempEdit?.accountName || ''}
                             onChange={(e) => setTempEdit({ ...tempEdit, accountName: e.target.value })}

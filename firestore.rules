@@ -113,6 +113,18 @@ service cloud.firestore {
              data.timestamp is number;
     }
 
+    // Helper for Ad Panel Logs
+    function isValidAdPanelLog(data) {
+      return data.get('uid', '') == request.auth.uid &&
+             data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             data.month is string && data.month.size() <= 60 &&
+             data.platform is string && data.platform.size() <= 100 &&
+             data.campaignType in ['whatsapp', 'landing'] &&
+             data.spend is number &&
+             data.salesCount is number &&
+             (!('adId' in data) || (data.adId is string && data.adId.size() <= 100));
+    }
+
     // 1. Orders Collection
     match /orders/{orderId} {
       allow get: if isOwner(resource.data.uid);
@@ -269,6 +281,23 @@ service cloud.firestore {
       allow update: if isVerified() &&
                        isOwner(resource.data.uid) &&
                        isValidOtherPlatformExpense(incoming()) &&
+                       incoming().uid == resource.data.uid;
+                        
+      allow delete: if isVerified() && isOwner(resource.data.uid);
+    }
+
+    // 12. Ad Panel Logs Collection
+    match /ad_panel_logs/{logId} {
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      allow create: if isVerified() && 
+                      isValidId(logId) &&
+                      isValidAdPanelLog(incoming());
+      
+      allow update: if isVerified() &&
+                       isOwner(resource.data.uid) &&
+                       isValidAdPanelLog(incoming()) &&
                        incoming().uid == resource.data.uid;
                         
       allow delete: if isVerified() && isOwner(resource.data.uid);

@@ -8,6 +8,10 @@ import {
   BarChart3, 
   ChevronLeft, 
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  ChevronsDown,
+  ArrowDown,
   AlertCircle,
   TrendingUp,
   TrendingDown,
@@ -107,6 +111,61 @@ function AppContent() {
   }, [isConversionActive]);
 
   const [currencyError, setCurrencyError] = useState(false);
+
+  // Sidebar Scroll states and controls
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const [sidebarCanScrollDown, setSidebarCanScrollDown] = useState(true);
+  const [sidebarCanScrollUp, setSidebarCanScrollUp] = useState(false);
+
+  const checkSidebarScroll = () => {
+    if (sidebarScrollRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = sidebarScrollRef.current;
+      setSidebarCanScrollUp(scrollTop > 20);
+      setSidebarCanScrollDown(scrollTop + clientHeight < scrollHeight - 20);
+    }
+  };
+
+  const handleSidebarScroll = () => {
+    checkSidebarScroll();
+  };
+
+  const scrollSidebarDown = () => {
+    if (sidebarScrollRef.current) {
+      sidebarScrollRef.current.scrollBy({ top: 220, behavior: 'smooth' });
+      setTimeout(checkSidebarScroll, 300);
+    }
+  };
+
+  const scrollSidebarUp = () => {
+    if (sidebarScrollRef.current) {
+      sidebarScrollRef.current.scrollBy({ top: -220, behavior: 'smooth' });
+      setTimeout(checkSidebarScroll, 300);
+    }
+  };
+
+  const scrollSidebarToBottom = () => {
+    if (sidebarScrollRef.current) {
+      sidebarScrollRef.current.scrollTo({ top: sidebarScrollRef.current.scrollHeight, behavior: 'smooth' });
+      setTimeout(checkSidebarScroll, 300);
+    }
+  };
+
+  const scrollSidebarToTop = () => {
+    if (sidebarScrollRef.current) {
+      sidebarScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(checkSidebarScroll, 300);
+    }
+  };
+
+  useEffect(() => {
+    checkSidebarScroll();
+    window.addEventListener('resize', checkSidebarScroll);
+    const timer = setTimeout(checkSidebarScroll, 500);
+    return () => {
+      window.removeEventListener('resize', checkSidebarScroll);
+      clearTimeout(timer);
+    };
+  }, [isSidebarCollapsed, activeTab]);
 
   // Fetch live rates on mount
   useEffect(() => {
@@ -818,16 +877,26 @@ function AppContent() {
         animate={{ width: isSidebarCollapsed ? 80 : 260 }}
         className="hidden md:flex border-r border-border bg-card flex-col z-20"
       >
-        <div className="p-6 flex flex-col items-center gap-4">
+        <div className="p-6 flex flex-col items-center gap-4 border-b border-border/50">
           {isSidebarCollapsed ? (
             <>
               <Logo size={32} />
-              <button 
-                onClick={() => setIsSidebarCollapsed(false)}
-                className="p-1.5 rounded-lg bg-background border border-border text-slate-400 hover:text-neon transition-colors"
-              >
-                <ChevronRight size={18} />
-              </button>
+              <div className="flex flex-col gap-1.5 items-center">
+                <button 
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  title="Expandir menú"
+                  className="p-1.5 rounded-lg bg-background border border-border text-slate-400 hover:text-neon transition-colors"
+                >
+                  <ChevronRight size={18} />
+                </button>
+                <button
+                  onClick={sidebarCanScrollDown ? scrollSidebarDown : scrollSidebarToTop}
+                  title={sidebarCanScrollDown ? "Desplazar panel hacia abajo" : "Volver arriba"}
+                  className="p-1.5 rounded-lg bg-background/80 border border-border text-slate-400 hover:text-neon hover:border-neon/40 transition-colors"
+                >
+                  {sidebarCanScrollDown ? <ChevronDown size={14} className="animate-bounce" /> : <ChevronUp size={14} />}
+                </button>
+              </div>
             </>
           ) : (
             <div className="flex items-center justify-between w-full">
@@ -841,17 +910,33 @@ function AppContent() {
                   ECOMM<span className="text-neon">IL</span>
                 </h1>
               </motion.div>
-              <button 
-                onClick={() => setIsSidebarCollapsed(true)}
-                className="p-1.5 rounded-lg bg-background border border-border text-slate-400 hover:text-neon transition-colors"
-              >
-                <ChevronLeft size={18} />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={sidebarCanScrollDown ? scrollSidebarDown : scrollSidebarToTop}
+                  title={sidebarCanScrollDown ? "Desplazar panel hacia abajo" : "Volver arriba"}
+                  className="p-1.5 rounded-lg bg-background/80 border border-border text-slate-400 hover:text-neon hover:border-neon/40 transition-colors flex items-center justify-center"
+                >
+                  {sidebarCanScrollDown ? <ChevronDown size={16} className="text-neon animate-bounce" /> : <ChevronUp size={16} />}
+                </button>
+                <button 
+                  onClick={() => setIsSidebarCollapsed(true)}
+                  title="Colapsar menú"
+                  className="p-1.5 rounded-lg bg-background border border-border text-slate-400 hover:text-neon transition-colors"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+              </div>
             </div>
           )}
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-4">
+        {/* Scrollable Navigation Area */}
+        <div 
+          ref={sidebarScrollRef}
+          onScroll={handleSidebarScroll}
+          className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-1.5 relative scrollbar-thin scrollbar-thumb-white/10 hover:scrollbar-thumb-neon/30"
+          style={{ scrollBehavior: 'smooth' }}
+        >
           {menuItems.map((item) => (
             <button
               key={item.id}
@@ -870,78 +955,117 @@ function AppContent() {
               ) : (
                 <item.icon size={20} className={activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'} />
               )}
-              {!isSidebarCollapsed && <span className="font-medium text-left">{item.label}</span>}
+              {!isSidebarCollapsed && <span className="font-medium text-left truncate">{item.label}</span>}
             </button>
           ))}
-        </nav>
 
-        <div className="px-4 mb-2 space-y-2">
-          <button
-            onClick={() => setActiveTab('sales')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'sales' 
-                ? 'bg-neon/10 text-neon border border-neon/20' 
-                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <TrendingUp size={20} className={activeTab === 'sales' ? 'text-neon' : 'group-hover:text-neon'} />
-            {!isSidebarCollapsed && <span className="font-medium">Ventas</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab('research')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'research' 
-                ? 'bg-neon/10 text-neon border border-neon/20' 
-                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <Search size={20} className={activeTab === 'research' ? 'text-neon' : 'group-hover:text-neon'} />
-            {!isSidebarCollapsed && <span className="font-medium">Investigación</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab('calculator')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'calculator' 
-                ? 'bg-neon/10 text-neon border border-neon/20' 
-                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <Calculator size={20} className={activeTab === 'calculator' ? 'text-neon' : 'group-hover:text-neon'} />
-            {!isSidebarCollapsed && <span className="font-medium">Calculadora</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab('ad-panel')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'ad-panel' 
-                ? 'bg-neon/10 text-neon border border-neon/20' 
-                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <TrendingUp size={20} className={activeTab === 'ad-panel' ? 'text-neon' : 'group-hover:text-neon'} />
-            {!isSidebarCollapsed && <span className="font-medium">Panel Ads</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab('ads')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'ads' 
-                ? 'bg-neon/10 text-neon border border-neon/20' 
-                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <Megaphone size={20} className={activeTab === 'ads' ? 'text-neon' : 'group-hover:text-neon'} />
-            {!isSidebarCollapsed && <span className="font-medium">Publicidad</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab('platform-expenses')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'platform-expenses' 
-                ? 'bg-neon/10 text-neon border border-neon/20' 
-                : 'text-slate-400 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <CreditCard size={20} className={activeTab === 'platform-expenses' ? 'text-neon' : 'group-hover:text-neon'} />
-            {!isSidebarCollapsed && <span className="font-medium">Gastos Plataforma</span>}
-          </button>
+          <div className="pt-2 border-t border-border/40 space-y-1.5">
+            <button
+              onClick={() => setActiveTab('sales')}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+                activeTab === 'sales' 
+                  ? 'bg-neon/10 text-neon border border-neon/20' 
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <TrendingUp size={20} className={activeTab === 'sales' ? 'text-neon' : 'group-hover:text-neon'} />
+              {!isSidebarCollapsed && <span className="font-medium truncate">Ventas</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('research')}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+                activeTab === 'research' 
+                  ? 'bg-neon/10 text-neon border border-neon/20' 
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <Search size={20} className={activeTab === 'research' ? 'text-neon' : 'group-hover:text-neon'} />
+              {!isSidebarCollapsed && <span className="font-medium truncate">Investigación</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('calculator')}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+                activeTab === 'calculator' 
+                  ? 'bg-neon/10 text-neon border border-neon/20' 
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <Calculator size={20} className={activeTab === 'calculator' ? 'text-neon' : 'group-hover:text-neon'} />
+              {!isSidebarCollapsed && <span className="font-medium truncate">Calculadora</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('ad-panel')}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+                activeTab === 'ad-panel' 
+                  ? 'bg-neon/10 text-neon border border-neon/20' 
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <TrendingUp size={20} className={activeTab === 'ad-panel' ? 'text-neon' : 'group-hover:text-neon'} />
+              {!isSidebarCollapsed && <span className="font-medium truncate">Panel Ads</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('ads')}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+                activeTab === 'ads' 
+                  ? 'bg-neon/10 text-neon border border-neon/20' 
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <Megaphone size={20} className={activeTab === 'ads' ? 'text-neon' : 'group-hover:text-neon'} />
+              {!isSidebarCollapsed && <span className="font-medium truncate">Publicidad</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('platform-expenses')}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+                activeTab === 'platform-expenses' 
+                  ? 'bg-neon/10 text-neon border border-neon/20' 
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <CreditCard size={20} className={activeTab === 'platform-expenses' ? 'text-neon' : 'group-hover:text-neon'} />
+              {!isSidebarCollapsed && <span className="font-medium truncate">Gastos Plataforma</span>}
+            </button>
+          </div>
+        </div>
+
+        {/* Dedicated Scroll Action Bar for Ecom Mil Left Panel */}
+        <div className="px-3 py-2 border-t border-border/40 bg-card/90">
+          {!isSidebarCollapsed ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={scrollSidebarDown}
+                title="Desplazar panel hacia abajo"
+                className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-neon/10 border border-neon/30 text-neon hover:bg-neon/20 hover:border-neon text-xs font-semibold shadow-sm transition-all group"
+              >
+                <ChevronDown size={16} className="animate-bounce group-hover:translate-y-0.5 transition-transform" />
+                <span>Desplazar Abajo</span>
+              </button>
+              {sidebarCanScrollUp && (
+                <button
+                  onClick={scrollSidebarToTop}
+                  title="Volver al inicio del panel"
+                  className="p-2 rounded-xl bg-background border border-border text-slate-400 hover:text-white hover:border-border/80 transition-all flex items-center justify-center"
+                >
+                  <ChevronUp size={16} />
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1">
+              <button
+                onClick={sidebarCanScrollDown ? scrollSidebarDown : scrollSidebarToTop}
+                title={sidebarCanScrollDown ? "Desplazar panel hacia abajo" : "Volver arriba"}
+                className="w-10 h-10 rounded-xl bg-neon/10 border border-neon/30 text-neon hover:bg-neon/20 hover:border-neon flex items-center justify-center transition-all"
+              >
+                {sidebarCanScrollDown ? (
+                  <ChevronDown size={18} className="animate-bounce" />
+                ) : (
+                  <ChevronUp size={18} />
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="p-4 border-t border-border">
@@ -1369,7 +1493,14 @@ function AppContent() {
                   playCompletionSound={playCompletionSound}
                 />
               )}
-              {activeTab === 'ad-panel' && <AdPanel theme={theme} />}
+              {activeTab === 'ad-panel' && (
+                <AdPanel 
+                  theme={theme} 
+                  orders={orders} 
+                  formatCurrency={formatCurrency} 
+                  currency={currency} 
+                />
+              )}
               {activeTab === 'returns' && (
                 <ReturnsAnalysis 
                   orders={filteredOrders} 

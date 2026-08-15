@@ -100,24 +100,19 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   setVariableExpenses
 }) => {
   const localFormatCurrency = (amount: number, expense?: FixedExpense | VariableExpense) => {
-    // If we have original currency that matches current, use it exactly
-    if (expense?.originalAmount !== undefined && expense?.originalCurrency === currency) {
-      const locale = currency === 'PEN' ? 'es-PE' : 'es-GT';
-      return new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency: currency,
-        currencyDisplay: 'symbol',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2,
-      }).format(expense.originalAmount);
+    let rawVal = amount;
+    if (expense) {
+      const expAmount = expense.originalAmount !== undefined && expense.originalAmount > 0 
+        ? expense.originalAmount 
+        : expense.amount;
+      if ('frequency' in expense && expense.frequency === 'yearly' && Math.abs(amount - expense.amount / 12) < 0.01) {
+        rawVal = expAmount / 12;
+      } else if (Math.abs(amount - expense.amount) < 0.01) {
+        rawVal = expAmount;
+      }
     }
-
-    const rate = currencies[currency]?.rate || 1;
-    const converted = amount * rate;
-    const rounded = Math.round(converted * 100) / 100;
-    
-    // Choose locale based on currency
-    const locale = currency === 'PEN' ? 'es-PE' : 'es-GT';
+      
+    const locale = currency === 'PEN' ? 'es-PE' : currency === 'GTQ' ? 'es-GT' : currency === 'COP' ? 'es-CO' : currency === 'MXN' ? 'es-MX' : 'es-GT';
     
     return new Intl.NumberFormat(locale, {
       style: 'currency',
@@ -125,7 +120,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
       currencyDisplay: 'symbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
-    }).format(rounded);
+    }).format(rawVal);
   };
 
   const [isSaved, setIsSaved] = useState(false);
@@ -149,13 +144,12 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   });
 
   const addExpense = () => {
-    const info = currencies[currency];
-    const amountToSave = newFixed.amount / info.rate;
+    const rawAmount = Number(newFixed.amount) || 0;
     
     const newExpense: FixedExpense = {
       ...newFixed,
-      amount: amountToSave,
-      originalAmount: newFixed.amount,
+      amount: rawAmount,
+      originalAmount: rawAmount,
       originalCurrency: currency,
       id: Math.random().toString(36).substr(2, 9)
     };
@@ -172,13 +166,12 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   };
 
   const addVariableExpense = () => {
-    const info = currencies[currency];
-    const amountToSave = newVariable.amount / info.rate;
+    const rawAmount = Number(newVariable.amount) || 0;
     
     const newExpense: VariableExpense = {
       ...newVariable,
-      amount: amountToSave,
-      originalAmount: newVariable.amount,
+      amount: rawAmount,
+      originalAmount: rawAmount,
       originalCurrency: currency,
       id: Math.random().toString(36).substr(2, 9)
     };
@@ -209,10 +202,14 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   };
 
   const totalMonthlyFixed = fixedExpenses.reduce((acc, curr) => {
-    return acc + (curr.frequency === 'monthly' ? curr.amount : curr.amount / 12);
+    const val = curr.originalAmount !== undefined && curr.originalAmount > 0 ? curr.originalAmount : curr.amount;
+    return acc + (curr.frequency === 'monthly' ? val : val / 12);
   }, 0);
 
-  const totalVariable = variableExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalVariable = variableExpenses.reduce((acc, curr) => {
+    const val = curr.originalAmount !== undefined && curr.originalAmount > 0 ? curr.originalAmount : curr.amount;
+    return acc + val;
+  }, 0);
 
   const handleSave = () => {
     localStorage.setItem('ecommil_fixed_expenses', JSON.stringify(fixedExpenses));
@@ -516,10 +513,12 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                         <span className="text-slate-500 font-mono text-xs">{currencySymbol}</span>
                         <input 
                           type="number"
-                          value={currencies[currency].rate !== 1 ? (expense.amount * currencies[currency].rate).toFixed(2) : expense.amount}
+                          step="any"
+                          value={expense.originalAmount ?? expense.amount}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
-                            updateExpense(expense.id, 'amount', val / currencies[currency].rate);
+                            updateExpense(expense.id, 'amount', val);
+                            updateExpense(expense.id, 'originalAmount', val);
                           }}
                           className="w-24 bg-background border border-border rounded-lg py-1 px-2 text-sm font-mono text-white focus:outline-none focus:border-neon"
                         />
@@ -654,10 +653,12 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
                         <span className="text-slate-500 font-mono text-xs">{currencySymbol}</span>
                         <input 
                           type="number"
-                          value={currencies[currency].rate !== 1 ? (expense.amount * currencies[currency].rate).toFixed(2) : expense.amount}
+                          step="any"
+                          value={expense.originalAmount ?? expense.amount}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
-                            updateVariableExpense(expense.id, 'amount', val / currencies[currency].rate);
+                            updateVariableExpense(expense.id, 'amount', val);
+                            updateVariableExpense(expense.id, 'originalAmount', val);
                           }}
                           className="w-24 bg-background border border-border rounded-lg py-1 px-2 text-sm font-mono text-white focus:outline-none focus:border-gold"
                         />
