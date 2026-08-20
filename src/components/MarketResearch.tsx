@@ -26,7 +26,9 @@ import {
   AlertCircle,
   Smartphone,
   Globe,
-  MessageCircle
+  MessageCircle,
+  Megaphone,
+  Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, doc, deleteDoc, addDoc, setDoc } from 'firebase/firestore';
@@ -40,6 +42,30 @@ export interface ChecklistItem {
   completed: boolean;
 }
 
+export type TestingStatus = 'TESTEADO' | 'EN PROCESO' | 'FALTA DE TESTEAR';
+export type SalesChannelType = 'WhatsApp' | 'Landing' | 'Ambos';
+
+export const AVAILABLE_MARKETING_TAGS = [
+  { 
+    name: 'WHATSAPP META', 
+    label: 'WHATSAPP META', 
+    activeBadge: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 font-bold shadow-sm',
+    inactiveBadge: 'bg-black/40 border-[#1a1a1a] text-slate-600 hover:text-slate-400 hover:border-slate-700'
+  },
+  { 
+    name: 'WEB FACEBOOK', 
+    label: 'WEB FACEBOOK', 
+    activeBadge: 'bg-blue-500/15 border-blue-500/40 text-blue-400 font-bold shadow-sm',
+    inactiveBadge: 'bg-black/40 border-[#1a1a1a] text-slate-600 hover:text-slate-400 hover:border-slate-700'
+  },
+  { 
+    name: 'WEB TIKTOK', 
+    label: 'WEB TIKTOK', 
+    activeBadge: 'bg-pink-500/15 border-pink-500/40 text-pink-400 font-bold shadow-sm',
+    inactiveBadge: 'bg-black/40 border-[#1a1a1a] text-slate-600 hover:text-slate-400 hover:border-slate-700'
+  }
+];
+
 export interface MarketResearchEntry {
   id: string;
   uid: string;
@@ -47,14 +73,20 @@ export interface MarketResearchEntry {
   price?: number;
   currency?: string;
   dropiId?: string;
-  channel?: 'WhatsApp' | 'Landing';
+  suppliersCount?: number;
+  channel?: SalesChannelType;
   competitorsCount?: number;
+  competitorsWhatsApp?: number;
+  competitorsLanding?: number;
+  marketingTags?: string[];
   storeUrls: string[];
+  adUrls?: string[];
   videoUrls: string[];
   notes: string;
   angles?: string[];
   checklist?: ChecklistItem[];
   progress?: number;
+  testingStatus?: TestingStatus;
   timestamp: number;
 }
 
@@ -87,6 +119,33 @@ const CURRENCY_OPTIONS = [
   'us $ - Dólar estadounidense ($)',
   'gt Q - Quetzal guatemalteco (Q)'
 ];
+
+export const STATUS_CONFIG: Record<TestingStatus, { label: string; icon: string; bgBadge: string; textBadge: string; borderBadge: string; activeClass: string }> = {
+  'TESTEADO': {
+    label: 'TESTEADO',
+    icon: '✓',
+    bgBadge: 'bg-emerald-500/15',
+    textBadge: 'text-emerald-400',
+    borderBadge: 'border-emerald-500/30',
+    activeClass: 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold shadow-sm'
+  },
+  'EN PROCESO': {
+    label: 'EN PROCESO',
+    icon: '⚡',
+    bgBadge: 'bg-amber-500/15',
+    textBadge: 'text-amber-400',
+    borderBadge: 'border-amber-500/30',
+    activeClass: 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold shadow-sm'
+  },
+  'FALTA DE TESTEAR': {
+    label: 'FALTA DE TESTEAR',
+    icon: '⏳',
+    bgBadge: 'bg-purple-500/15',
+    textBadge: 'text-purple-400',
+    borderBadge: 'border-purple-500/30',
+    activeClass: 'bg-purple-500/20 border-purple-500 text-purple-300 font-bold shadow-sm'
+  }
+};
 
 interface MarketResearchProps {
   timerMinutes: number;
@@ -156,13 +215,20 @@ export default function MarketResearch({
   const [suggestedPrice, setSuggestedPrice] = useState('');
   const [currency, setCurrency] = useState('co $ - Peso colombiano ($)');
   const [dropiId, setDropiId] = useState('');
-  const [salesChannel, setSalesChannel] = useState<'WhatsApp' | 'Landing'>('WhatsApp');
-  const [directCompetitors, setDirectCompetitors] = useState(3);
+  const [suppliersCount, setSuppliersCount] = useState(1);
+  const [salesChannel, setSalesChannel] = useState<SalesChannelType>('WhatsApp');
+  const [marketingTags, setMarketingTags] = useState<string[]>([]);
+  const [competitorsWhatsApp, setCompetitorsWhatsApp] = useState(2);
+  const [competitorsLanding, setCompetitorsLanding] = useState(2);
+  const [directCompetitors, setDirectCompetitors] = useState(4);
+  const [testingStatus, setTestingStatus] = useState<TestingStatus>('FALTA DE TESTEAR');
   const [notes, setNotes] = useState('');
 
   // Stores and Videos lists
   const [storeUrls, setStoreUrls] = useState<string[]>([]);
   const [storeUrlInput, setStoreUrlInput] = useState('');
+  const [adUrls, setAdUrls] = useState<string[]>([]);
+  const [adUrlInput, setAdUrlInput] = useState('');
   const [videoUrls, setVideoUrls] = useState<string[]>([]);
   const [videoUrlInput, setVideoUrlInput] = useState('');
 
@@ -178,8 +244,9 @@ export default function MarketResearch({
   const [editingTaskText, setEditingTaskText] = useState('');
   const [editingTaskDesc, setEditingTaskDesc] = useState('');
 
-  // Search History State
+  // Search History & Filter State
   const [searchHistoryTerm, setSearchHistoryTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | TestingStatus>('ALL');
 
   // Load from LocalStorage if demo/no firebase config
   useEffect(() => {
@@ -282,6 +349,23 @@ export default function MarketResearch({
     setStoreUrls(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleAddAdUrl = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!adUrlInput.trim()) return;
+    let url = adUrlInput.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+    if (!adUrls.includes(url)) {
+      setAdUrls(prev => [...prev, url]);
+    }
+    setAdUrlInput('');
+  };
+
+  const handleRemoveAdUrl = (index: number) => {
+    setAdUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleAddVideoUrl = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!videoUrlInput.trim()) return;
@@ -374,11 +458,18 @@ export default function MarketResearch({
     setSuggestedPrice('');
     setCurrency('co $ - Peso colombiano ($)');
     setDropiId('');
+    setSuppliersCount(1);
     setSalesChannel('WhatsApp');
-    setDirectCompetitors(3);
+    setCompetitorsWhatsApp(2);
+    setCompetitorsLanding(2);
+    setDirectCompetitors(4);
+    setMarketingTags([]);
+    setTestingStatus('FALTA DE TESTEAR');
     setNotes('');
     setStoreUrls([]);
     setStoreUrlInput('');
+    setAdUrls([]);
+    setAdUrlInput('');
     setVideoUrls([]);
     setVideoUrlInput('');
     setSelectedAngles([]);
@@ -397,15 +488,22 @@ export default function MarketResearch({
     }
 
     const calculatedProgress = progressPercentage;
+    const totalComp = (competitorsWhatsApp || 0) + (competitorsLanding || 0);
     const entryData = {
       uid: user?.uid || 'demo-user',
       productName: productName.trim(),
       price: parseFloat(suggestedPrice) || 0,
       currency,
       dropiId: dropiId.trim(),
+      suppliersCount: Math.max(0, suppliersCount || 0),
       channel: salesChannel,
-      competitorsCount: directCompetitors,
+      competitorsCount: totalComp,
+      competitorsWhatsApp: Math.max(0, competitorsWhatsApp || 0),
+      competitorsLanding: Math.max(0, competitorsLanding || 0),
+      marketingTags,
+      testingStatus,
       storeUrls,
+      adUrls,
       videoUrls,
       notes: notes.trim(),
       angles: selectedAngles,
@@ -442,6 +540,44 @@ export default function MarketResearch({
     }
   };
 
+  // Direct status update from history table
+  const handleUpdateStatus = async (id: string, newStatus: TestingStatus) => {
+    if (isDemoMode || !isFirebaseConfigValid) {
+      setResearchList(prev => prev.map(item => item.id === id ? { ...item, testingStatus: newStatus } : item));
+      return;
+    }
+
+    if (!db) return;
+    try {
+      const ref = doc(db, 'market_research', id);
+      await setDoc(ref, { testingStatus: newStatus }, { merge: true });
+      setResearchList(prev => prev.map(item => item.id === id ? { ...item, testingStatus: newStatus } : item));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'market_research');
+    }
+  };
+
+  // Direct tag toggle from history table
+  const handleToggleMarketingTag = async (id: string, tagName: string) => {
+    const targetItem = researchList.find(item => item.id === id);
+    if (!targetItem) return;
+    const currentTags = targetItem.marketingTags || [];
+    const updatedTags = currentTags.includes(tagName)
+      ? currentTags.filter(t => t !== tagName)
+      : [...currentTags, tagName];
+
+    setResearchList(prev => prev.map(item => item.id === id ? { ...item, marketingTags: updatedTags } : item));
+
+    if (isDemoMode || !isFirebaseConfigValid) return;
+    if (!db) return;
+    try {
+      const ref = doc(db, 'market_research', id);
+      await setDoc(ref, { marketingTags: updatedTags }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'market_research');
+    }
+  };
+
   // Load selected entry for edit
   const loadResearchEntry = (item: any) => {
     setEditingId(item.id);
@@ -449,10 +585,25 @@ export default function MarketResearch({
     setSuggestedPrice(item.price ? String(item.price) : '');
     setCurrency(item.currency || 'co $ - Peso colombiano ($)');
     setDropiId(item.dropiId || '');
+    setSuppliersCount(item.suppliersCount !== undefined ? item.suppliersCount : 1);
     setSalesChannel(item.channel || 'WhatsApp');
-    setDirectCompetitors(item.competitorsCount !== undefined ? item.competitorsCount : 3);
+    setMarketingTags(item.marketingTags || []);
+
+    const compWa = item.competitorsWhatsApp !== undefined 
+      ? item.competitorsWhatsApp 
+      : (item.channel === 'WhatsApp' ? (item.competitorsCount ?? 2) : 0);
+    const compLand = item.competitorsLanding !== undefined 
+      ? item.competitorsLanding 
+      : (item.channel === 'Landing' ? (item.competitorsCount ?? 2) : 0);
+    
+    setCompetitorsWhatsApp(compWa);
+    setCompetitorsLanding(compLand);
+    setDirectCompetitors(item.competitorsCount !== undefined ? item.competitorsCount : (compWa + compLand));
+
+    setTestingStatus(item.testingStatus || 'FALTA DE TESTEAR');
     setNotes(item.notes || '');
     setStoreUrls(item.storeUrls || []);
+    setAdUrls(item.adUrls || []);
     setVideoUrls(item.videoUrls || []);
     setSelectedAngles(item.angles || []);
     setChecklist(item.checklist && item.checklist.length ? item.checklist : DEFAULT_CHECKLIST);
@@ -487,21 +638,33 @@ export default function MarketResearch({
       return;
     }
 
-    const headers = ['Fecha', 'Producto', 'Precio', 'Moneda', 'ID Dropi', 'Canal', 'Competidores', 'Tiendas de Competencia', 'Videos Referencia', 'Ángulos', 'Progreso', 'Notas'];
+    const headers = ['Fecha', 'Producto', 'Estado de Testeo', 'Etiquetas de Tráfico', 'Precio', 'Moneda', 'ID Dropi', 'N° Proveedores', 'Canal', 'Competidores WhatsApp', 'Competidores Landing', 'Total Competidores', 'Tiendas de Competencia', 'URLs de Anuncio', 'Videos Referencia', 'Ángulos', 'Progreso', 'Notas'];
     const rows = researchList.map(item => {
       const date = new Date(item.timestamp).toISOString().split('T')[0];
+      const tagsStr = (item.marketingTags || []).join(' | ');
       const stores = (item.storeUrls || []).join(' | ');
+      const ads = (item.adUrls || []).join(' | ');
       const videos = (item.videoUrls || []).join(' | ');
       const anglesStr = (item.angles || []).join(' | ');
+      const compWa = item.competitorsWhatsApp !== undefined ? item.competitorsWhatsApp : (item.channel === 'WhatsApp' ? (item.competitorsCount || 0) : 0);
+      const compLand = item.competitorsLanding !== undefined ? item.competitorsLanding : (item.channel === 'Landing' ? (item.competitorsCount || 0) : 0);
+      const totalComp = item.competitorsCount !== undefined ? item.competitorsCount : (compWa + compLand);
+
       return [
         date,
         item.productName || '',
+        item.testingStatus || 'FALTA DE TESTEAR',
+        tagsStr,
         item.price || 0,
         item.currency || '',
         item.dropiId || '',
+        item.suppliersCount !== undefined ? item.suppliersCount : 1,
         item.channel || '',
-        item.competitorsCount || 0,
+        compWa,
+        compLand,
+        totalComp,
         stores,
+        ads,
         videos,
         anglesStr,
         `${item.progress || 0}%`,
@@ -524,13 +687,32 @@ export default function MarketResearch({
     document.body.removeChild(link);
   };
 
-  // Filters history items by query
+  // Filters history items by query and status
   const filteredHistory = useMemo(() => {
-    return researchList.filter(item => 
-      (item.productName || '').toLowerCase().includes(searchHistoryTerm.toLowerCase()) ||
-      (item.notes || '').toLowerCase().includes(searchHistoryTerm.toLowerCase())
-    );
-  }, [researchList, searchHistoryTerm]);
+    return researchList.filter(item => {
+      const matchesSearch = (item.productName || '').toLowerCase().includes(searchHistoryTerm.toLowerCase()) ||
+        (item.notes || '').toLowerCase().includes(searchHistoryTerm.toLowerCase());
+      
+      const itemStatus = item.testingStatus || 'FALTA DE TESTEAR';
+      const matchesStatus = statusFilter === 'ALL' || itemStatus === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [researchList, searchHistoryTerm, statusFilter]);
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      ALL: researchList.length,
+      TESTEADO: 0,
+      'EN PROCESO': 0,
+      'FALTA DE TESTEAR': 0
+    };
+    researchList.forEach(item => {
+      const st = item.testingStatus || 'FALTA DE TESTEAR';
+      if (counts[st] !== undefined) counts[st]++;
+    });
+    return counts;
+  }, [researchList]);
 
   if (loading) {
     return (
@@ -691,7 +873,7 @@ export default function MarketResearch({
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Precio de Venta Sugerido</label>
                   <div className="relative">
@@ -722,6 +904,7 @@ export default function MarketResearch({
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
                   </select>
+                  <span className="text-[9px] text-slate-500 font-bold block mt-0.5">Mercado / País</span>
                 </div>
  
                 <div className="space-y-1">
@@ -736,6 +919,38 @@ export default function MarketResearch({
                   />
                   <span className="text-[9px] text-orange-500 font-bold block mt-0.5">Dropshipping</span>
                 </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">N° de Proveedores</label>
+                  <div className="flex items-center gap-1.5">
+                    <button 
+                      type="button" 
+                      onClick={() => setSuppliersCount(prev => Math.max(0, (parseInt(String(prev)) || 0) - 1))}
+                      className="w-8 h-[34px] flex items-center justify-center rounded-xl bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:bg-white/5 active:scale-95 font-bold font-mono shrink-0"
+                      style={{ backgroundColor: '#000000' }}
+                    >
+                      -
+                    </button>
+                    <input 
+                      type="number"
+                      min="0"
+                      placeholder="1"
+                      value={suppliersCount}
+                      onChange={(e) => setSuppliersCount(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full bg-[#000000] border border-[#1a1a1a] rounded-xl py-1.5 text-center text-xs text-white placeholder-slate-600 focus:border-slate-700 outline-none font-mono font-bold"
+                      style={{ backgroundColor: '#000000' }}
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setSuppliersCount(prev => (parseInt(String(prev)) || 0) + 1)}
+                      className="w-8 h-[34px] flex items-center justify-center rounded-xl bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:bg-white/5 active:scale-95 font-bold font-mono shrink-0"
+                      style={{ backgroundColor: '#000000' }}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span className="text-[9px] text-blue-400 font-bold block mt-0.5">Proveedores validados</span>
+                </div>
               </div>
             </div>
           </div>
@@ -747,66 +962,156 @@ export default function MarketResearch({
               <Globe size={14} className="text-orange-500" /> CANALES DE VENTA Y COMPETIDORES
             </h3>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Canal / Método de Venta</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSalesChannel('WhatsApp')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${salesChannel === 'WhatsApp' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' : 'bg-[#000000] border-[#1a1a1a] text-slate-500 hover:text-slate-300'}`}
-                      style={{ backgroundColor: salesChannel === 'WhatsApp' ? undefined : '#000000' }}
-                    >
-                      <MessageCircle size={13} /> WhatsApp
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSalesChannel('Landing')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${salesChannel === 'Landing' ? 'bg-orange-500/10 border-orange-500 text-orange-400' : 'bg-[#000000] border-[#1a1a1a] text-slate-500 hover:text-slate-300'}`}
-                      style={{ backgroundColor: salesChannel === 'Landing' ? undefined : '#000000' }}
-                    >
-                      <Smartphone size={13} /> Landing Page
-                    </button>
+            <div className="space-y-3">
+              {/* Selector de Plataforma / Estrategia a Pautar */}
+              <div className="space-y-1.5 pb-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Plataforma / Estrategia a Pautar</label>
+                  <span className="text-[8px] text-slate-600 uppercase font-mono">Define el contorno del registro</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {AVAILABLE_MARKETING_TAGS.map(tag => {
+                    const isSelected = marketingTags.includes(tag.name);
+                    return (
+                      <button
+                        key={tag.name}
+                        type="button"
+                        onClick={() => {
+                          setMarketingTags(prev => 
+                            prev.includes(tag.name)
+                              ? prev.filter(t => t !== tag.name)
+                              : [...prev, tag.name]
+                          );
+                        }}
+                        className={`py-2 px-2.5 rounded-xl border text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? tag.name === 'WHATSAPP META'
+                              ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400 shadow-sm shadow-emerald-500/10'
+                              : tag.name === 'WEB FACEBOOK'
+                              ? 'bg-blue-500/15 border-blue-500/50 text-blue-400 shadow-sm shadow-blue-500/10'
+                              : 'bg-pink-500/15 border-pink-500/50 text-pink-400 shadow-sm shadow-pink-500/10'
+                            : 'bg-[#000000] border-[#1a1a1a] text-slate-500 hover:text-slate-300 hover:border-slate-800'
+                        }`}
+                        style={{ backgroundColor: isSelected ? undefined : '#000000' }}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${
+                          tag.name === 'WHATSAPP META' ? 'bg-emerald-400' :
+                          tag.name === 'WEB FACEBOOK' ? 'bg-blue-400' :
+                          'bg-pink-400'
+                        }`} />
+                        <span>{tag.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Espacios Independientes de Competidores por Canal */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Espacio Independiente WhatsApp */}
+                <div className="bg-[#050505] border border-[#1a1a1a] rounded-xl p-3 space-y-2 relative" style={{ backgroundColor: '#050505' }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs">
+                      <MessageCircle size={14} />
+                      <span>Competidores WhatsApp</span>
+                    </div>
+                    <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-bold">
+                      Chat / WA
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-[#1a1a1a]">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold font-mono">Competidores:</span>
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        type="button" 
+                        onClick={() => setCompetitorsWhatsApp(prev => Math.max(0, (parseInt(String(prev)) || 0) - 1))}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 font-bold font-mono text-xs"
+                        style={{ backgroundColor: '#000000' }}
+                      >
+                        -
+                      </button>
+                      <input 
+                        type="number"
+                        min="0"
+                        value={competitorsWhatsApp}
+                        onChange={(e) => setCompetitorsWhatsApp(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-12 bg-[#000000] border border-[#1a1a1a] rounded-lg py-1 text-center text-xs text-emerald-400 font-mono font-bold outline-none focus:border-emerald-500/50"
+                        style={{ backgroundColor: '#000000' }}
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setCompetitorsWhatsApp(prev => (parseInt(String(prev)) || 0) + 1)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 font-bold font-mono text-xs"
+                        style={{ backgroundColor: '#000000' }}
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Número de Competidores Directos</label>
-                  <div className="flex items-center gap-2">
-                    <button 
-                      type="button" 
-                      onClick={() => setDirectCompetitors(prev => Math.max(0, prev - 1))}
-                      className="w-8 h-8 flex items-center justify-center rounded-xl bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:bg-white/5 active:scale-95 font-bold font-mono"
-                      style={{ backgroundColor: '#000000' }}
-                    >
-                      -
-                    </button>
-                    <input 
-                      type="number"
-                      value={directCompetitors}
-                      onChange={(e) => setDirectCompetitors(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-16 bg-[#000000] border border-[#1a1a1a] rounded-xl py-1.5 text-center text-xs text-white font-mono font-bold"
-                      style={{ backgroundColor: '#000000' }}
-                    />
-                    <button 
-                      type="button" 
-                      onClick={() => setDirectCompetitors(prev => prev + 1)}
-                      className="w-8 h-8 flex items-center justify-center rounded-xl bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:bg-white/5 active:scale-95 font-bold font-mono"
-                      style={{ backgroundColor: '#000000' }}
-                    >
-                      +
-                    </button>
+                {/* Espacio Independiente Landing Page */}
+                <div className="bg-[#050505] border border-[#1a1a1a] rounded-xl p-3 space-y-2 relative" style={{ backgroundColor: '#050505' }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-orange-400 font-bold text-xs">
+                      <Smartphone size={14} />
+                      <span>Competidores Landing</span>
+                    </div>
+                    <span className="text-[9px] font-mono text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20 font-bold">
+                      Web / Tiendas
+                    </span>
                   </div>
-                  <span className="text-[9px] text-slate-500 font-bold block mt-0.5">Encontrados</span>
+                  <div className="flex items-center justify-between pt-1 border-t border-[#1a1a1a]">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold font-mono">Competidores:</span>
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        type="button" 
+                        onClick={() => setCompetitorsLanding(prev => Math.max(0, (parseInt(String(prev)) || 0) - 1))}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 font-bold font-mono text-xs"
+                        style={{ backgroundColor: '#000000' }}
+                      >
+                        -
+                      </button>
+                      <input 
+                        type="number"
+                        min="0"
+                        value={competitorsLanding}
+                        onChange={(e) => setCompetitorsLanding(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-12 bg-[#000000] border border-[#1a1a1a] rounded-lg py-1 text-center text-xs text-orange-400 font-mono font-bold outline-none focus:border-orange-500/50"
+                        style={{ backgroundColor: '#000000' }}
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setCompetitorsLanding(prev => (parseInt(String(prev)) || 0) + 1)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#000000] border border-[#1a1a1a] text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 font-bold font-mono text-xs"
+                        style={{ backgroundColor: '#000000' }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Barra de total combinado */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#050505] border border-[#1a1a1a] text-xs" style={{ backgroundColor: '#050505' }}>
+                <span className="text-slate-400 font-medium">Total Competidores:</span>
+                <div className="flex items-center gap-2 font-mono font-bold text-xs">
+                  <span className="text-emerald-400">💬 {competitorsWhatsApp} WA</span>
+                  <span className="text-slate-600">+</span>
+                  <span className="text-orange-400">🚀 {competitorsLanding} Landing</span>
+                  <span className="text-slate-600">=</span>
+                  <span className="text-white bg-white/10 px-2 py-0.5 rounded border border-white/20">{(competitorsWhatsApp || 0) + (competitorsLanding || 0)} Total</span>
                 </div>
               </div>
 
               {/* Competitors URL input & list */}
               <div className="space-y-2">
                 <div className="flex justify-between items-end">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">URLs de Tiendas de la Competencia</label>
-                  <span className="text-[8px] text-slate-600 uppercase font-mono">Estructura o Shopify / WooCommerce</span>
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-1.5">
+                    <Globe size={11} className="text-blue-400" /> URLs de Tiendas de la Competencia
+                  </label>
+                  <span className="text-[8px] text-slate-600 uppercase font-mono">Shopify / WooCommerce</span>
                 </div>
                 <form onSubmit={handleAddStoreUrl} className="flex gap-1.5">
                   <input 
@@ -831,7 +1136,7 @@ export default function MarketResearch({
                     {storeUrls.map((url, idx) => (
                       <div key={idx} className="flex items-center justify-between gap-2 p-1.5 rounded bg-black/20 border border-[#1a1a1a] text-slate-300">
                         <div className="flex items-center gap-1.5 truncate max-w-[85%] text-[11px] font-mono">
-                          <Globe size={11} className="text-slate-500 shrink-0" />
+                          <Globe size={11} className="text-blue-400 shrink-0" />
                           <span className="truncate">{url}</span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -848,16 +1153,66 @@ export default function MarketResearch({
                 )}
               </div>
 
+              {/* Ad URLs input & list */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-end">
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-1.5">
+                    <Megaphone size={11} className="text-amber-400" /> URLs de Anuncios
+                  </label>
+                  <span className="text-[8px] text-slate-600 uppercase font-mono">Meta Ads Library, TikTok Ad, etc.</span>
+                </div>
+                <form onSubmit={handleAddAdUrl} className="flex gap-1.5">
+                  <input 
+                    type="text"
+                    placeholder="Pega el enlace del anuncio (Meta Ads Library, TikTok Creative...)"
+                    value={adUrlInput}
+                    onChange={(e) => setAdUrlInput(e.target.value)}
+                    className="flex-1 bg-[#000000] border border-[#1a1a1a] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-slate-700 outline-none"
+                    style={{ backgroundColor: '#000000' }}
+                  />
+                  <button 
+                    type="submit"
+                    className="p-2 bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all active:scale-95 flex items-center justify-center"
+                    title="Agregar URL de anuncio"
+                  >
+                    <Plus size={15} strokeWidth={2.5} />
+                  </button>
+                </form>
+
+                {adUrls.length > 0 && (
+                  <div className="space-y-1.5 mt-2 bg-[#050505] p-2.5 rounded-xl border border-[#1a1a1a]" style={{ backgroundColor: '#050505' }}>
+                    {adUrls.map((url, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 p-1.5 rounded bg-black/20 border border-[#1a1a1a] text-slate-300">
+                        <div className="flex items-center gap-1.5 truncate max-w-[85%] text-[11px] font-mono">
+                          <Megaphone size={11} className="text-amber-400 shrink-0" />
+                          <span className="truncate">{url}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <a href={url} target="_blank" rel="noreferrer" className="p-1 text-slate-500 hover:text-white transition-colors">
+                            <ExternalLink size={11} />
+                          </a>
+                          <button type="button" onClick={() => handleRemoveAdUrl(idx)} className="p-1 text-slate-500 hover:text-red-500 transition-colors">
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Videos Ads URL inputs & lists */}
               <div className="space-y-2">
                 <div className="flex justify-between items-end">
-                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">URLs de Videos Publicitarios / Creativos</label>
-                  <span className="text-[8px] text-slate-600 uppercase font-mono">TikTok, Reels o FB Ads Library</span>
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-1.5">
+                    <Video size={11} className="text-purple-400" /> URLs de Videos Publicitarios / Creativos
+                  </label>
+                  <span className="text-[8px] text-slate-600 uppercase font-mono">TikTok, Reels o Drive</span>
                 </div>
                 <form onSubmit={handleAddVideoUrl} className="flex gap-1.5">
                   <input 
                     type="text"
-                    placeholder="Pega el enlace de video de reference..."
+                    placeholder="Pega el enlace de video de referencia..."
                     value={videoUrlInput}
                     onChange={(e) => setVideoUrlInput(e.target.value)}
                     className="flex-1 bg-[#000000] border border-[#1a1a1a] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-slate-700 outline-none"
@@ -877,7 +1232,7 @@ export default function MarketResearch({
                     {videoUrls.map((url, idx) => (
                       <div key={idx} className="flex items-center justify-between gap-2 p-1.5 rounded bg-black/20 border border-[#1a1a1a] text-slate-300">
                         <div className="flex items-center gap-1.5 truncate max-w-[85%] text-[11px] font-mono">
-                          <Video size={11} className="text-slate-500 shrink-0" />
+                          <Video size={11} className="text-purple-400 shrink-0" />
                           <span className="truncate">{url}</span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -914,68 +1269,42 @@ export default function MarketResearch({
           {/* Card 4: Marketing communication angles */}
           <div className="bg-[#000000] border border-[#1a1a1a] rounded-2xl p-5 relative" style={{ backgroundColor: '#000000' }}>
             <div className="absolute top-0 right-0 p-3 text-[9px] font-mono uppercase text-slate-600 font-bold tracking-wider">MARKETING ANGLES</div>
-            <h3 className="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
               <Target size={14} className="text-orange-500" /> ÁNGULOS DE VENTA DEL PRODUCTO
             </h3>
-            <p className="text-[10px] text-slate-500 mb-4 leading-relaxed">
-              Selecciona los enfoques de comunicación para tus creativos y landing pages o añade tus propios ángulos personalizados.
-            </p>
 
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider font-bold">Ángulos sugeridos (Haz clic para alternar):</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {SUGGESTED_ANGLES.map((angle) => {
-                    const active = selectedAngles.includes(angle);
-                    return (
-                      <button
-                        key={angle}
-                        type="button"
-                        onClick={() => toggleAngle(angle)}
-                        className={`px-2.5 py-1 text-[10px] rounded-lg border font-medium transition-all ${active ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 font-semibold' : 'bg-[#000000] border-[#1a1a1a] text-slate-500 hover:text-slate-300 hover:border-slate-850'}`}
-                        style={{ backgroundColor: active ? undefined : '#000000' }}
-                      >
-                        {angle}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
+            <div className="space-y-3">
               {/* Custom angle input */}
               <form onSubmit={handleAddCustomAngle} className="flex gap-1.5">
                 <input 
                   type="text"
-                  placeholder="Escribe un ángulo personalizado (ej: Resuelve ronquidos)..."
+                  placeholder="Escribe un ángulo de venta para agregar..."
                   value={customAngleInput}
                   onChange={(e) => setCustomAngleInput(e.target.value)}
-                  className="flex-1 bg-[#000000] border border-[#1a1a1a] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-slate-700 outline-none"
+                  className="flex-1 bg-[#000000] border border-[#1a1a1a] rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 focus:border-slate-700 outline-none"
                   style={{ backgroundColor: '#000000' }}
                 />
                 <button 
                   type="submit"
-                  className="px-3 py-1.5 bg-[#000000] border border-[#1a1a1a] hover:border-slate-700 hover:bg-white/5 text-emerald-400 text-xs font-bold rounded-xl active:scale-95 transition-all"
-                  style={{ backgroundColor: '#000000' }}
+                  className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-black text-xs font-bold rounded-xl active:scale-95 transition-all flex items-center gap-1 shrink-0"
                 >
-                  + Agregar
+                  <Plus size={14} strokeWidth={2.5} /> Agregar
                 </button>
               </form>
 
               {/* Active angles display */}
               {selectedAngles.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">Ángulos activos en esta investigación:</span>
-                  <div className="flex flex-wrap gap-1.5 bg-[#050505] p-2 rounded-xl border border-[#1a1a1a]" style={{ backgroundColor: '#050505' }}>
-                    {selectedAngles.map((angle, idx) => (
-                      <span 
-                        key={idx} 
-                        onClick={() => toggleAngle(angle)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-semibold cursor-pointer hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 transition-all"
-                      >
-                        {angle} <span className="text-[8px] font-mono">✕</span>
-                      </span>
-                    ))}
-                  </div>
+                <div className="flex flex-wrap gap-1.5 bg-[#050505] p-2.5 rounded-xl border border-[#1a1a1a]" style={{ backgroundColor: '#050505' }}>
+                  {selectedAngles.map((angle, idx) => (
+                    <span 
+                      key={idx} 
+                      onClick={() => toggleAngle(angle)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold cursor-pointer hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 transition-all"
+                      title="Haz clic para eliminar este ángulo"
+                    >
+                      {angle} <span className="text-[10px] font-mono opacity-80">✕</span>
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
@@ -1280,12 +1609,12 @@ export default function MarketResearch({
 
       {/* 4. Bottom Section: History Records table */}
       <div className="bg-[#000000] border border-[#1a1a1a] rounded-2xl p-5" style={{ backgroundColor: '#000000' }}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 border-b border-[#1a1a1a] pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 border-b border-[#1a1a1a] pb-4">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2 tracking-wide uppercase">
               📂 HISTORIAL DE INVESTIGACIONES REGISTRADAS
             </h3>
-            <p className="text-[11px] text-slate-500 mt-1">Compara tus productos, visualiza enlaces guardados de la competencia, revisa avances y expórtalo todo a Excel/CSV.</p>
+            <p className="text-[11px] text-slate-500 mt-1">Compara tus productos, visualiza el estado de testeo, enlaces guardados de la competencia, revisa avances y expórtalo todo a Excel/CSV.</p>
           </div>
           
           <div className="flex items-center gap-2">
@@ -1312,107 +1641,257 @@ export default function MarketResearch({
           </div>
         </div>
 
+        {/* Filter Pills and Contour Legend */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 font-bold mr-1">Filtrar por:</span>
+            
+            <button
+              type="button"
+              onClick={() => setStatusFilter('ALL')}
+              className={`px-3 py-1 text-xs rounded-xl font-bold border transition-all ${
+                statusFilter === 'ALL'
+                  ? 'bg-white text-black border-white shadow-sm'
+                  : 'bg-[#000000] border-[#1a1a1a] text-slate-400 hover:text-white hover:border-slate-800'
+              }`}
+              style={{ backgroundColor: statusFilter === 'ALL' ? undefined : '#000000' }}
+            >
+              Todos ({statusCounts.ALL})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('FALTA DE TESTEAR')}
+              className={`px-3 py-1 text-xs rounded-xl font-bold border transition-all flex items-center gap-1.5 ${
+                statusFilter === 'FALTA DE TESTEAR'
+                  ? 'bg-purple-500 text-white border-purple-400 shadow-sm shadow-purple-500/20'
+                  : 'bg-[#000000] border-[#1a1a1a] text-purple-400 hover:border-purple-500/40 hover:bg-purple-500/10'
+              }`}
+              style={{ backgroundColor: statusFilter === 'FALTA DE TESTEAR' ? undefined : '#000000' }}
+            >
+              <span>⏳</span> Falta de Testear ({statusCounts['FALTA DE TESTEAR']})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('EN PROCESO')}
+              className={`px-3 py-1 text-xs rounded-xl font-bold border transition-all flex items-center gap-1.5 ${
+                statusFilter === 'EN PROCESO'
+                  ? 'bg-amber-500 text-black border-amber-400 shadow-sm shadow-amber-500/20'
+                  : 'bg-[#000000] border-[#1a1a1a] text-amber-400 hover:border-amber-500/40 hover:bg-amber-500/10'
+              }`}
+              style={{ backgroundColor: statusFilter === 'EN PROCESO' ? undefined : '#000000' }}
+            >
+              <span>⚡</span> En Proceso ({statusCounts['EN PROCESO']})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('TESTEADO')}
+              className={`px-3 py-1 text-xs rounded-xl font-bold border transition-all flex items-center gap-1.5 ${
+                statusFilter === 'TESTEADO'
+                  ? 'bg-emerald-500 text-black border-emerald-400 shadow-sm shadow-emerald-500/20'
+                  : 'bg-[#000000] border-[#1a1a1a] text-emerald-400 hover:border-emerald-500/40 hover:bg-emerald-500/10'
+              }`}
+              style={{ backgroundColor: statusFilter === 'TESTEADO' ? undefined : '#000000' }}
+            >
+              <span>✓</span> Testeado ({statusCounts.TESTEADO})
+            </button>
+          </div>
+
+          {/* Indicador visual de contorno */}
+          <div className="flex flex-wrap items-center gap-2.5 text-[9px] font-mono font-bold bg-[#050505] px-2.5 py-1 rounded-lg border border-[#141414]" style={{ backgroundColor: '#050505' }}>
+            <span className="text-slate-500 uppercase tracking-wider">Contorno:</span>
+            <span className="flex items-center gap-1 text-emerald-400" title="Contorno verde: WhatsApp Meta">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></span> WhatsApp
+            </span>
+            <span className="flex items-center gap-1 text-blue-400" title="Contorno azul: Web Facebook">
+              <span className="w-2 h-2 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span> FB Web
+            </span>
+            <span className="flex items-center gap-1 text-pink-400" title="Contorno rosa: Web TikTok">
+              <span className="w-2 h-2 rounded-full bg-pink-500 shadow-sm shadow-pink-500/50"></span> TikTok Web
+            </span>
+          </div>
+        </div>
+
         {/* Table representation */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-[#1a1a1a] text-slate-500 uppercase font-bold tracking-wider font-mono text-[9px]">
-                <th className="pb-3 pl-2">Fecha</th>
+                <th className="pb-3 pl-3">Fecha</th>
                 <th className="pb-3">Producto Investigado</th>
+                <th className="pb-3 text-center">Estado de Testeo</th>
                 <th className="pb-3 text-right">Precio Público</th>
-                <th className="pb-3 text-center">Canal</th>
                 <th className="pb-3 text-center">Competidores</th>
                 <th className="pb-3 text-center">Enlaces Rápidos</th>
                 <th className="pb-3 text-center">Avance</th>
-                <th className="pb-3 text-center pr-2">Acciones</th>
+                <th className="pb-3 text-center pr-3">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#050505]">
               {filteredHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-500 italic">No se han registrado investigaciones aún.</td>
+                  <td colSpan={8} className="py-8 text-center text-slate-500 italic">No se han registrado investigaciones con este filtro aún.</td>
                 </tr>
               ) : (
-                filteredHistory.map((item) => (
-                  <tr key={item.id} className="hover:bg-white/5 transition-colors group">
-                    <td className="py-4 pl-2 text-slate-500 font-mono text-[10px]">
-                      {new Date(item.timestamp).toISOString().split('T')[0]}
-                    </td>
-                    <td className="py-4 max-w-sm">
-                      <span 
-                        onClick={() => loadResearchEntry(item)} 
-                        className="font-bold text-white hover:text-orange-400 transition-colors cursor-pointer text-sm block"
-                      >
-                        {item.productName}
-                      </span>
-                      {item.notes && (
-                        <p className="text-[10px] text-slate-500 italic truncate mt-0.5">
-                          "{item.notes}"
-                        </p>
-                      )}
-                    </td>
-                    <td className="py-4 text-right font-mono font-bold text-emerald-400">
-                      {item.price ? (
-                        <span>
-                          {item.currency?.includes('(Q)') ? 'Q ' : item.currency?.includes('(S/)') ? 'S/ ' : item.currency?.includes('($)') ? '$ ' : ''}
-                          {item.price.toLocaleString()}
+                filteredHistory.map((item) => {
+                  const currentStatus: TestingStatus = item.testingStatus || 'FALTA DE TESTEAR';
+                  const statusCfg = STATUS_CONFIG[currentStatus] || STATUS_CONFIG['FALTA DE TESTEAR'];
+
+                  // Estilo dinámico de contorno de acuerdo a la etiqueta / plataforma a pautar
+                  const tags = item.marketingTags || [];
+                  const isWhatsApp = tags.includes('WHATSAPP META') || item.channel === 'WhatsApp';
+                  const isWebFb = tags.includes('WEB FACEBOOK');
+                  const isWebTt = tags.includes('WEB TIKTOK');
+
+                  let rowBorderClasses = 'border-l-[4px] border-l-slate-700 bg-black/20 hover:bg-white/5';
+                  let contourTitle = 'Sin etiqueta específica';
+
+                  if (isWhatsApp && (isWebFb || isWebTt)) {
+                    rowBorderClasses = 'border-l-[4px] border-l-amber-500 bg-amber-500/[0.03] hover:bg-amber-500/[0.08]';
+                    contourTitle = 'Estrategia Multicanal';
+                  } else if (isWhatsApp) {
+                    rowBorderClasses = 'border-l-[4px] border-l-emerald-500 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08]';
+                    contourTitle = 'Estrategia WhatsApp Meta';
+                  } else if (isWebFb) {
+                    rowBorderClasses = 'border-l-[4px] border-l-blue-500 bg-blue-500/[0.03] hover:bg-blue-500/[0.08]';
+                    contourTitle = 'Estrategia Web Facebook';
+                  } else if (isWebTt) {
+                    rowBorderClasses = 'border-l-[4px] border-l-pink-500 bg-pink-500/[0.03] hover:bg-pink-500/[0.08]';
+                    contourTitle = 'Estrategia Web TikTok';
+                  } else if (item.channel === 'Landing') {
+                    rowBorderClasses = 'border-l-[4px] border-l-blue-500 bg-blue-500/[0.03] hover:bg-blue-500/[0.08]';
+                    contourTitle = 'Estrategia Landing Page';
+                  }
+
+                  return (
+                    <tr 
+                      key={item.id} 
+                      className={`transition-all group border-b border-[#121212] ${rowBorderClasses}`}
+                      title={contourTitle}
+                    >
+                      <td className="py-3.5 pl-3 text-slate-500 font-mono text-[10px] whitespace-nowrap">
+                        {new Date(item.timestamp).toISOString().split('T')[0]}
+                      </td>
+                      <td className="py-3.5 max-w-sm">
+                        <span 
+                          onClick={() => loadResearchEntry(item)} 
+                          className="font-bold text-white hover:text-orange-400 transition-colors cursor-pointer text-sm block leading-snug"
+                        >
+                          {item.productName}
                         </span>
-                      ) : (
-                        <span className="text-slate-600">-</span>
-                      )}
-                    </td>
-                    <td className="py-4 text-center">
-                      {item.channel === 'WhatsApp' ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold text-[9px]">
-                          💬 WhatsApp
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/20 font-bold text-[9px]">
-                          🚀 Landing
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-4 text-center font-mono text-slate-300 font-bold">
-                      {item.competitorsCount !== undefined ? item.competitorsCount : 0}
-                    </td>
-                    <td className="py-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <span className="px-1.5 py-0.5 rounded bg-blue-500/5 border border-blue-500/15 text-blue-400 font-mono text-[9px]" title={`${item.storeUrls?.length || 0} tiendas registradas`}>
-                          🌐 {item.storeUrls?.length || 0} tiendas
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded bg-purple-500/5 border border-purple-500/15 text-purple-400 font-mono text-[9px]" title={`${item.videoUrls?.length || 0} videos registrados`}>
-                          🎥 {item.videoUrls?.length || 0} videos
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <div className="w-14 bg-[#0a0a0a] h-1.5 rounded-full overflow-hidden border border-[#1a1a1a]" style={{ backgroundColor: '#0a0a0a' }}>
-                          <div className="bg-emerald-500 h-full" style={{ width: `${item.progress || 0}%` }} />
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          {item.dropiId && (
+                            <span className="text-[9px] font-mono bg-orange-500/10 border border-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-bold">
+                              ID: {item.dropiId}
+                            </span>
+                          )}
+                          {item.suppliersCount !== undefined && item.suppliersCount > 0 && (
+                            <span className="text-[9px] font-mono bg-blue-500/10 border border-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold">
+                              🏭 {item.suppliersCount} {item.suppliersCount === 1 ? 'prov.' : 'provs.'}
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[10px] font-mono text-slate-400 font-bold">{item.progress || 0}%</span>
-                      </div>
-                    </td>
-                    <td className="py-4 text-center pr-2">
-                      <div className="flex items-center justify-center gap-1">
-                        <button 
-                          onClick={() => loadResearchEntry(item)}
-                          className="p-1 text-slate-500 hover:text-white transition-colors"
-                          title="Cargar en editor para modificar"
-                        >
-                          <Edit2 size={12} />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(item.id)}
-                          className="p-1 text-slate-500 hover:text-red-500 transition-colors"
-                          title="Eliminar de historial"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        {item.notes && (
+                          <p className="text-[10px] text-slate-500 italic truncate mt-1">
+                            "{item.notes}"
+                          </p>
+                        )}
+                      </td>
+                      
+                      {/* Estado de Testeo Tag Column */}
+                      <td className="py-3.5 text-center">
+                        <div className="inline-block relative">
+                          <select
+                            value={currentStatus}
+                            onChange={(e) => handleUpdateStatus(item.id, e.target.value as TestingStatus)}
+                            className={`appearance-none cursor-pointer text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all text-center outline-none ${statusCfg.bgBadge} ${statusCfg.textBadge} ${statusCfg.borderBadge}`}
+                            style={{ backgroundColor: currentStatus === 'TESTEADO' ? 'rgba(16, 185, 129, 0.12)' : currentStatus === 'EN PROCESO' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(168, 85, 247, 0.12)' }}
+                            title="Haz clic para cambiar el estado de testeo"
+                          >
+                            <option value="FALTA DE TESTEAR" className="bg-black text-purple-400 font-bold">⏳ FALTA DE TESTEAR</option>
+                            <option value="EN PROCESO" className="bg-black text-amber-400 font-bold">⚡ EN PROCESO</option>
+                            <option value="TESTEADO" className="bg-black text-emerald-400 font-bold">✓ TESTEADO</option>
+                          </select>
+                        </div>
+                      </td>
+
+                      {/* Precio Público */}
+                      <td className="py-3.5 text-right font-mono font-bold text-emerald-400">
+                        {item.price ? (
+                          <span className="text-justify inline-block">
+                            {item.currency?.includes('(Q)') ? 'Q ' : item.currency?.includes('(S/)') ? 'S/ ' : item.currency?.includes('($)') ? '$ ' : ''}
+                            {item.price.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">-</span>
+                        )}
+                      </td>
+
+                      {/* Competidores */}
+                      <td className="py-3.5 text-center font-mono">
+                        <div className="font-bold text-white text-xs">
+                          {item.competitorsCount !== undefined 
+                            ? item.competitorsCount 
+                            : ((item.competitorsWhatsApp || 0) + (item.competitorsLanding || 0))}
+                        </div>
+                        {(item.competitorsWhatsApp !== undefined || item.competitorsLanding !== undefined) && (
+                          <div className="flex items-center justify-center gap-1 mt-0.5 text-[9px]">
+                            <span className="text-emerald-400 font-bold" title="Competidores WhatsApp">💬 {item.competitorsWhatsApp ?? 0}</span>
+                            <span className="text-slate-600">|</span>
+                            <span className="text-orange-400 font-bold" title="Competidores Landing">🚀 {item.competitorsLanding ?? 0}</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Enlaces Rápidos */}
+                      <td className="py-3.5 text-center">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
+                          <span className="px-1.5 py-0.5 rounded bg-blue-500/5 border border-blue-500/15 text-blue-400 font-mono text-[9px]" title={`${item.storeUrls?.length || 0} tiendas registradas`}>
+                            🌐 {item.storeUrls?.length || 0}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/5 border border-amber-500/15 text-amber-400 font-mono text-[9px]" title={`${item.adUrls?.length || 0} anuncios registrados`}>
+                            📢 {item.adUrls?.length || 0}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-purple-500/5 border border-purple-500/15 text-purple-400 font-mono text-[9px]" title={`${item.videoUrls?.length || 0} videos registrados`}>
+                            🎥 {item.videoUrls?.length || 0}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Avance */}
+                      <td className="py-3.5 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <div className="w-14 bg-[#0a0a0a] h-1.5 rounded-full overflow-hidden border border-[#1a1a1a]" style={{ backgroundColor: '#0a0a0a' }}>
+                            <div className="bg-emerald-500 h-full" style={{ width: `${item.progress || 0}%` }} />
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400 font-bold">{item.progress || 0}%</span>
+                        </div>
+                      </td>
+
+                      {/* Acciones */}
+                      <td className="py-3.5 text-center pr-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button 
+                            onClick={() => loadResearchEntry(item)}
+                            className="p-1 text-slate-500 hover:text-white transition-colors"
+                            title="Cargar en editor para modificar"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(item.id)}
+                            className="p-1 text-slate-500 hover:text-red-500 transition-colors"
+                            title="Eliminar de historial"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

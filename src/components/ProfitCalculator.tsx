@@ -15,7 +15,11 @@ import {
   Info,
   ChevronRight,
   HelpCircle,
-  FileText
+  FileText,
+  Edit2,
+  X,
+  Check,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -115,6 +119,9 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
 
   const [showConfirm, setShowConfirm] = useState<{ type: 'deleteSelected' | 'deleteAll' | 'deleteOne', count?: number, id?: string } | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const calculatorTopRef = useRef<HTMLDivElement>(null);
 
   // Core COD inputs initialized with beautiful screenshot defaults
   const [inputs, setInputs] = useState({
@@ -158,6 +165,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
   };
 
   const clearInputs = () => {
+    setEditingId(null);
     setInputs({
       name: '',
       sizeAmount: '15',
@@ -173,6 +181,60 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       finalDeliveryPercent: '100',
       desiredProfitPercent: '20',
     });
+  };
+
+  // Load a saved product calculation into the calculator inputs for editing
+  const handleEditProduct = (p: SavedProduct) => {
+    setEditingId(p.id);
+
+    if (p.costPerUnit !== undefined) {
+      // New COD Model structure
+      setInputs({
+        name: p.name || '',
+        sizeAmount: p.sizeAmount || '15',
+        sizeUnit: p.sizeUnit || 'ml',
+        currency: p.currency || currency,
+        packUnits: p.packUnits || '1',
+        costPerUnit: p.costPerUnit || '',
+        shippingBase: p.shippingBase || '',
+        deliveryDispatchPercent: p.deliveryDispatchPercent || '100',
+        adminCosts: p.adminCosts || '',
+        fulfillment: p.fulfillment || '0',
+        cpaAds: p.cpaAds || '',
+        finalDeliveryPercent: p.finalDeliveryPercent || '100',
+        desiredProfitPercent: p.desiredProfitPercent || '20',
+      });
+    } else {
+      // Compatibility Fallback
+      setInputs({
+        name: p.name || '',
+        sizeAmount: '15',
+        sizeUnit: 'ml',
+        currency: p.currency || currency,
+        packUnits: '1',
+        costPerUnit: p.inputs?.cost !== undefined ? String(p.inputs.cost) : '',
+        shippingBase: p.inputs?.shippingReal !== undefined ? String(p.inputs.shippingReal) : '',
+        deliveryDispatchPercent: p.inputs?.confirmationRate !== undefined ? String(p.inputs.confirmationRate) : '100',
+        adminCosts: p.inputs?.platformFee !== undefined ? String(p.inputs.platformFee) : '',
+        fulfillment: '0',
+        cpaAds: p.inputs?.adsCost !== undefined ? String(p.inputs.adsCost) : '',
+        finalDeliveryPercent: '100',
+        desiredProfitPercent: p.results?.margin !== undefined ? String(Math.round(p.results.margin)) : '20',
+      });
+    }
+
+    if (p.currency) {
+      setCurrency(p.currency);
+    }
+
+    // Smooth scroll to top of calculator
+    if (calculatorTopRef.current) {
+      calculatorTopRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
   };
 
   const sliderRef = useRef<HTMLDivElement>(null);
@@ -304,8 +366,64 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     };
   }, [inputs]);
 
-  // Handle saving the current calculation to history
+  // Handle saving or updating the current calculation
   const handleSaveToHistory = () => {
+    if (editingId) {
+      // Update existing calculation
+      setSavedProducts(prev => prev.map(p => {
+        if (p.id === editingId) {
+          return {
+            ...p,
+            name: inputs.name || 'Producto sin nombre',
+            currency: currency,
+            timestamp: Date.now(),
+            sizeAmount: inputs.sizeAmount,
+            sizeUnit: inputs.sizeUnit,
+            packUnits: inputs.packUnits,
+            costPerUnit: inputs.costPerUnit,
+            shippingBase: inputs.shippingBase,
+            deliveryDispatchPercent: inputs.deliveryDispatchPercent,
+            adminCosts: inputs.adminCosts,
+            fulfillment: inputs.fulfillment,
+            cpaAds: inputs.cpaAds,
+            finalDeliveryPercent: inputs.finalDeliveryPercent,
+            desiredProfitPercent: inputs.desiredProfitPercent,
+          };
+        }
+        return p;
+      }));
+      setSaveFeedback('¡Cálculo actualizado con éxito!');
+      setTimeout(() => setSaveFeedback(null), 3000);
+      setEditingId(null);
+    } else {
+      // Create new calculation
+      const newProduct: SavedProduct = {
+        id: Math.random().toString(36).substr(2, 9),
+        productId: 'N/A',
+        name: inputs.name || 'Producto sin nombre',
+        currency: currency,
+        timestamp: Date.now(),
+        sizeAmount: inputs.sizeAmount,
+        sizeUnit: inputs.sizeUnit,
+        packUnits: inputs.packUnits,
+        costPerUnit: inputs.costPerUnit,
+        shippingBase: inputs.shippingBase,
+        deliveryDispatchPercent: inputs.deliveryDispatchPercent,
+        adminCosts: inputs.adminCosts,
+        fulfillment: inputs.fulfillment,
+        cpaAds: inputs.cpaAds,
+        finalDeliveryPercent: inputs.finalDeliveryPercent,
+        desiredProfitPercent: inputs.desiredProfitPercent,
+      };
+
+      setSavedProducts([newProduct, ...savedProducts]);
+      setSaveFeedback('¡Cálculo guardado en el historial!');
+      setTimeout(() => setSaveFeedback(null), 3000);
+    }
+  };
+
+  // Save current inputs as a new separate entry even during edit mode
+  const handleSaveAsNew = () => {
     const newProduct: SavedProduct = {
       id: Math.random().toString(36).substr(2, 9),
       productId: 'N/A',
@@ -326,6 +444,9 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     };
 
     setSavedProducts([newProduct, ...savedProducts]);
+    setEditingId(null);
+    setSaveFeedback('¡Guardado como nuevo cálculo!');
+    setTimeout(() => setSaveFeedback(null), 3000);
   };
 
   const handleDeleteOne = (id: string) => {
@@ -475,8 +596,83 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
   };
 
   return (
-    <div className="max-w-full mx-auto space-y-8 px-4" style={{ fontSize: `${fontSize}px` }}>
+    <div ref={calculatorTopRef} className="max-w-full mx-auto space-y-6 px-4" style={{ fontSize: `${fontSize}px` }}>
       
+      {/* Save / Update Feedback Notification */}
+      <AnimatePresence>
+        {saveFeedback && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.98 }}
+            className="bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 px-4 py-2.5 rounded-xl text-xs font-bold font-mono flex items-center justify-between shadow-lg shadow-emerald-500/10"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={16} className="text-emerald-400" />
+              <span>{saveFeedback}</span>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => setSaveFeedback(null)} 
+              className="text-emerald-400/60 hover:text-emerald-300 p-0.5 cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Active Edit Mode Notification Banner */}
+      <AnimatePresence>
+        {editingId && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-gradient-to-r from-amber-500/15 via-[#ff5500]/10 to-amber-500/15 border border-amber-500/40 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-amber-300 shadow-lg shadow-amber-500/10"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <Edit2 size={15} className="text-amber-400 shrink-0" />
+              <span className="text-xs font-bold">
+                MODO EDICIÓN: Editando cálculo de <span className="text-white font-mono underline font-extrabold">{inputs.name || 'Producto'}</span>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSaveToHistory}
+                className="bg-gradient-to-r from-[#ff5500] to-[#ff7700] hover:brightness-110 text-white rounded-lg py-1.5 px-3 text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-[#ff5500]/20 cursor-pointer"
+              >
+                <Check size={13} />
+                <span>Actualizar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAsNew}
+                className="bg-white/10 hover:bg-white/15 text-white rounded-lg py-1.5 px-3 text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer border border-white/10"
+                title="Guardar como una copia adicional separada"
+              >
+                <Copy size={13} />
+                <span>Guardar como nuevo</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="text-slate-400 hover:text-white px-2.5 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 transition-all text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+              >
+                <X size={13} />
+                <span>Cancelar</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* HEADER SECTION */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 border-b border-white/5 pb-6">
         <div>
@@ -491,7 +687,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
         </div>
 
         {/* CONTROLS */}
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           
           {/* Font Size Adjuster */}
           <div className="flex items-center gap-3 bg-[#111] border border-white/5 rounded-xl px-4 py-2 text-white">
@@ -525,20 +721,32 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
           {/* Clean Fields Button */}
           <button 
             onClick={clearInputs}
-            className="flex items-center gap-2 bg-[#111] border border-white/5 hover:bg-slate-900 text-white rounded-xl py-2 px-4 text-[13px] font-bold transition-all"
+            className="flex items-center gap-2 bg-[#111] border border-white/5 hover:bg-slate-900 text-white rounded-xl py-2 px-4 text-[13px] font-bold transition-all cursor-pointer"
           >
             <RefreshCw size={14} className="text-slate-400" />
             Limpiar
           </button>
 
-          {/* Save to History Button (Glows Amber/Orange) */}
-          <button 
-            onClick={handleSaveToHistory}
-            className="flex items-center gap-2 bg-gradient-to-r from-[#ff5500] to-[#ff7700] hover:brightness-110 text-white rounded-xl py-2 px-5 text-[13px] font-bold transition-all shadow-lg shadow-[#ff5500]/20"
-          >
-            <Save size={14} />
-            Guardar en historial
-          </button>
+          {/* Save / Update to History Button */}
+          {editingId ? (
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleSaveToHistory}
+                className="flex items-center gap-2 bg-gradient-to-r from-[#ff5500] to-[#ff7700] hover:brightness-110 text-white rounded-xl py-2 px-5 text-[13px] font-bold transition-all shadow-lg shadow-[#ff5500]/20 cursor-pointer ring-2 ring-[#ff5500]/40"
+              >
+                <Check size={14} />
+                Actualizar cálculo
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={handleSaveToHistory}
+              className="flex items-center gap-2 bg-gradient-to-r from-[#ff5500] to-[#ff7700] hover:brightness-110 text-white rounded-xl py-2 px-5 text-[13px] font-bold transition-all shadow-lg shadow-[#ff5500]/20 cursor-pointer"
+            >
+              <Save size={14} />
+              Guardar en historial
+            </button>
+          )}
         </div>
       </div>
 
@@ -1334,8 +1542,17 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   pvFormatted = formatValue(p.inputs?.price || 0, p.currency);
                 }
 
+                const isCurrentlyEditing = editingId === p.id;
+
                 return (
-                  <tr key={p.id} className="text-[13px] text-slate-300 hover:bg-white/2 transition-colors">
+                  <tr 
+                    key={p.id} 
+                    className={`text-[13px] transition-colors ${
+                      isCurrentlyEditing 
+                        ? 'bg-[#ff5500]/10 text-white border-l-4 border-l-[#ff5500]' 
+                        : 'text-slate-300 hover:bg-white/2'
+                    }`}
+                  >
                     <td className="py-4 px-4 font-mono text-[11px] text-slate-500">
                       <div className="flex items-center gap-1.5">
                         <Calendar size={12} className="text-slate-600" />
@@ -1343,7 +1560,15 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                       </div>
                     </td>
                     <td className="py-4 px-4">
-                      <div className="font-bold text-white">{p.name}</div>
+                      <button
+                        type="button"
+                        onClick={() => handleEditProduct(p)}
+                        className="text-left font-bold text-white hover:text-[#ff5500] transition-colors flex items-center gap-1.5 group cursor-pointer"
+                        title="Haz clic para cargar y editar este cálculo"
+                      >
+                        <span>{p.name}</span>
+                        <Edit2 size={11} className="opacity-0 group-hover:opacity-100 text-[#ff5500] transition-opacity shrink-0" />
+                      </button>
                       <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">{presentationText}</div>
                     </td>
                     <td className="py-4 px-4 text-center font-mono font-bold text-slate-400">
@@ -1365,13 +1590,29 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                       {pvFormatted}
                     </td>
                     <td className="py-4 px-4 text-center">
-                      <button 
-                        onClick={() => handleDeleteOne(p.id)}
-                        className="text-slate-600 hover:text-red-500 p-1.5 rounded-lg transition-colors"
-                        title="Eliminar cálculo"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button 
+                          type="button"
+                          onClick={() => handleEditProduct(p)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isCurrentlyEditing 
+                              ? 'bg-[#ff5500] text-white shadow-md shadow-[#ff5500]/30 ring-1 ring-[#ff7700]' 
+                              : 'bg-white/5 hover:bg-[#ff5500]/15 text-slate-300 hover:text-[#ff5500] border border-white/10 hover:border-[#ff5500]/30'
+                          }`}
+                          title="Editar este cálculo en la calculadora"
+                        >
+                          <Edit2 size={12} />
+                          <span>Editar</span>
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => handleDeleteOne(p.id)}
+                          className="text-slate-500 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+                          title="Eliminar cálculo"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
