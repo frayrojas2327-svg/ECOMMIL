@@ -27,7 +27,9 @@ import {
   Activity,
   Zap,
   Calendar,
-  Filter
+  Filter,
+  StickyNote,
+  Pin
 } from 'lucide-react';
 import { parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -44,6 +46,7 @@ import FinancialSummary from './components/FinancialSummary';
 import AdvertisingExpenses from './components/AdvertisingExpenses';
 import MarketResearch from './components/MarketResearch';
 import AdPanel from './components/AdPanel';
+import NotesSection from './components/NotesSection';
 import LogisticsAI from './components/LogisticsAI';
 import PlatformExpenses from './components/PlatformExpenses';
 import KPIPanel from './components/KPIPanel';
@@ -848,6 +851,45 @@ function AppContent() {
     { id: 'financial', label: 'Resumen P&L', icon: BarChart3 },
   ];
 
+  const secondaryMenuItems = useMemo(() => [
+    { id: 'sales', label: 'Ventas', icon: TrendingUp },
+    { id: 'research', label: 'Investigación', icon: Search },
+    { id: 'calculator', label: 'Calculadora', icon: Calculator },
+    { id: 'ad-panel', label: 'Panel Ads', icon: TrendingUp },
+    { id: 'notes', label: 'Notas', icon: StickyNote },
+    { id: 'ads', label: 'Publicidad', icon: Megaphone },
+    { id: 'platform-expenses', label: 'Gastos Plataforma', icon: CreditCard },
+  ], []);
+
+  const allNavItems = useMemo(() => [
+    ...menuItems,
+    ...secondaryMenuItems
+  ], [secondaryMenuItems]);
+
+  const [pinnedTools, setPinnedTools] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ecommil_pinned_tools');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Error loading pinned tools:', e);
+    }
+    return [];
+  });
+
+  const togglePinTool = (toolId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setPinnedTools(prev => {
+      const next = prev.includes(toolId) 
+        ? prev.filter(id => id !== toolId)
+        : [...prev, toolId];
+      localStorage.setItem('ecommil_pinned_tools', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const alerts = [
     { id: 1, text: "Tasa de cancelación subió 12% esta semana", type: 'warning' },
     { id: 2, text: "ROI de 'Smartwatch Pro X' bajó un 5%", type: 'danger' },
@@ -937,95 +979,159 @@ function AppContent() {
           className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-1.5 relative scrollbar-thin scrollbar-thumb-white/10 hover:scrollbar-thumb-neon/30"
           style={{ scrollBehavior: 'smooth' }}
         >
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-                activeTab === item.id 
-                  ? 'bg-neon/10 text-neon border border-neon/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              {item.isGlowing ? (
-                <div className="relative">
-                  <div className={`absolute inset-0 bg-neon/20 blur-md rounded-full transition-opacity ${activeTab === item.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
-                  <item.icon size={20} className={`relative ${activeTab === item.id ? 'text-neon drop-shadow-[0_0_5px_rgba(34,197,94,0.8)]' : 'group-hover:text-neon'}`} />
+          {/* SECCIÓN DE HERRAMIENTAS FIJADAS (si hay alguna fijada) */}
+          {pinnedTools.length > 0 && (
+            <div className="pb-2.5 mb-2 border-b border-border/50 space-y-1">
+              {!isSidebarCollapsed ? (
+                <div className="px-2 py-1 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                  <span className="flex items-center gap-1.5 text-neon">
+                    <Pin size={11} className="fill-neon" /> Herramientas Fijadas
+                  </span>
+                  <span className="text-[9px] bg-neon/15 text-neon px-1.5 py-0.2 rounded-full font-bold">
+                    {pinnedTools.length}
+                  </span>
                 </div>
               ) : (
-                <item.icon size={20} className={activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'} />
+                <div className="flex justify-center pb-1" title="Herramientas Fijadas">
+                  <Pin size={12} className="text-neon fill-neon" />
+                </div>
               )}
-              {!isSidebarCollapsed && <span className="font-medium text-left truncate">{item.label}</span>}
-            </button>
-          ))}
+              {pinnedTools.map(pinId => {
+                const item = allNavItems.find(i => i.id === pinId);
+                if (!item) return null;
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <div
+                    key={`pinned-${item.id}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setActiveTab(item.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTab(item.id); } }}
+                    title={isSidebarCollapsed ? `Fijado: ${item.label}` : undefined}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-xl transition-all duration-200 group relative cursor-pointer select-none ${
+                      isActive 
+                        ? 'bg-neon/15 text-neon border border-neon/30 shadow-[0_0_10px_rgba(34,197,94,0.15)] font-semibold' 
+                        : 'text-slate-300 hover:bg-white/5 hover:text-white border border-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 truncate">
+                      <Icon size={18} className={isActive ? 'text-neon' : 'text-slate-400 group-hover:text-neon'} />
+                      {!isSidebarCollapsed && <span className="font-medium text-xs truncate">{item.label}</span>}
+                    </div>
+                    {!isSidebarCollapsed && (
+                      <button
+                        type="button"
+                        onClick={(e) => togglePinTool(item.id, e)}
+                        title="Desfijar de la barra rápida"
+                        className="p-1 rounded-md text-neon hover:text-red-400 hover:bg-white/10 transition-colors opacity-80 group-hover:opacity-100 cursor-pointer"
+                      >
+                        <Pin size={12} className="fill-neon" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
+          {/* Menú Principal */}
+          {menuItems.map((item) => {
+            const isPinned = pinnedTools.includes(item.id);
+            return (
+              <div
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setActiveTab(item.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTab(item.id); } }}
+                title={isSidebarCollapsed ? item.label : undefined}
+                className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-200 group relative cursor-pointer select-none ${
+                  activeTab === item.id 
+                    ? 'bg-neon/10 text-neon border border-neon/20' 
+                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3 truncate">
+                  {item.isGlowing ? (
+                    <div className="relative shrink-0">
+                      <div className={`absolute inset-0 bg-neon/20 blur-md rounded-full transition-opacity ${activeTab === item.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+                      <item.icon size={20} className={`relative ${activeTab === item.id ? 'text-neon drop-shadow-[0_0_5px_rgba(34,197,94,0.8)]' : 'group-hover:text-neon'}`} />
+                    </div>
+                  ) : (
+                    <item.icon size={20} className={`shrink-0 ${activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'}`} />
+                  )}
+                  {!isSidebarCollapsed && <span className="font-medium text-left truncate">{item.label}</span>}
+                </div>
+
+                {/* Opción para fijar */}
+                {!isSidebarCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={(e) => togglePinTool(item.id, e)}
+                    title={isPinned ? "Desfijar herramienta" : "Fijar herramienta en favoritos"}
+                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                      isPinned 
+                        ? 'text-neon opacity-100 hover:text-red-400 hover:bg-white/5' 
+                        : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-neon hover:bg-white/10'
+                    }`}
+                  >
+                    <Pin size={13} className={isPinned ? 'fill-neon' : ''} />
+                  </button>
+                ) : (
+                  isPinned && (
+                    <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-neon shadow-[0_0_6px_rgba(34,197,94,1)]" />
+                  )
+                )}
+              </div>
+            );
+          })}
+
+          {/* Herramientas Secundarias */}
           <div className="pt-2 border-t border-border/40 space-y-1.5">
-            <button
-              onClick={() => setActiveTab('sales')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-                activeTab === 'sales' 
-                  ? 'bg-neon/10 text-neon border border-neon/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <TrendingUp size={20} className={activeTab === 'sales' ? 'text-neon' : 'group-hover:text-neon'} />
-              {!isSidebarCollapsed && <span className="font-medium truncate">Ventas</span>}
-            </button>
-            <button
-              onClick={() => setActiveTab('research')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-                activeTab === 'research' 
-                  ? 'bg-neon/10 text-neon border border-neon/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <Search size={20} className={activeTab === 'research' ? 'text-neon' : 'group-hover:text-neon'} />
-              {!isSidebarCollapsed && <span className="font-medium truncate">Investigación</span>}
-            </button>
-            <button
-              onClick={() => setActiveTab('calculator')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-                activeTab === 'calculator' 
-                  ? 'bg-neon/10 text-neon border border-neon/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <Calculator size={20} className={activeTab === 'calculator' ? 'text-neon' : 'group-hover:text-neon'} />
-              {!isSidebarCollapsed && <span className="font-medium truncate">Calculadora</span>}
-            </button>
-            <button
-              onClick={() => setActiveTab('ad-panel')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-                activeTab === 'ad-panel' 
-                  ? 'bg-neon/10 text-neon border border-neon/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <TrendingUp size={20} className={activeTab === 'ad-panel' ? 'text-neon' : 'group-hover:text-neon'} />
-              {!isSidebarCollapsed && <span className="font-medium truncate">Panel Ads</span>}
-            </button>
-            <button
-              onClick={() => setActiveTab('ads')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-                activeTab === 'ads' 
-                  ? 'bg-neon/10 text-neon border border-neon/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <Megaphone size={20} className={activeTab === 'ads' ? 'text-neon' : 'group-hover:text-neon'} />
-              {!isSidebarCollapsed && <span className="font-medium truncate">Publicidad</span>}
-            </button>
-            <button
-              onClick={() => setActiveTab('platform-expenses')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
-                activeTab === 'platform-expenses' 
-                  ? 'bg-neon/10 text-neon border border-neon/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <CreditCard size={20} className={activeTab === 'platform-expenses' ? 'text-neon' : 'group-hover:text-neon'} />
-              {!isSidebarCollapsed && <span className="font-medium truncate">Gastos Plataforma</span>}
-            </button>
+            {secondaryMenuItems.map((item) => {
+              const isPinned = pinnedTools.includes(item.id);
+              return (
+                <div
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActiveTab(item.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTab(item.id); } }}
+                  title={isSidebarCollapsed ? item.label : undefined}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-200 group relative cursor-pointer select-none ${
+                    activeTab === item.id 
+                      ? 'bg-neon/10 text-neon border border-neon/20' 
+                      : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 truncate">
+                    <item.icon size={20} className={`shrink-0 ${activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'}`} />
+                    {!isSidebarCollapsed && <span className="font-medium text-left truncate">{item.label}</span>}
+                  </div>
+
+                  {/* Opción para fijar */}
+                  {!isSidebarCollapsed ? (
+                    <button
+                      type="button"
+                      onClick={(e) => togglePinTool(item.id, e)}
+                      title={isPinned ? "Desfijar herramienta" : "Fijar herramienta en favoritos"}
+                      className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                        isPinned 
+                          ? 'text-neon opacity-100 hover:text-red-400 hover:bg-white/5' 
+                          : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-neon hover:bg-white/10'
+                      }`}
+                    >
+                      <Pin size={13} className={isPinned ? 'fill-neon' : ''} />
+                    </button>
+                  ) : (
+                    isPinned && (
+                      <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-neon shadow-[0_0_6px_rgba(34,197,94,1)]" />
+                    )
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -1262,27 +1368,28 @@ function AppContent() {
         <div className="md:hidden bg-[#0A0A0A] border-b border-border/60 py-2.5 px-4 flex gap-2 overflow-x-auto scrollbar-none shrink-0" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
           {[
             ...menuItems,
-            { id: 'sales', label: 'Ventas' },
-            { id: 'calculator', label: 'Calculadora' },
-            { id: 'research', label: 'Investigación' },
-            { id: 'ad-panel', label: 'Panel Ads' },
-            { id: 'ads', label: 'Publicidad' },
-            { id: 'platform-expenses', label: 'Gastos Plataforma' },
+            ...secondaryMenuItems,
             { id: 'settings', label: 'Ajustes' }
-          ].map((item) => (
-            <button
-              key={item.id}
-              id={`mobile-tab-${item.id}`}
-              onClick={() => setActiveTab(item.id)}
-              className={`whitespace-nowrap px-4 py-1.5 rounded-xl text-xs font-display transition-all duration-200 ${
-                activeTab === item.id 
-                  ? 'bg-neon/10 text-neon border border-neon/30 font-bold shadow-[0_0_15px_rgba(34,197,94,0.1)]' 
-                  : 'text-slate-400 bg-card/20 border border-transparent hover:text-white'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+          ].map((item) => {
+            const isPinned = pinnedTools.includes(item.id);
+            return (
+              <button
+                key={item.id}
+                id={`mobile-tab-${item.id}`}
+                onClick={() => setActiveTab(item.id)}
+                className={`whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-display transition-all duration-200 flex items-center gap-1.5 ${
+                  activeTab === item.id 
+                    ? 'bg-neon/10 text-neon border border-neon/30 font-bold shadow-[0_0_15px_rgba(34,197,94,0.1)]' 
+                    : isPinned
+                      ? 'text-slate-200 bg-white/5 border border-neon/30 hover:text-white'
+                      : 'text-slate-400 bg-card/20 border border-transparent hover:text-white'
+                }`}
+              >
+                {isPinned && <Pin size={10} className="text-neon fill-neon shrink-0" />}
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Global Date Range Filter Bar */}
@@ -1500,6 +1607,9 @@ function AppContent() {
                   formatCurrency={formatCurrency} 
                   currency={currency} 
                 />
+              )}
+              {activeTab === 'notes' && (
+                <NotesSection theme={theme} />
               )}
               {activeTab === 'returns' && (
                 <ReturnsAnalysis 
