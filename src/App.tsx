@@ -29,7 +29,8 @@ import {
   Calendar,
   Filter,
   StickyNote,
-  Pin
+  Pin,
+  Cpu
 } from 'lucide-react';
 import { parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -844,7 +845,7 @@ function AppContent() {
   const menuItems = [
     { id: 'dashboard', label: 'Panel Control', icon: LayoutDashboard },
     { id: 'kpis', label: 'Análisis Pro', icon: Activity, isGlowing: true },
-    { id: 'logistics-ai', label: 'Asesor IA', icon: Bot },
+    { id: 'logistics-ai', label: 'Asesor IA', icon: Bot, isGlowing: true, badge: 'Multi-IA' },
     { id: 'orders', label: 'DROPI', icon: ShoppingCart },
     { id: 'returns', label: 'Devoluciones', icon: RotateCcw },
     { id: 'shipping', label: 'Semáforos de Transportadora', icon: Truck },
@@ -857,6 +858,7 @@ function AppContent() {
     { id: 'calculator', label: 'Calculadora', icon: Calculator },
     { id: 'ad-panel', label: 'Panel Ads', icon: TrendingUp },
     { id: 'notes', label: 'Notas', icon: StickyNote },
+    { id: 'mcp', label: 'Servidor MCP', icon: Cpu, isGlowing: true },
     { id: 'ads', label: 'Publicidad', icon: Megaphone },
     { id: 'platform-expenses', label: 'Gastos Plataforma', icon: CreditCard },
   ], []);
@@ -1061,7 +1063,16 @@ function AppContent() {
                   ) : (
                     <item.icon size={20} className={`shrink-0 ${activeTab === item.id ? 'text-neon' : 'group-hover:text-neon'}`} />
                   )}
-                  {!isSidebarCollapsed && <span className="font-medium text-left truncate">{item.label}</span>}
+                  {!isSidebarCollapsed && (
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="font-medium text-left truncate">{item.label}</span>
+                      {(item as any).badge && (
+                        <span className="text-[10px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded bg-neon/20 text-neon border border-neon/30 shrink-0">
+                          {(item as any).badge}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Opción para fijar */}
@@ -1610,6 +1621,9 @@ function AppContent() {
               )}
               {activeTab === 'notes' && (
                 <NotesSection theme={theme} />
+              )}
+              {activeTab === 'mcp' && (
+                <NotesSection theme={theme} initialOpenMcp={true} />
               )}
               {activeTab === 'returns' && (
                 <ReturnsAnalysis 

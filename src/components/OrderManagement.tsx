@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp, Star } from 'lucide-react';
+import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp, Star, BarChart3, PieChart as PieChartIcon } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Cell, PieChart, Pie } from 'recharts';
 import { Order, calculateOrderProfit, OrderStatus, parseFlexibleDate } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,6 +34,17 @@ export const STATUS_COLORS: Record<string, { text: string; border: string; bg: s
   'Incidencia': { text: 'text-red-400', border: 'border-red-900/40', bg: 'bg-red-900/5', badge: '⚠️' },
   'All': { text: 'text-white', border: 'border-white/10', bg: 'bg-[#111]', badge: '🔍' }
 };
+
+export const ALL_ORDER_STATUSES: OrderStatus[] = [
+  'Entregado',
+  'En tránsito',
+  'Guía Generada',
+  'Recolectado',
+  'Incidencia',
+  'Pendiente',
+  'Devuelto',
+  'Cancelado'
+];
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
   const styles = {
@@ -1065,7 +1077,26 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   };
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'All'>('All');
+  const [statusSlots, setStatusSlots] = useState<(OrderStatus | 'All')[]>(['All']);
+
+  const handleStatusSlotChange = (index: number, val: OrderStatus | 'All') => {
+    setStatusSlots(prev => {
+      const next = [...prev];
+      next[index] = val;
+      if (index > 0 && val === 'All') {
+        return next.filter((_, i) => i !== index);
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveStatusSlot = (index: number) => {
+    setStatusSlots(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      return next.length > 0 ? next : ['All'];
+    });
+  };
+
   const [deptFilter, setDeptFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
@@ -1365,6 +1396,194 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     });
     return Array.from(productsSet).sort();
   }, [orders]);
+
+  // Departamentos únicos disponibles en las órdenes
+  const availableDepts = useMemo(() => {
+    const deptMap = new Map<string, string>();
+    orders.forEach(o => {
+      const dept = (o.departamentoDestino || o.country)?.trim();
+      if (dept) {
+        const key = dept.toLowerCase();
+        if (!deptMap.has(key)) {
+          deptMap.set(key, dept);
+        }
+      }
+    });
+    return Array.from(deptMap.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [orders]);
+
+  // Ciudades disponibles: si hay un departamento filtrado, solo aparecen las ciudades pertenecientes a dicho departamento
+  const availableCities = useMemo(() => {
+    const relevantOrders = deptFilter
+      ? orders.filter(o => {
+          const deptVal = (o.departamentoDestino || '').trim().toLowerCase();
+          const countryVal = (o.country || '').trim().toLowerCase();
+          const target = deptFilter.trim().toLowerCase();
+          return deptVal === target || deptVal.includes(target) || countryVal.includes(target);
+        })
+      : orders;
+
+    const cityMap = new Map<string, string>();
+    relevantOrders.forEach(o => {
+      const city = o.ciudadDestino?.trim();
+      if (city) {
+        const key = city.toLowerCase();
+        if (!cityMap.has(key)) {
+          cityMap.set(key, city);
+        }
+      }
+    });
+
+    return Array.from(cityMap.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [orders, deptFilter]);
+
+  // Si cambia el departamento y la ciudad seleccionada no pertenece al nuevo departamento, se limpia automáticamente
+  useEffect(() => {
+    if (deptFilter && cityFilter) {
+      const isCityStillValid = availableCities.some(
+        c => c.toLowerCase() === cityFilter.trim().toLowerCase()
+      );
+      if (!isCityStillValid) {
+        setCityFilter('');
+      }
+    }
+  }, [deptFilter, cityFilter, availableCities]);
+
+  // Estado y lógica para el mensaje flotante con gráfica de porcentaje de entrega
+  const [showDeliveryRateFloating, setShowDeliveryRateFloating] = useState(false);
+  const [floatingChartTab, setFloatingChartTab] = useState<'distribution' | 'dept' | 'city'>('distribution');
+  const deliveryRateFloatingRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (deliveryRateFloatingRef.current && !deliveryRateFloatingRef.current.contains(event.target as Node)) {
+        setShowDeliveryRateFloating(false);
+      }
+    };
+    if (showDeliveryRateFloating) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDeliveryRateFloating]);
+
+  // Si el usuario cambia el filtro de ciudad o departamento, ajustamos la pestaña relevante
+  useEffect(() => {
+    if (cityFilter) {
+      setFloatingChartTab('city');
+    } else if (deptFilter) {
+      setFloatingChartTab('dept');
+    }
+  }, [deptFilter, cityFilter]);
+
+  const deliveryStatsByLocation = useMemo(() => {
+    // Pedidos que coinciden con el filtro actual de Depto y Ciudad
+    const targetOrders = orders.filter(o => {
+      if (deptFilter) {
+        const d = (o.departamentoDestino || o.country || '').toLowerCase();
+        if (!d.includes(deptFilter.toLowerCase())) return false;
+      }
+      if (cityFilter) {
+        const c = (o.ciudadDestino || '').toLowerCase();
+        if (!c.includes(cityFilter.toLowerCase())) return false;
+      }
+      return true;
+    });
+
+    const total = targetOrders.length;
+    const delivered = targetOrders.filter(o => o.status === 'Entregado').length;
+    const inTransit = targetOrders.filter(o => o.status === 'En tránsito' || o.status === 'Guía Generada' || o.status === 'Recolectado').length;
+    const returned = targetOrders.filter(o => o.status === 'Devuelto').length;
+    const incident = targetOrders.filter(o => o.status === 'Incidencia').length;
+    const cancelled = targetOrders.filter(o => o.status === 'Cancelado').length;
+    const pending = targetOrders.filter(o => o.status === 'Pendiente').length;
+
+    const currentRate = total > 0 ? (delivered / total) * 100 : 0;
+    const returnRate = total > 0 ? (returned / total) * 100 : 0;
+
+    const distributionData = [
+      { name: 'Entregado', value: delivered, color: '#00df9a' },
+      { name: 'En tránsito', value: inTransit, color: '#60a5fa' },
+      { name: 'Devuelto', value: returned, color: '#ff9100' },
+      { name: 'Incidencia', value: incident, color: '#f87171' },
+      { name: 'Cancelado', value: cancelled, color: '#ef4444' },
+      { name: 'Pendiente', value: pending, color: '#fbbf24' },
+    ].filter(d => d.value > 0);
+
+    // Comparativa por departamento
+    const deptMap: Record<string, { total: number; delivered: number; returned: number; inTransit: number }> = {};
+    orders.forEach(o => {
+      const dept = (o.departamentoDestino || o.country)?.trim();
+      if (!dept) return;
+      if (!deptMap[dept]) {
+        deptMap[dept] = { total: 0, delivered: 0, returned: 0, inTransit: 0 };
+      }
+      deptMap[dept].total += 1;
+      if (o.status === 'Entregado') deptMap[dept].delivered += 1;
+      else if (o.status === 'Devuelto') deptMap[dept].returned += 1;
+      else if (o.status === 'En tránsito' || o.status === 'Guía Generada' || o.status === 'Recolectado') deptMap[dept].inTransit += 1;
+    });
+
+    const deptChartData = Object.entries(deptMap)
+      .map(([name, data]) => ({
+        name,
+        total: data.total,
+        delivered: data.delivered,
+        rate: Number(((data.delivered / data.total) * 100).toFixed(1)),
+        returnRate: Number(((data.returned / data.total) * 100).toFixed(1)),
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    // Comparativa por ciudad (si hay departamento activo, se restringe a las ciudades de ese departamento)
+    const relevantOrdersForCity = deptFilter
+      ? orders.filter(o => {
+          const d = (o.departamentoDestino || o.country || '').toLowerCase();
+          return d.includes(deptFilter.toLowerCase());
+        })
+      : orders;
+
+    const cityMap: Record<string, { total: number; delivered: number; returned: number; inTransit: number; dept: string }> = {};
+    relevantOrdersForCity.forEach(o => {
+      const city = o.ciudadDestino?.trim();
+      if (!city) return;
+      if (!cityMap[city]) {
+        cityMap[city] = { total: 0, delivered: 0, returned: 0, inTransit: 0, dept: o.departamentoDestino || '' };
+      }
+      cityMap[city].total += 1;
+      if (o.status === 'Entregado') cityMap[city].delivered += 1;
+      else if (o.status === 'Devuelto') cityMap[city].returned += 1;
+      else if (o.status === 'En tránsito' || o.status === 'Guía Generada' || o.status === 'Recolectado') cityMap[city].inTransit += 1;
+    });
+
+    const cityChartData = Object.entries(cityMap)
+      .map(([name, data]) => ({
+        name,
+        dept: data.dept,
+        total: data.total,
+        delivered: data.delivered,
+        rate: Number(((data.delivered / data.total) * 100).toFixed(1)),
+        returnRate: Number(((data.returned / data.total) * 100).toFixed(1)),
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    return {
+      total,
+      delivered,
+      inTransit,
+      returned,
+      incident,
+      cancelled,
+      pending,
+      currentRate,
+      returnRate,
+      distributionData,
+      deptChartData,
+      cityChartData,
+    };
+  }, [orders, deptFilter, cityFilter]);
 
   const handleBatchAssignProduct = async () => {
     const trimmedProduct = batchProductValue.trim();
@@ -2276,7 +2495,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                            customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            phone.includes(searchTerm);
       
-      const matchesStatus = statusFilter === 'All' || order.status === statusFilter;
+      const activeStatuses = statusSlots.filter((s): s is OrderStatus => s !== 'All');
+      const matchesStatus = activeStatuses.length === 0 || activeStatuses.includes(order.status as OrderStatus);
       const matchesDept = !deptFilter || (order.departamentoDestino && order.departamentoDestino.toLowerCase().includes(deptFilter.toLowerCase())) || (order.country && order.country.toLowerCase().includes(deptFilter.toLowerCase()));
       const matchesCity = !cityFilter || (order.ciudadDestino && order.ciudadDestino.toLowerCase().includes(cityFilter.toLowerCase()));
       const matchesTag = !tagFilter 
@@ -2319,7 +2539,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
       return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesTag && matchesProduct && matchesSource && matchesReqDate && matchesFavorite;
     });
-  }, [orders, searchTerm, statusFilter, deptFilter, cityFilter, tagFilter, productFilter, sourceFilter, favoriteFilter, favoriteOrderIds, reqDate, viewMode]);
+  }, [orders, searchTerm, statusSlots, deptFilter, cityFilter, tagFilter, productFilter, sourceFilter, favoriteFilter, favoriteOrderIds, reqDate, viewMode]);
 
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('order-column-widths');
@@ -4059,21 +4279,53 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             <div className="flex flex-wrap items-center gap-6">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Estado</span>
-                <select 
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className={`border rounded-xl py-2 px-4 text-[13px] focus:outline-none transition-all font-bold cursor-pointer hover:brightness-110 h-[38px] ${STATUS_COLORS[statusFilter]?.text || 'text-white'} ${STATUS_COLORS[statusFilter]?.border || 'border-white/5'} ${STATUS_COLORS[statusFilter]?.bg || 'bg-[#111]'}`}
-                >
-                  <option value="All" className="bg-[#0f0f11] text-white font-bold">🔍 TODOS</option>
-                  <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
-                  <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 EN TRÁNSITO</option>
-                  <option value="Guía Generada" className="bg-[#0f0f11] text-slate-300 font-bold">📑 GUÍA GENERADA</option>
-                  <option value="Recolectado" className="bg-[#0f0f11] text-slate-400 font-bold">📦 RECOLECTADO</option>
-                  <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
-                  <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
-                  <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
-                  <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
-                </select>
+                
+                <div className="flex items-center gap-2 flex-wrap">
+                  {statusSlots.map((slot, index) => (
+                    <div key={index} className="flex items-center gap-1.5">
+                      <select 
+                        value={slot}
+                        onChange={(e) => handleStatusSlotChange(index, e.target.value as any)}
+                        className={`border rounded-xl py-2 px-4 text-[13px] focus:outline-none transition-all font-bold cursor-pointer hover:brightness-110 h-[38px] ${STATUS_COLORS[slot]?.text || 'text-white'} ${STATUS_COLORS[slot]?.border || 'border-white/5'} ${STATUS_COLORS[slot]?.bg || 'bg-[#111]'}`}
+                      >
+                        <option value="All" className="bg-[#0f0f11] text-white font-bold">
+                          {index === 0 ? '🔍 TODOS' : '🔍 SELECCIONAR ESTADO'}
+                        </option>
+                        <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                        <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 EN TRÁNSITO</option>
+                        <option value="Guía Generada" className="bg-[#0f0f11] text-slate-300 font-bold">📑 GUÍA GENERADA</option>
+                        <option value="Recolectado" className="bg-[#0f0f11] text-slate-400 font-bold">📦 RECOLECTADO</option>
+                        <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
+                        <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
+                        <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
+                        <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
+                      </select>
+
+                      {index > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveStatusSlot(index)}
+                          className="h-[38px] px-2 flex items-center justify-center bg-[#111] hover:bg-white/10 border border-white/10 hover:border-red-500/40 text-slate-400 hover:text-red-400 rounded-xl transition-all cursor-pointer"
+                          title="Quitar este estado"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {statusSlots.length < 3 && statusSlots[0] !== 'All' && (
+                    <button
+                      type="button"
+                      onClick={() => setStatusSlots(prev => [...prev, 'All'])}
+                      className="h-[38px] px-3 bg-[#111] hover:bg-[#1a1a1c] border border-white/10 hover:border-white/20 rounded-xl text-[12px] font-bold text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                      title="Agregar otro estado (hasta 3)"
+                    >
+                      <Plus size={14} />
+                      <span>Estado</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -4097,7 +4349,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222] max-w-[150px]"
                 >
                   <option value="">Todas</option>
-                  {Array.from(new Set(orders.map(o => o.ciudadDestino).filter(Boolean))).sort().map(city => (
+                  {availableCities.map(city => (
                     <option key={city} value={city}>{city}</option>
                   ))}
                 </select>
@@ -4111,10 +4363,396 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   className="bg-[#111] border border-white/5 rounded-xl py-2.5 px-4 text-[13px] text-white focus:outline-none focus:border-white/20 transition-all font-bold cursor-pointer hover:bg-[#222] max-w-[150px]"
                 >
                   <option value="">Todos</option>
-                  {Array.from(new Set(orders.map(o => o.departamentoDestino).filter(Boolean))).sort().map(dept => (
+                  {availableDepts.map(dept => (
                     <option key={dept} value={dept}>{dept}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Botón y Mensaje Flotante de Porcentaje de Entrega con Gráfica */}
+              <div className="relative" ref={deliveryRateFloatingRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowDeliveryRateFloating(!showDeliveryRateFloating)}
+                  className={`flex items-center gap-2 py-2 px-3.5 rounded-xl border text-[12px] font-black transition-all cursor-pointer shadow-sm h-[38px] ${
+                    showDeliveryRateFloating
+                      ? 'bg-[#00df9a] text-black border-[#00df9a] shadow-[0_0_15px_rgba(0,223,154,0.35)]'
+                      : (cityFilter || deptFilter)
+                        ? 'bg-[#00df9a]/15 text-[#00df9a] border-[#00df9a]/40 hover:bg-[#00df9a]/25'
+                        : 'bg-[#111] text-slate-300 border-white/10 hover:border-white/25 hover:text-white hover:bg-[#1a1a1c]'
+                  }`}
+                  title="Ver gráfica en mensaje flotante del porcentaje de entrega por departamento y ciudad"
+                >
+                  <BarChart3 size={15} className={showDeliveryRateFloating ? 'text-black' : 'text-[#00df9a]'} />
+                  <span className="whitespace-nowrap font-bold">
+                    {cityFilter ? `📍 ${cityFilter}` : deptFilter ? `🗺️ ${deptFilter}` : '% Entrega'}
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded-md text-[11px] font-black ${
+                    showDeliveryRateFloating 
+                      ? 'bg-black/20 text-black' 
+                      : 'bg-[#00df9a]/20 text-[#00df9a]'
+                  }`}>
+                    {deliveryStatsByLocation.currentRate.toFixed(1)}%
+                  </span>
+                </button>
+
+                {/* Mensaje Flotante con Gráfica */}
+                {showDeliveryRateFloating && (
+                  <div className="absolute top-full left-0 mt-2 z-50 w-[420px] max-w-[92vw] bg-[#141416] border border-white/10 rounded-2xl shadow-2xl p-4 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-[#00df9a]/10 border border-[#00df9a]/20 rounded-xl text-[#00df9a]">
+                          <BarChart3 size={17} />
+                        </div>
+                        <div>
+                          <h4 className="text-[13px] font-black text-white leading-tight">
+                            Porcentaje de Entrega
+                          </h4>
+                          <p className="text-[11px] text-slate-400 font-medium">
+                            {cityFilter && deptFilter ? (
+                              <span>📍 {cityFilter} · 🗺️ {deptFilter}</span>
+                            ) : cityFilter ? (
+                              <span>📍 Ciudad: {cityFilter}</span>
+                            ) : deptFilter ? (
+                              <span>🗺️ Departamento: {deptFilter}</span>
+                            ) : (
+                              <span>🌐 Todas las ubicaciones</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeliveryRateFloating(false)}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+                        title="Cerrar mensaje flotante"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+
+                    {/* Resumen KPI Principal */}
+                    <div className="mt-3 p-3.5 bg-black/40 border border-white/5 rounded-xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="text-[10px] uppercase font-black tracking-wider text-slate-500 block">
+                            Efectividad de Entrega
+                          </span>
+                          <div className="flex items-baseline gap-2 mt-0.5">
+                            <span className={`text-2xl font-black ${
+                              deliveryStatsByLocation.currentRate >= 70 ? 'text-[#00df9a]' : deliveryStatsByLocation.currentRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                            }`}>
+                              {deliveryStatsByLocation.currentRate.toFixed(1)}%
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-bold">
+                              ({deliveryStatsByLocation.delivered} de {deliveryStatsByLocation.total} pedidos)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase font-black tracking-wider text-slate-500 block">
+                            Devolución
+                          </span>
+                          <span className="text-[14px] font-black text-[#ff9100]">
+                            {deliveryStatsByLocation.returnRate.toFixed(1)}%
+                          </span>
+                          <span className="text-[10px] text-slate-500 block">
+                            {deliveryStatsByLocation.returned} pedidos
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Barra de progreso visual */}
+                      <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden flex">
+                        <div 
+                          className="bg-[#00df9a] h-full transition-all duration-300" 
+                          style={{ width: `${Math.min(100, deliveryStatsByLocation.currentRate)}%` }} 
+                          title={`Entregados: ${deliveryStatsByLocation.currentRate.toFixed(1)}%`}
+                        />
+                        <div 
+                          className="bg-blue-400 h-full transition-all duration-300" 
+                          style={{ width: `${Math.min(100, deliveryStatsByLocation.total > 0 ? (deliveryStatsByLocation.inTransit / deliveryStatsByLocation.total) * 100 : 0)}%` }} 
+                          title={`En tránsito`}
+                        />
+                        <div 
+                          className="bg-[#ff9100] h-full transition-all duration-300" 
+                          style={{ width: `${Math.min(100, deliveryStatsByLocation.returnRate)}%` }} 
+                          title={`Devueltos: ${deliveryStatsByLocation.returnRate.toFixed(1)}%`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Pestañas de la gráfica */}
+                    <div className="flex items-center gap-1 mt-3 p-1 bg-white/5 rounded-xl text-[11px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setFloatingChartTab('distribution')}
+                        className={`flex-1 py-1.5 px-2 rounded-lg transition-all text-center cursor-pointer ${
+                          floatingChartTab === 'distribution'
+                            ? 'bg-white/15 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Distribución
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFloatingChartTab('dept')}
+                        className={`flex-1 py-1.5 px-2 rounded-lg transition-all text-center cursor-pointer ${
+                          floatingChartTab === 'dept'
+                            ? 'bg-white/15 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Por Depto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFloatingChartTab('city')}
+                        className={`flex-1 py-1.5 px-2 rounded-lg transition-all text-center cursor-pointer ${
+                          floatingChartTab === 'city'
+                            ? 'bg-white/15 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Por Ciudad
+                      </button>
+                    </div>
+
+                    {/* Gráfica según pestaña */}
+                    <div className="mt-3">
+                      {floatingChartTab === 'distribution' && (
+                        <div>
+                          {deliveryStatsByLocation.distributionData.length === 0 ? (
+                            <div className="py-8 text-center text-slate-500 text-[12px]">
+                              No hay pedidos para este filtro
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-4">
+                              <div className="w-[150px] h-[140px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart>
+                                    <Pie
+                                      data={deliveryStatsByLocation.distributionData}
+                                      dataKey="value"
+                                      nameKey="name"
+                                      cx="50%"
+                                      cy="50%"
+                                      innerRadius={35}
+                                      outerRadius={55}
+                                      paddingAngle={3}
+                                    >
+                                      {deliveryStatsByLocation.distributionData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                      ))}
+                                    </Pie>
+                                    <RechartsTooltip
+                                      content={({ active, payload }) => {
+                                        if (active && payload && payload.length) {
+                                          const item = payload[0].payload;
+                                          const pct = deliveryStatsByLocation.total > 0
+                                            ? ((item.value / deliveryStatsByLocation.total) * 100).toFixed(1)
+                                            : '0';
+                                          return (
+                                            <div className="bg-[#1c1c1f] border border-white/10 rounded-xl px-2.5 py-1.5 text-[11px] shadow-xl">
+                                              <span className="font-bold text-white block">{item.name}</span>
+                                              <span className="text-[#00df9a] font-semibold">{item.value} pedidos ({pct}%)</span>
+                                            </div>
+                                          );
+                                        }
+                                        return null;
+                                      }}
+                                    />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              </div>
+
+                              <div className="flex-1 space-y-1.5">
+                                {deliveryStatsByLocation.distributionData.map((item, idx) => {
+                                  const pct = deliveryStatsByLocation.total > 0
+                                    ? ((item.value / deliveryStatsByLocation.total) * 100).toFixed(1)
+                                    : '0';
+                                  return (
+                                    <div key={idx} className="flex items-center justify-between text-[11px]">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                                        <span className="text-slate-300 font-medium">{item.name}</span>
+                                      </div>
+                                      <div className="font-mono text-white font-bold">
+                                        {item.value} <span className="text-slate-500 text-[10px]">({pct}%)</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {floatingChartTab === 'dept' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] uppercase font-black tracking-wider text-slate-500">
+                              Top Departamentos (% Entrega)
+                            </span>
+                            <span className="text-[10px] text-slate-500 italic">
+                              Clic para filtrar
+                            </span>
+                          </div>
+
+                          {deliveryStatsByLocation.deptChartData.length === 0 ? (
+                            <div className="py-8 text-center text-slate-500 text-[12px]">
+                              No hay departamentos con datos
+                            </div>
+                          ) : (
+                            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                              {deliveryStatsByLocation.deptChartData.map((d, idx) => {
+                                const isSelected = deptFilter.toLowerCase() === d.name.toLowerCase();
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setDeptFilter('');
+                                      } else {
+                                        setDeptFilter(d.name);
+                                      }
+                                    }}
+                                    className={`w-full text-left p-2 rounded-xl border transition-all cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#00df9a]/15 border-[#00df9a]/40 shadow-sm'
+                                        : 'bg-white/[0.02] hover:bg-white/5 border-white/5'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between text-[11px] mb-1">
+                                      <div className="flex items-center gap-1.5 truncate pr-2">
+                                        <span className="text-slate-400 font-mono text-[10px]">#{idx + 1}</span>
+                                        <span className={`font-bold truncate ${isSelected ? 'text-[#00df9a]' : 'text-white'}`}>
+                                          {d.name}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 whitespace-nowrap">
+                                        <span className="text-slate-400 text-[10px]">({d.delivered}/{d.total})</span>
+                                        <span className={`font-black font-mono ${
+                                          d.rate >= 70 ? 'text-[#00df9a]' : d.rate >= 50 ? 'text-amber-400' : 'text-red-400'
+                                        }`}>
+                                          {d.rate}%
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                      <div 
+                                        className={`h-full rounded-full transition-all duration-300 ${
+                                          isSelected ? 'bg-[#00df9a]' : 'bg-blue-400'
+                                        }`} 
+                                        style={{ width: `${Math.min(100, d.rate)}%` }} 
+                                      />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {floatingChartTab === 'city' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] uppercase font-black tracking-wider text-slate-500">
+                              {deptFilter ? `Ciudades en ${deptFilter} (% Entrega)` : 'Top Ciudades (% Entrega)'}
+                            </span>
+                            <span className="text-[10px] text-slate-500 italic">
+                              Clic para filtrar
+                            </span>
+                          </div>
+
+                          {deliveryStatsByLocation.cityChartData.length === 0 ? (
+                            <div className="py-8 text-center text-slate-500 text-[12px]">
+                              No hay ciudades con datos
+                            </div>
+                          ) : (
+                            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                              {deliveryStatsByLocation.cityChartData.map((c, idx) => {
+                                const isSelected = cityFilter.toLowerCase() === c.name.toLowerCase();
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setCityFilter('');
+                                      } else {
+                                        setCityFilter(c.name);
+                                      }
+                                    }}
+                                    className={`w-full text-left p-2 rounded-xl border transition-all cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#00df9a]/15 border-[#00df9a]/40 shadow-sm'
+                                        : 'bg-white/[0.02] hover:bg-white/5 border-white/5'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between text-[11px] mb-1">
+                                      <div className="flex items-center gap-1.5 truncate pr-2">
+                                        <span className="text-slate-400 font-mono text-[10px]">#{idx + 1}</span>
+                                        <span className={`font-bold truncate ${isSelected ? 'text-[#00df9a]' : 'text-white'}`}>
+                                          {c.name}
+                                        </span>
+                                        {c.dept && (
+                                          <span className="text-slate-500 text-[9px] truncate">({c.dept})</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 whitespace-nowrap">
+                                        <span className="text-slate-400 text-[10px]">({c.delivered}/{c.total})</span>
+                                        <span className={`font-black font-mono ${
+                                          c.rate >= 70 ? 'text-[#00df9a]' : c.rate >= 50 ? 'text-amber-400' : 'text-red-400'
+                                        }`}>
+                                          {c.rate}%
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                      <div 
+                                        className={`h-full rounded-full transition-all duration-300 ${
+                                          isSelected ? 'bg-[#00df9a]' : 'bg-[#00df9a]/70'
+                                        }`} 
+                                        style={{ width: `${Math.min(100, c.rate)}%` }} 
+                                      />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer con acciones rápidas */}
+                    {(cityFilter || deptFilter) && (
+                      <div className="pt-3 mt-3 border-t border-white/10 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">
+                          Filtro activo aplicado
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeptFilter('');
+                            setCityFilter('');
+                          }}
+                          className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <RotateCcw size={12} />
+                          <span>Restablecer ubicación</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -4164,123 +4802,30 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <option value="NonFavorites" className="bg-[#0f0f11] text-slate-400 font-bold">☆ NO FAVORITOS</option>
                 </select>
               </div>
+
+              {(statusSlots.some(s => s !== 'All') || tagFilter || cityFilter || deptFilter || productFilter || sourceFilter !== 'All' || favoriteFilter !== 'All' || searchTerm) && (
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setDeptFilter('');
+                    setCityFilter('');
+                    setProductFilter('');
+                    setTagFilter('');
+                    setReqDate('');
+                    setDelDate('');
+                    setStatusSlots(['All']);
+                    setSearchTerm('');
+                    setSourceFilter('All');
+                    setFavoriteFilter('All');
+                  }}
+                  title="Limpiar todos los filtros"
+                  className="flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-bold text-slate-400 hover:text-white bg-[#111] hover:bg-[#222] rounded-xl transition-all border border-white/10 cursor-pointer shadow-sm"
+                >
+                  <RotateCcw size={13} />
+                  <span>Limpiar</span>
+                </button>
+              )}
             </div>
-          </div>
-
-          <div className="p-4 border-b border-white/5 flex flex-wrap items-center gap-6 bg-white/[0.005]">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all custom-filter-card-wrapper ${
-                isLightWhite 
-                  ? 'bg-white border-slate-200 shadow-sm hover:bg-slate-50' 
-                  : 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60'
-              } min-w-[200px]`}>
-                <div className={`p-2 rounded-xl ${
-                  isLightWhite ? 'bg-slate-100 text-slate-500' : 'bg-white/5 text-slate-400'
-                }`}>
-                  <Clock size={16} />
-                </div>
-                <div className="flex flex-col flex-1">
-                  <span className={`font-black uppercase tracking-widest leading-none mb-1.5 ${
-                    isLightWhite ? 'text-[12px] text-slate-500' : 'text-[9px] text-slate-500'
-                  }`}>F. Solicitado</span>
-                  <input 
-                    type="date"
-                    value={reqDate}
-                    onClick={(e) => {
-                      try {
-                        (e.target as any).showPicker?.();
-                      } catch (err) {
-                        console.warn('showPicker restricted in this environment:', err);
-                      }
-                    }}
-                    onChange={(e) => setReqDate(e.target.value)}
-                    className={`bg-transparent border-none p-0 font-bold focus:outline-none focus:ring-0 w-full cursor-pointer ${
-                      isLightWhite 
-                        ? 'text-slate-800 text-[15px] [color-scheme:light]' 
-                        : 'text-white text-[11px] [color-scheme:dark]'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all custom-filter-card-wrapper ${
-                isLightWhite 
-                  ? 'bg-white border-slate-200 shadow-sm hover:bg-slate-50' 
-                  : 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60'
-              } min-w-[200px]`}>
-                <div className={`p-2 rounded-xl ${
-                  isLightWhite ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-500/10 text-emerald-400 shadow-sm'
-                }`}>
-                  <CheckCircle2 size={16} />
-                </div>
-                <div className="flex flex-col flex-1">
-                  <span className={`font-black uppercase tracking-widest leading-none mb-1.5 ${
-                    isLightWhite ? 'text-[12px] text-slate-500' : 'text-[9px] text-slate-500'
-                  }`}>F. Entregado</span>
-                  <input 
-                    type="date"
-                    value={delDate}
-                    onClick={(e) => {
-                      try {
-                        (e.target as any).showPicker?.();
-                      } catch (err) {
-                        console.warn('showPicker restricted in this environment:', err);
-                      }
-                    }}
-                    onChange={(e) => setDelDate(e.target.value)}
-                    className={`bg-transparent border-none p-0 font-bold focus:outline-none focus:ring-0 w-full cursor-pointer ${
-                      isLightWhite 
-                        ? 'text-slate-800 text-[15px] [color-scheme:light]' 
-                        : 'text-white text-[11px] [color-scheme:dark]'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all custom-filter-card-wrapper ${
-                isLightWhite 
-                  ? 'bg-white border-slate-200 shadow-sm hover:bg-slate-50' 
-                  : 'bg-slate-800/40 border-white/5 hover:bg-slate-800/60'
-              } min-w-[160px]`}>
-                <div className={`p-2 rounded-xl ${
-                  isLightWhite ? 'bg-blue-50 text-blue-600' : 'bg-blue-500/10 text-blue-400'
-                }`}>
-                  <MapPin size={16} />
-                </div>
-                <div className="flex flex-col flex-1">
-                  <span className={`font-black uppercase tracking-widest leading-none mb-1.5 ${
-                    isLightWhite ? 'text-[12px] text-slate-500' : 'text-[9px] text-slate-500'
-                  }`}>Ubicación</span>
-                  <input 
-                    type="text" 
-                    placeholder="Ciudad/Depto"
-                    value={cityFilter}
-                    onChange={(e) => setCityFilter(e.target.value)}
-                    className={`bg-transparent border-none p-0 font-bold focus:outline-none w-full ${
-                      isLightWhite 
-                        ? 'text-slate-800 text-[15px] placeholder:text-slate-400' 
-                        : 'text-white text-[11px] placeholder:text-slate-700'
-                    }`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => {
-                setDeptFilter('');
-                setCityFilter('');
-                setProductFilter('');
-                setReqDate('');
-                setDelDate('');
-                setStatusFilter('All');
-                setSearchTerm('');
-                setSourceFilter('All');
-              }}
-              className="flex items-center gap-2 px-5 py-2.5 text-[10px] font-black text-slate-500 hover:text-white hover:bg-white/5 rounded-xl transition-all uppercase tracking-[0.15em] ml-auto border border-transparent hover:border-white/5"
-            >
-              <RotateCcw size={14} /> Resetear Filtros
-            </button>
           </div>
         </div>
 

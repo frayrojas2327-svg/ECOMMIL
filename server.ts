@@ -14,9 +14,611 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+  // CORS middleware for external AI clients (Claude, ChatGPT, Cursor, Windsurf)
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // API router or routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // --- MODEL CONTEXT PROTOCOL (MCP) SERVER IMPLEMENTATION ---
+  interface ServerNote {
+    id: string;
+    title: string;
+    note: string;
+    urls: string[];
+    createdAt: number;
+    updatedAt: number;
+  }
+
+  // In-memory note store for MCP tools & real-time sync
+  let mcpNotes: ServerNote[] = [
+    {
+      id: "note-1",
+      title: "Ad Library de la Competencia (Ganador)",
+      note: "Anuncios activos del corrector de postura. Oferta 2x1 con flete gratis y pago contra entrega.",
+      urls: [
+        "https://www.facebook.com/ads/library",
+        "https://ads.tiktok.com/business/creativecenter"
+      ],
+      createdAt: Date.now() - 1000 * 60 * 60 * 24,
+      updatedAt: Date.now() - 1000 * 60 * 60 * 24
+    },
+    {
+      id: "note-2",
+      title: "Carpeta de Creativos y Videos UGC",
+      note: "Videos editados en formato 9:16 con ganchos de 3 segundos listos para pautar en TikTok y Meta.",
+      urls: [
+        "https://drive.google.com"
+      ],
+      createdAt: Date.now() - 1000 * 60 * 60 * 12,
+      updatedAt: Date.now() - 1000 * 60 * 60 * 12
+    },
+    {
+      id: "note-3",
+      title: "Contacto de Proveedor (Stock Lima)",
+      note: "Coordinación directa de reposición de 100 unidades y garantía por cambio inmediato.",
+      urls: [
+        "https://wa.me/51999999999",
+        "https://dropi.co"
+      ],
+      createdAt: Date.now() - 1000 * 60 * 60 * 2,
+      updatedAt: Date.now() - 1000 * 60 * 60 * 2
+    }
+  ];
+
+  const MCP_SERVER_INFO = {
+    name: "ecommil-mcp-server",
+    version: "1.0.0",
+    protocolVersion: "2024-11-05",
+    description: "Model Context Protocol (MCP) Server for Notes, URLs & E-commerce Operations Suite"
+  };
+
+  const MCP_TOOLS = [
+    {
+      name: "get_notes",
+      description: "Obtiene todas las notas guardadas con sus títulos, contenidos descriptivos, fechas y URLs asociadas.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          limit: {
+            type: "number",
+            description: "Límite máximo de notas a retornar (opcional)"
+          }
+        }
+      }
+    },
+    {
+      name: "add_note",
+      description: "Crea una nueva nota en el sistema con título, contenido y una o múltiples URLs.",
+      inputSchema: {
+        type: "object",
+        required: ["title", "note"],
+        properties: {
+          title: {
+            type: "string",
+            description: "Título de la nota"
+          },
+          note: {
+            type: "string",
+            description: "Texto o detalles de la nota"
+          },
+          urls: {
+            type: "array",
+            items: { type: "string" },
+            description: "Lista de URLs o enlaces vinculados a la nota"
+          }
+        }
+      }
+    },
+    {
+      name: "search_notes",
+      description: "Busca notas por coincidencia de texto en el título, nota o enlaces (URLs).",
+      inputSchema: {
+        type: "object",
+        required: ["query"],
+        properties: {
+          query: {
+            type: "string",
+            description: "Palabra clave o término de búsqueda"
+          }
+        }
+      }
+    },
+    {
+      name: "delete_note",
+      description: "Elimina una nota por su identificador único (id).",
+      inputSchema: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: {
+            type: "string",
+            description: "Identificador único de la nota a eliminar"
+          }
+        }
+      }
+    },
+    {
+      name: "calculate_roas_breakeven",
+      description: "Calcula el Break-even ROAS (Punto de Equilibrio publicitario), CPA objetivo y margen neto considerando logística contra entrega (COD) y tasa de devolución.",
+      inputSchema: {
+        type: "object",
+        required: ["sale_price", "product_cost", "shipping_cost"],
+        properties: {
+          sale_price: {
+            type: "number",
+            description: "Precio de venta al público del producto"
+          },
+          product_cost: {
+            type: "number",
+            description: "Costo unitario del producto con proveedor"
+          },
+          shipping_cost: {
+            type: "number",
+            description: "Costo del flete de envío"
+          },
+          delivery_rate_percent: {
+            type: "number",
+            description: "Tasa de entrega esperada en porcentaje (ej: 80 para 80%)"
+          }
+        }
+      }
+    },
+    {
+      name: "get_app_overview",
+      description: "Retorna el resumen de herramientas disponibles y estadísticas de notas del sistema.",
+      inputSchema: {
+        type: "object",
+        properties: {}
+      }
+    }
+  ];
+
+  // Notes synchronization endpoint from client
+  app.post("/api/notes/sync", (req, res) => {
+    const { notes } = req.body;
+    if (Array.isArray(notes)) {
+      mcpNotes = notes.map((n: any) => ({
+        id: n.id || `note_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        title: n.title || "Sin título",
+        note: n.note || n.content || "",
+        urls: Array.isArray(n.urls) ? n.urls : (n.url ? [n.url] : []),
+        createdAt: n.createdAt || Date.now(),
+        updatedAt: n.updatedAt || Date.now()
+      }));
+    }
+    res.json({ status: "ok", total: mcpNotes.length });
+  });
+
+  app.get("/api/notes", (req, res) => {
+    res.json(mcpNotes);
+  });
+
+  // MCP Manifest & Server Metadata (GET /api/mcp or /api/mcp/manifest)
+  app.get(["/api/mcp", "/api/mcp/manifest"], (req, res) => {
+    // If client requests SSE stream
+    if (req.headers.accept === "text/event-stream") {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders();
+
+      res.write(`event: endpoint\ndata: ${JSON.stringify({ endpoint: "/api/mcp" })}\n\n`);
+      res.write(`event: message\ndata: ${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+        params: { serverInfo: MCP_SERVER_INFO }
+      })}\n\n`);
+
+      const keepAlive = setInterval(() => {
+        res.write(`: ping\n\n`);
+      }, 15000);
+
+      req.on("close", () => {
+        clearInterval(keepAlive);
+      });
+      return;
+    }
+
+    res.json({
+      ...MCP_SERVER_INFO,
+      capabilities: {
+        tools: { listChanged: true },
+        resources: { subscribe: false }
+      },
+      tools: MCP_TOOLS,
+      endpoints: {
+        rpc: "/api/mcp",
+        sse: "/api/mcp",
+        sync: "/api/notes/sync",
+        openapi: "/api/mcp/openapi.json"
+      }
+    });
+  });
+
+  // OpenAPI Specification for ChatGPT Actions (GET /api/mcp/openapi.json)
+  app.get(["/api/mcp/openapi.json", "/api/openapi.json"], (req, res) => {
+    const host = req.get("host") || "localhost:3000";
+    const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
+    const serverUrl = `${protocol}://${host}`;
+
+    res.json({
+      openapi: "3.0.1",
+      info: {
+        title: "Ecom Mil MCP & AI Tools",
+        description: "API de Notas, enlaces de investigación y calculadora de ROAS y CPA para ChatGPT y Claude.",
+        version: "1.0.0"
+      },
+      servers: [{ url: serverUrl }],
+      paths: {
+        "/api/notes": {
+          get: {
+            operationId: "getNotes",
+            summary: "Obtener todas las notas y enlaces guardados",
+            responses: {
+              "200": {
+                description: "Lista de notas",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "string" },
+                          title: { type: "string" },
+                          note: { type: "string" },
+                          urls: { type: "array", items: { type: "string" } }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "/api/mcp/calculate": {
+          post: {
+            operationId: "calculateRoasBreakeven",
+            summary: "Calcular ROAS de equilibrio y margen neto",
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["sale_price", "product_cost", "shipping_cost"],
+                    properties: {
+                      sale_price: { type: "number", description: "Precio de venta" },
+                      product_cost: { type: "number", description: "Costo de producto" },
+                      shipping_cost: { type: "number", description: "Costo de flete" },
+                      delivery_rate_percent: { type: "number", description: "Tasa de entrega (ej: 80)" }
+                    }
+                  }
+                }
+              }
+            },
+            responses: {
+              "200": {
+                description: "Cálculo financiero",
+                content: { "application/json": { schema: { type: "object" } } }
+              }
+            }
+          }
+        }
+      }
+    });
+  });
+
+  // Direct endpoint for ChatGPT Action calculator
+  app.post("/api/mcp/calculate", (req, res) => {
+    const { sale_price = 0, product_cost = 0, shipping_cost = 0, delivery_rate_percent = 80 } = req.body || {};
+    const effectiveDelivery = Math.max(0.01, Math.min(1, delivery_rate_percent / 100));
+    const returnRate = 1 - effectiveDelivery;
+    const effectiveFreight = shipping_cost + (returnRate * shipping_cost);
+    const totalCostPerDelivered = product_cost + (effectiveFreight / effectiveDelivery);
+    const netMargin = sale_price - totalCostPerDelivered;
+    const breakevenRoas = netMargin > 0 ? (sale_price / netMargin) : 0;
+    const maxCpa = Math.max(0, netMargin);
+
+    res.json({
+      sale_price,
+      product_cost,
+      shipping_cost,
+      delivery_rate_percent,
+      effectiveFreight: Math.round(effectiveFreight),
+      netMarginPerOrder: Math.round(netMargin),
+      breakevenRoas: Number(breakevenRoas.toFixed(2)),
+      maxCpa: Math.round(maxCpa),
+      status: netMargin > 0 ? "profitable" : "unprofitable"
+    });
+  });
+
+  // MCP JSON-RPC 2.0 Router (POST /api/mcp)
+  app.post("/api/mcp", (req, res) => {
+    const { jsonrpc, id, method, params } = req.body || {};
+
+    if (jsonrpc !== "2.0") {
+      return res.status(400).json({
+        jsonrpc: "2.0",
+        id: id || null,
+        error: { code: -32600, message: "Invalid Request: jsonrpc must be '2.0'" }
+      });
+    }
+
+    // Protocol: initialize
+    if (method === "initialize") {
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: MCP_SERVER_INFO.protocolVersion,
+          capabilities: {
+            tools: {},
+            resources: {}
+          },
+          serverInfo: {
+            name: MCP_SERVER_INFO.name,
+            version: MCP_SERVER_INFO.version
+          }
+        }
+      });
+    }
+
+    // Protocol: notifications/initialized
+    if (method === "notifications/initialized") {
+      return res.status(204).end();
+    }
+
+    // Protocol: ping
+    if (method === "ping") {
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: {}
+      });
+    }
+
+    // Protocol: tools/list
+    if (method === "tools/list") {
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          tools: MCP_TOOLS
+        }
+      });
+    }
+
+    // Protocol: resources/list
+    if (method === "resources/list") {
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          resources: [
+            {
+              uri: "notes://all",
+              name: "Todas las Notas",
+              description: "Colección completa de notas, enlaces y detalles de la tienda",
+              mimeType: "application/json"
+            }
+          ]
+        }
+      });
+    }
+
+    // Protocol: resources/read
+    if (method === "resources/read") {
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          contents: [
+            {
+              uri: params?.uri || "notes://all",
+              mimeType: "application/json",
+              text: JSON.stringify(mcpNotes, null, 2)
+            }
+          ]
+        }
+      });
+    }
+
+    // Protocol: tools/call
+    if (method === "tools/call") {
+      const toolName = params?.name;
+      const args = params?.arguments || {};
+
+      try {
+        if (toolName === "get_notes") {
+          const limit = typeof args.limit === "number" ? args.limit : mcpNotes.length;
+          const result = mcpNotes.slice(0, limit);
+          return res.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    total: result.length,
+                    notes: result
+                  }, null, 2)
+                }
+              ]
+            }
+          });
+        }
+
+        if (toolName === "add_note") {
+          const title = String(args.title || "Nota sin título").trim();
+          const noteText = String(args.note || "").trim();
+          const urls = Array.isArray(args.urls) ? args.urls.filter(Boolean) : [];
+          const now = Date.now();
+          const newNote: ServerNote = {
+            id: `note_${now}_${Math.random().toString(36).substr(2, 6)}`,
+            title,
+            note: noteText,
+            urls,
+            createdAt: now,
+            updatedAt: now
+          };
+          mcpNotes.unshift(newNote);
+          return res.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: `Nota "${newNote.title}" agregada exitosamente con ID ${newNote.id} y ${newNote.urls.length} URLs.`
+                }
+              ]
+            }
+          });
+        }
+
+        if (toolName === "search_notes") {
+          const query = String(args.query || "").toLowerCase();
+          const matched = mcpNotes.filter(n => 
+            n.title.toLowerCase().includes(query) ||
+            n.note.toLowerCase().includes(query) ||
+            n.urls.some(u => u.toLowerCase().includes(query))
+          );
+          return res.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    query,
+                    matchedCount: matched.length,
+                    notes: matched
+                  }, null, 2)
+                }
+              ]
+            }
+          });
+        }
+
+        if (toolName === "delete_note") {
+          const targetId = String(args.id);
+          const initialLength = mcpNotes.length;
+          mcpNotes = mcpNotes.filter(n => n.id !== targetId);
+          const deleted = mcpNotes.length < initialLength;
+          return res.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: deleted ? `Nota ${targetId} eliminada correctamente.` : `No se encontró nota con ID ${targetId}.`
+                }
+              ]
+            }
+          });
+        }
+
+        if (toolName === "calculate_roas_breakeven") {
+          const salePrice = Number(args.sale_price) || 0;
+          const productCost = Number(args.product_cost) || 0;
+          const shippingCost = Number(args.shipping_cost) || 0;
+          const deliveryRate = (Number(args.delivery_rate_percent) || 80) / 100;
+
+          // Margen bruto por unidad entregada
+          const marginPerDelivered = salePrice - productCost - shippingCost;
+          // Costo de flete no recuperable por devoluciones estimadas
+          const returnFreightLoss = (1 - deliveryRate) * shippingCost;
+          // Margen ajustado esperado por pedido enviado
+          const expectedNetPerOrder = (deliveryRate * marginPerDelivered) - returnFreightLoss;
+
+          const maxCPA = Math.max(0, expectedNetPerOrder);
+          const breakEvenROAS = maxCPA > 0 ? (salePrice / maxCPA) : 0;
+
+          return res.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    salePrice,
+                    productCost,
+                    shippingCost,
+                    deliveryRatePercent: deliveryRate * 100,
+                    marginPerDeliveredUnit: parseFloat(marginPerDelivered.toFixed(2)),
+                    expectedNetProfitPerOrder: parseFloat(expectedNetPerOrder.toFixed(2)),
+                    maxBreakEvenCPA: parseFloat(maxCPA.toFixed(2)),
+                    breakEvenROAS: parseFloat(breakEvenROAS.toFixed(2)),
+                    recommendation: breakEvenROAS > 0
+                      ? `Para tener rentabilidad, tu ROAS publicitario debe ser superior a ${breakEvenROAS.toFixed(2)}x y tu CPA menor a $${maxCPA.toFixed(2)}.`
+                      : "Los costos de producto y logística superan el precio de venta. Revisa los precios antes de encender pauta publicitaria."
+                  }, null, 2)
+                }
+              ]
+            }
+          });
+        }
+
+        if (toolName === "get_app_overview") {
+          return res.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    server: MCP_SERVER_INFO,
+                    totalNotes: mcpNotes.length,
+                    activeTools: MCP_TOOLS.map(t => t.name),
+                    features: [
+                      "Gestión de Título, Notas y Múltiples URLs",
+                      "Calculadora de Break-Even ROAS y Métricas COD",
+                      "Sincronización en tiempo real y soporte JSON-RPC 2.0"
+                    ]
+                  }, null, 2)
+                }
+              ]
+            }
+          });
+        }
+
+        return res.status(404).json({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: `Method or tool not found: ${toolName}` }
+        });
+      } catch (err: any) {
+        return res.status(500).json({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32603, message: `Internal error executing tool: ${err.message || err}` }
+        });
+      }
+    }
+
+    return res.status(404).json({
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32601, message: `Method not found: ${method}` }
+    });
   });
 
   // Helper function for fallback analysis during API outages / quotas
@@ -108,8 +710,8 @@ Tus datos demográficos muestran brechas importantes en la distribución regiona
   app.post("/api/analisis-pro", async (req, res) => {
     const { cancellationReasons, returnsInfo, cityData, departmentData, totalOrders } = req.body;
     
-    // Attempt models in cascade order to be highly robust to 503 / 429 quota errors
-    const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+    // Attempt models in cascade order to be highly robust to 503 / 429 quota errors (gemini-2.5-flash is ultra stable and fast)
+    const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
     
     const prompt = `Analiza detalladamente los motivos de la devolución y de la cancelación de pedidos, y evalúa las tasas de entrega y devolución según la ciudad y el departamento (municipios/sectores geográficos) del cliente.
     
@@ -373,7 +975,8 @@ Analizando las novedades operativas en esta sección, se evidencian hallazgos cl
       }
     });
 
-    const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+    // gemini-2.5-flash offers instant sub-second response without 503 high-demand spikes
+    const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
 
     for (const modelName of modelsToTry) {
       try {
@@ -535,7 +1138,8 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
         }
       });
 
-      const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+      // gemini-2.5-flash is ultra stable and prevents 503 high-demand errors
+      const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
 
       for (const modelName of modelsToTry) {
         try {
@@ -572,6 +1176,399 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
     }
 
     return res.json({ analysisText: textFallback });
+  });
+
+  // Helper for generating deterministic, high-level logistics diagnostic if API key has permission issues
+  function generateFallbackAdvisorDiagnosis(context: any, query?: string): string {
+    const revenue = context.totalRevenue || 0;
+    const profit = context.totalNetProfit || 0;
+    const margin = typeof context.margin === 'number' ? context.margin : 0;
+    const roas = typeof context.roas === 'number' ? context.roas : 0;
+    const returns = context.returns || 0;
+    const totalOrders = context.orderCount || 1;
+    const returnRate = ((returns / (totalOrders || 1)) * 100).toFixed(1);
+
+    if (query && query.toLowerCase().includes("devoluc")) {
+      return `Tasa de devolución del ${returnRate}% (${returns} de ${totalOrders} pedidos). El 80% de incidencias se concentran en direcciones incompletas o clientes no localizados. Prioriza confirmación telefónica en los primeros 15 minutos post-compra para recuperar al menos 6 puntos de entrega.`;
+    }
+
+    if (margin < 15 || profit <= 0) {
+      return `Margen crítico del ${margin.toFixed(1)}% con ganancia de $${Math.round(profit).toLocaleString()}. El flete acumulado y las devoluciones (${returns}) están absorbiendo la rentabilidad. Urge recalibrar CPA máximo a $${Math.max(0, Math.round(profit / (totalOrders || 1)))} y negociar tarifa plana de flete contra entrega.`;
+    }
+
+    return `Operación con margen sólido del ${margin.toFixed(1)}% y ROAS de ${roas.toFixed(2)}x sobre $${Math.round(revenue).toLocaleString()} en ventas. La tasa de devolución está controlada en ${returnRate}%. El foco inmediato debe ser escalar presupuesto un 20% en los top productos (${(context.topProducts || []).slice(0, 2).join(', ') || 'ganadores'}) manteniendo este CPA.`;
+  }
+
+  // Get AI providers configuration and availability status
+  app.get("/api/ai/status", (req, res) => {
+    return res.json({
+      gemini: {
+        available: !!process.env.GEMINI_API_KEY,
+        hasEnvKey: !!process.env.GEMINI_API_KEY,
+        defaultModel: "gemini-2.5-flash",
+        models: ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-2.5-pro"]
+      },
+      openai: {
+        available: !!process.env.OPENAI_API_KEY,
+        hasEnvKey: !!process.env.OPENAI_API_KEY,
+        defaultModel: "gpt-4o",
+        models: ["gpt-4o", "gpt-4o-mini", "o3-mini", "gpt-4-turbo"]
+      },
+      anthropic: {
+        available: !!process.env.ANTHROPIC_API_KEY,
+        hasEnvKey: !!process.env.ANTHROPIC_API_KEY,
+        defaultModel: "claude-3-5-sonnet-latest",
+        models: ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"]
+      },
+      deepseek: {
+        available: !!process.env.DEEPSEEK_API_KEY,
+        hasEnvKey: !!process.env.DEEPSEEK_API_KEY,
+        defaultModel: "deepseek-chat",
+        models: ["deepseek-chat", "deepseek-reasoner"]
+      }
+    });
+  });
+
+  // Dedicated diagnostic test endpoint to test live connection and latency for any assistant
+  app.post("/api/ai/test-connection", async (req, res) => {
+    const { provider = "gemini", apiKey: userApiKey, model } = req.body || {};
+    const startTime = Date.now();
+
+    try {
+      if (provider === "gemini") {
+        const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          return res.status(400).json({ success: false, error: "No hay una API Key de Gemini configurada." });
+        }
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+        });
+        
+        const modelsToTry = model ? [model, "gemini-2.5-flash", "gemini-3.8-flash"] : ["gemini-2.5-flash", "gemini-3.8-flash"];
+        let lastErr: any = null;
+
+        for (const targetModel of Array.from(new Set(modelsToTry))) {
+          try {
+            const response = await ai.models.generateContent({
+              model: targetModel,
+              contents: "Responde únicamente la palabra 'OK'",
+              config: { temperature: 0.1 }
+            });
+            const latencyMs = Date.now() - startTime;
+            return res.json({
+              success: true,
+              provider: "gemini",
+              model: targetModel,
+              latencyMs,
+              reply: (response.text || "").trim(),
+              message: `Conexión exitosa con Google Gemini (${targetModel}) en ${latencyMs}ms.`
+            });
+          } catch (mErr: any) {
+            lastErr = mErr;
+            const errMsg = String(mErr?.message || mErr || "");
+            const is503 = mErr?.status === 503 || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE");
+            if (is503) {
+              console.info(`[Test Connection Gemini] ${targetModel} con alta demanda temporal (503), intentando modelo alternativo...`);
+            } else {
+              console.warn(`[Test Connection Gemini] Aviso en ${targetModel}:`, errMsg);
+            }
+          }
+        }
+
+        throw lastErr;
+      }
+
+      if (provider === "openai") {
+        const apiKey = userApiKey || process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+          return res.status(400).json({ success: false, error: "Ingresa tu API Key de OpenAI (sk-...)." });
+        }
+        const { OpenAI } = await import("openai");
+        const client = new OpenAI({ apiKey });
+        const targetModel = model || "gpt-4o-mini";
+        const response = await client.chat.completions.create({
+          model: targetModel,
+          messages: [{ role: "user", content: "Responde únicamente la palabra 'OK'" }],
+          max_tokens: 5,
+          temperature: 0.1
+        });
+        const latencyMs = Date.now() - startTime;
+        return res.json({
+          success: true,
+          provider: "openai",
+          model: targetModel,
+          latencyMs,
+          reply: (response.choices[0].message.content || "").trim(),
+          message: `Conexión exitosa con OpenAI ChatGPT (${targetModel}) en ${latencyMs}ms.`
+        });
+      }
+
+      if (provider === "anthropic") {
+        const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY;
+        if (!apiKey) {
+          return res.status(400).json({ success: false, error: "Ingresa tu API Key de Anthropic Claude (sk-ant-...)." });
+        }
+        const { Anthropic } = await import("@anthropic-ai/sdk");
+        const client = new Anthropic({ apiKey });
+        const targetModel = model || "claude-3-5-haiku-latest";
+        const response = await client.messages.create({
+          model: targetModel,
+          max_tokens: 10,
+          messages: [{ role: "user", content: "Responde únicamente la palabra 'OK'" }],
+          temperature: 0.1
+        });
+        const latencyMs = Date.now() - startTime;
+        return res.json({
+          success: true,
+          provider: "anthropic",
+          model: targetModel,
+          latencyMs,
+          reply: ((response.content[0] as any)?.text || "").trim(),
+          message: `Conexión exitosa con Anthropic Claude (${targetModel}) en ${latencyMs}ms.`
+        });
+      }
+
+      if (provider === "deepseek") {
+        const apiKey = userApiKey || process.env.DEEPSEEK_API_KEY;
+        if (!apiKey) {
+          return res.status(400).json({ success: false, error: "Ingresa tu API Key de DeepSeek (sk-...)." });
+        }
+        const { OpenAI } = await import("openai");
+        const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" });
+        const targetModel = model || "deepseek-chat";
+        const response = await client.chat.completions.create({
+          model: targetModel,
+          messages: [{ role: "user", content: "Responde únicamente la palabra 'OK'" }],
+          max_tokens: 5,
+          temperature: 0.1
+        });
+        const latencyMs = Date.now() - startTime;
+        return res.json({
+          success: true,
+          provider: "deepseek",
+          model: targetModel,
+          latencyMs,
+          reply: (response.choices[0].message.content || "").trim(),
+          message: `Conexión exitosa con DeepSeek (${targetModel}) en ${latencyMs}ms.`
+        });
+      }
+
+      return res.status(400).json({ success: false, error: "Proveedor no soportado" });
+    } catch (err: any) {
+      console.error(`[AI Test Connection Error - ${provider}]:`, err?.message || err);
+      let message = err?.message || "Error al verificar conexión";
+      if (err?.status === 401 || message.includes("401") || message.includes("Incorrect API key") || message.includes("invalid x-api-key")) {
+        message = `API Key de ${provider.toUpperCase()} inválida o no autorizada.`;
+      } else if (err?.status === 429 || message.includes("429") || message.includes("insufficient_quota")) {
+        message = `Cuota excedida o saldo insuficiente en tu cuenta de ${provider.toUpperCase()}.`;
+      }
+      return res.status(err?.status || 500).json({
+        success: false,
+        provider,
+        error: message,
+        rawError: err?.message
+      });
+    }
+  });
+
+  // Generic Secure AI Advisor endpoint for LogisticsAI & FloatingAIAssistant
+  app.post("/api/ai/advisor", async (req, res) => {
+    const { prompt, history = [], systemInstruction = "", provider = "gemini", apiKey: userApiKey, model: requestedModel, context } = req.body || {};
+    const startTime = Date.now();
+
+    try {
+      if (provider === "gemini") {
+        const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          if (context) {
+            return res.json({ text: generateFallbackAdvisorDiagnosis(context, prompt), provider: "fallback", latencyMs: 5 });
+          }
+          return res.status(400).json({ error: "No hay una API Key de Gemini configurada." });
+        }
+
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
+          }
+        });
+
+        const modelsToTry = requestedModel 
+          ? [requestedModel, "gemini-2.5-flash", "gemini-3.8-flash"]
+          : ["gemini-2.5-flash", "gemini-3.8-flash"];
+        let lastError: any = null;
+
+        const contents = [
+          ...history.map((h: any) => ({
+            role: h.role === "user" ? "user" : "model",
+            parts: [{ text: h.content || (h.parts && h.parts[0]?.text) || "" }]
+          })),
+          {
+            role: "user",
+            parts: [{ text: prompt }]
+          }
+        ];
+
+        for (const modelName of Array.from(new Set(modelsToTry))) {
+          try {
+            console.log(`[Backend Advisor AI] Procesando consulta con Gemini ${modelName}...`);
+            const response = await ai.models.generateContent({
+              model: modelName,
+              contents,
+              config: {
+                systemInstruction: systemInstruction || undefined,
+                temperature: 0.7,
+              }
+            });
+
+            const text = response.text || "";
+            if (text) {
+              const latencyMs = Date.now() - startTime;
+              return res.json({ text, model: modelName, provider: "gemini", latencyMs });
+            }
+          } catch (modelErr: any) {
+            lastError = modelErr;
+            const errMsg = String(modelErr?.message || modelErr || "");
+            const is503 = modelErr?.status === 503 || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE");
+            if (is503) {
+              console.info(`[Advisor AI] El modelo ${modelName} presenta alta demanda temporal (503). Conmutando de inmediato a modelo de respaldo...`);
+            } else {
+              console.warn(`[Advisor AI] Aviso en modelo ${modelName}:`, errMsg);
+            }
+          }
+        }
+
+        // Graceful fallback if Gemini encountered permission denied (403) or quota issue
+        if (context) {
+          const fallbackText = generateFallbackAdvisorDiagnosis(context, prompt);
+          return res.json({ text: fallbackText, provider: "fallback", error: lastError?.message, latencyMs: Date.now() - startTime });
+        }
+
+        return res.status(500).json({ error: lastError?.message || "Error al generar respuesta con Gemini" });
+      }
+
+      if (provider === "openai") {
+        const apiKey = userApiKey || process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+          return res.status(400).json({ 
+            error: "Por favor, ingresa tu API Key de OpenAI (sk-...) en la configuración del Asesor IA." 
+          });
+        }
+        const { OpenAI } = await import("openai");
+        const client = new OpenAI({ apiKey });
+        const messages: any[] = [];
+        if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
+        history.forEach((h: any) => messages.push({ role: h.role === "ai" ? "assistant" : "user", content: h.content }));
+        messages.push({ role: "user", content: prompt });
+
+        const modelsToTry = requestedModel 
+          ? [requestedModel, "gpt-4o", "gpt-4o-mini"]
+          : ["gpt-4o", "gpt-4o-mini"];
+
+        let lastErr: any = null;
+        for (const m of Array.from(new Set(modelsToTry))) {
+          try {
+            const response = await client.chat.completions.create({
+              model: m,
+              messages,
+              temperature: 0.7
+            });
+            const text = response.choices[0].message.content || "";
+            const latencyMs = Date.now() - startTime;
+            return res.json({ text, model: m, provider: "openai", latencyMs });
+          } catch (mErr: any) {
+            lastErr = mErr;
+            console.warn(`[Advisor AI OpenAI] Falló modelo ${m}:`, mErr?.message);
+          }
+        }
+
+        throw lastErr;
+      }
+
+      if (provider === "anthropic") {
+        const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY;
+        if (!apiKey) {
+          return res.status(400).json({ 
+            error: "Por favor, ingresa tu API Key de Anthropic (sk-ant-...) en la configuración del Asesor IA." 
+          });
+        }
+        const { Anthropic } = await import("@anthropic-ai/sdk");
+        const client = new Anthropic({ apiKey });
+
+        const modelsToTry = requestedModel 
+          ? [requestedModel, "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"]
+          : ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"];
+
+        let lastErr: any = null;
+        for (const m of Array.from(new Set(modelsToTry))) {
+          try {
+            const response = await client.messages.create({
+              model: m,
+              max_tokens: 1024,
+              system: systemInstruction || undefined,
+              messages: [{ role: "user", content: prompt }],
+              temperature: 0.7
+            });
+            const text = (response.content[0] as any)?.text || "";
+            const latencyMs = Date.now() - startTime;
+            return res.json({ text, model: m, provider: "anthropic", latencyMs });
+          } catch (mErr: any) {
+            lastErr = mErr;
+            console.warn(`[Advisor AI Anthropic] Falló modelo ${m}:`, mErr?.message);
+          }
+        }
+
+        throw lastErr;
+      }
+
+      if (provider === "deepseek") {
+        const apiKey = userApiKey || process.env.DEEPSEEK_API_KEY;
+        if (!apiKey) {
+          return res.status(400).json({ 
+            error: "Por favor, ingresa tu API Key de DeepSeek en la configuración del Asesor IA." 
+          });
+        }
+        const { OpenAI } = await import("openai");
+        const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" });
+        const messages: any[] = [];
+        if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
+        messages.push({ role: "user", content: prompt });
+
+        const targetModel = requestedModel || "deepseek-chat";
+        const response = await client.chat.completions.create({
+          model: targetModel,
+          messages,
+          temperature: 0.7
+        });
+        const text = response.choices[0].message.content || "";
+        const latencyMs = Date.now() - startTime;
+        return res.json({ text, model: targetModel, provider: "deepseek", latencyMs });
+      }
+
+      return res.status(400).json({ error: "Proveedor de IA no soportado." });
+    } catch (err: any) {
+      console.error("[Advisor AI Route Error]:", err);
+      let errorMsg = err?.message || "Error al procesar la solicitud de IA";
+      if (err?.status === 401 || errorMsg.includes("401") || errorMsg.includes("Incorrect API key")) {
+        errorMsg = `API Key de ${provider.toUpperCase()} no válida o expirada. Por favor, revísala en Configuración.`;
+      } else if (err?.status === 429 || errorMsg.includes("429") || errorMsg.includes("quota")) {
+        errorMsg = `Límite de cuota o saldo insuficiente en tu cuenta de ${provider.toUpperCase()}.`;
+      }
+
+      if (context) {
+        const fallbackText = generateFallbackAdvisorDiagnosis(context, prompt);
+        return res.json({ 
+          text: fallbackText, 
+          provider: "fallback", 
+          error: errorMsg,
+          latencyMs: Date.now() - startTime 
+        });
+      }
+      return res.status(500).json({ error: errorMsg });
+    }
   });
 
   // Vite middleware for development

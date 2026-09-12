@@ -7,7 +7,6 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI } from "@google/genai";
 import { Order, CurrencyCode } from '../mockData';
 import Markdown from 'react-markdown';
 import CryptoJS from 'crypto-js';
@@ -44,7 +43,20 @@ export const FloatingAIAssistant: React.FC<FloatingAIAssistantProps> = ({
   const [error, setError] = useState<string | null>(null);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [aiConfigState, setAiConfigState] = useState<{
+    provider: 'gemini' | 'openai' | 'anthropic' | 'deepseek';
+    geminiKey: string;
+    openaiKey: string;
+    anthropicKey: string;
+    deepseekKey: string;
+    model?: string;
+  }>({
+    provider: 'gemini',
+    geminiKey: '',
+    openaiKey: '',
+    anthropicKey: '',
+    deepseekKey: '',
+  });
   const [activeTheme, setActiveTheme] = useState<'theme-light-white' | 'theme-dark-green' | 'theme-dark-blue'>('theme-light-white');
 
   // Detect theme dynamically
@@ -69,33 +81,52 @@ export const FloatingAIAssistant: React.FC<FloatingAIAssistantProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // Decrypt and load Gemini API Key
+  // Decrypt and load AI Config
   useEffect(() => {
-    const savedConfig = localStorage.getItem('profit_os_ai_config_v2');
-    if (savedConfig) {
-      try {
-        const bytes = CryptoJS.AES.decrypt(savedConfig, ENCRYPTION_SECRET);
-        const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
-        if (decryptedData.geminiKey) {
-          setGeminiApiKey(decryptedData.geminiKey);
-        }
-      } catch (e) {
-        console.error("Failed to decrypt Gemini config in floating advisor:", e);
-      }
-    } else {
-      const v1Config = localStorage.getItem('profit_os_ai_config');
-      if (v1Config) {
+    const loadConfig = () => {
+      const savedConfigV3 = localStorage.getItem('profit_os_ai_config_v3');
+      if (savedConfigV3) {
         try {
-          const bytes = CryptoJS.AES.decrypt(v1Config, ENCRYPTION_SECRET);
+          const bytes = CryptoJS.AES.decrypt(savedConfigV3, ENCRYPTION_SECRET);
           const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
-          if (decryptedData.apiKey) {
-            setGeminiApiKey(decryptedData.apiKey);
-          }
+          setAiConfigState({
+            provider: decryptedData.provider || 'gemini',
+            geminiKey: decryptedData.geminiKey || '',
+            openaiKey: decryptedData.openaiKey || '',
+            anthropicKey: decryptedData.anthropicKey || '',
+            deepseekKey: decryptedData.deepseekKey || '',
+            model: decryptedData.provider === 'openai' ? decryptedData.openaiModel :
+                   decryptedData.provider === 'anthropic' ? decryptedData.anthropicModel :
+                   decryptedData.provider === 'deepseek' ? decryptedData.deepseekModel :
+                   decryptedData.geminiModel,
+          });
+          return;
         } catch (e) {
-          console.error("Failed to decrypt legacy AI config in floating advisor:", e);
+          console.error("Failed to decrypt v3 config in floating advisor:", e);
         }
       }
-    }
+
+      const savedConfig = localStorage.getItem('profit_os_ai_config_v2');
+      if (savedConfig) {
+        try {
+          const bytes = CryptoJS.AES.decrypt(savedConfig, ENCRYPTION_SECRET);
+          const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+          setAiConfigState({
+            provider: decryptedData.provider || 'gemini',
+            geminiKey: decryptedData.geminiKey || '',
+            openaiKey: decryptedData.openaiKey || '',
+            anthropicKey: decryptedData.anthropicKey || '',
+            deepseekKey: decryptedData.deepseekKey || '',
+          });
+        } catch (e) {
+          console.error("Failed to decrypt AI config in floating advisor:", e);
+        }
+      }
+    };
+
+    loadConfig();
+    window.addEventListener('storage', loadConfig);
+    return () => window.removeEventListener('storage', loadConfig);
   }, []);
 
   // Load chat history
@@ -162,14 +193,13 @@ export const FloatingAIAssistant: React.FC<FloatingAIAssistantProps> = ({
     setIsLoading(true);
     setError(null);
 
-    // Retrieve active API key
-    const activeApiKey = geminiApiKey || process.env.GEMINI_API_KEY || '';
-
-    if (!activeApiKey) {
-      setError("Ingresa tu Gemini API Key en la pestaña 'Configuración' para habilitar tus consultas.");
-      setIsLoading(false);
-      return;
-    }
+    // Retrieve active API key based on configured provider
+    const activeProvider = aiConfigState.provider || 'gemini';
+    const activeApiKey = activeProvider === 'gemini' ? aiConfigState.geminiKey :
+                         activeProvider === 'openai' ? aiConfigState.openaiKey :
+                         activeProvider === 'anthropic' ? aiConfigState.anthropicKey :
+                         aiConfigState.deepseekKey;
+    const activeModel = aiConfigState.model;
 
     try {
       const pendingCount = orders.filter(o => o.status === 'Pendiente').length;
@@ -218,25 +248,42 @@ export const FloatingAIAssistant: React.FC<FloatingAIAssistantProps> = ({
         parts: [{ text: msg.content }]
       }));
 
-      const apiContents = [
-        ...mappedHistory,
-        {
-          role: 'user',
-          parts: [{ text: userQuery }]
-        }
-      ];
+      const context = {
+        totalRevenue: stats.totalRevenue || 0,
+        totalNetProfit: stats.totalNetProfit || 0,
+        margin: stats.margin || 0,
+        roas: stats.roas || 0,
+        roi: stats.roi || 0,
+        healthScore: stats.healthScore || 0,
+        orderCount: orders.length,
+        returns: returnedCount,
+        cancellations: cancelledCount,
+        topProducts: Array.from(new Set(orders.map(o => o.product))).slice(0, 4),
+      };
 
-      const ai = new GoogleGenAI({ apiKey: activeApiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: apiContents,
-        config: {
+      const res = await fetch('/api/ai/advisor', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: userQuery,
+          history: mappedHistory,
           systemInstruction: contextDataPrompt,
-          temperature: 0.7,
-        }
+          provider: activeProvider,
+          model: activeModel,
+          apiKey: activeApiKey,
+          context,
+        }),
       });
 
-      const responseText = response.text || "No obtuve respuesta del modelo.";
+      if (!res.ok) {
+        const errorJson = await res.json().catch(() => ({}));
+        throw new Error(errorJson.error || `Error HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const responseText = data.text || "No obtuve respuesta del modelo.";
       setMessages(prev => [...prev, { role: 'ai', content: responseText, id: aiMessageId }]);
     } catch (err: any) {
       console.error("Gemini Error:", err);
