@@ -111,7 +111,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     
     // Aggregates
     const deptData: Record<string, { total: number; delivered: number; returned: number; charged: number; real: number; cities: Set<string> }> = {};
-    const cityData: Record<string, { total: number; delivered: number; returned: number; dept: string; charged: number; real: number; carriers: Set<string> }> = {};
+    const cityData: Record<string, { name: string; total: number; delivered: number; returned: number; dept: string; charged: number; real: number; carriers: Set<string> }> = {};
     const carrierData: Record<string, { total: number; delivered: number; returned: number; active: number; charged: number; real: number; incidentCount: number; depts: Set<string> }> = {};
 
     shippedOrders.forEach(o => {
@@ -142,16 +142,17 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       const cityRaw = o.ciudadDestino || 'No especificada';
       const city = cityRaw.trim().toUpperCase();
       deptData[dept].cities.add(city);
-      if (!cityData[city]) {
-        cityData[city] = { total: 0, delivered: 0, returned: 0, dept: dept, charged: 0, real: 0, carriers: new Set() };
+      const cityCompositeKey = `${dept}___${city}`;
+      if (!cityData[cityCompositeKey]) {
+        cityData[cityCompositeKey] = { name: city, total: 0, delivered: 0, returned: 0, dept: dept, charged: 0, real: 0, carriers: new Set() };
       }
-      cityData[city].total++;
-      cityData[city].charged += o.shippingCharged;
-      cityData[city].real += o.shippingReal;
-      if (isDelivered) cityData[city].delivered++;
-      else if (isReturned) cityData[city].returned++;
+      cityData[cityCompositeKey].total++;
+      cityData[cityCompositeKey].charged += o.shippingCharged;
+      cityData[cityCompositeKey].real += o.shippingReal;
+      if (isDelivered) cityData[cityCompositeKey].delivered++;
+      else if (isReturned) cityData[cityCompositeKey].returned++;
       if (o.transportadora) {
-        cityData[city].carriers.add(o.transportadora.trim().toUpperCase());
+        cityData[cityCompositeKey].carriers.add(o.transportadora.trim().toUpperCase());
       }
 
       // Carrier aggregate
@@ -199,7 +200,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       };
     }).sort((a, b) => b.total - a.total);
 
-    const citiesList = Object.entries(cityData).map(([name, data]) => {
+    const citiesList = Object.entries(cityData).map(([key, data]) => {
       const deliveryRate = data.total > 0 ? (data.delivered / data.total) * 100 : 0;
       let status: 'green' | 'yellow' | 'red' = 'yellow';
       if (deliveryRate >= 80) status = 'green';
@@ -208,7 +209,8 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       const loss = data.real - data.charged;
 
       return {
-        name,
+        id: key,
+        name: data.name || key,
         dept: data.dept,
         total: data.total,
         delivered: data.delivered,
@@ -416,6 +418,235 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       status: item.status
     }));
   }, [activeTab, selectedDeptFilter, filteredDepts, filteredCities, filteredCarriers]);
+
+  const renderTableRows = () => {
+    if (activeTab === 'departamento') {
+      if (!selectedDeptFilter) {
+        if (filteredDepts.length === 0) {
+          return (
+            <tr key="no-depts">
+              <td colSpan={6} className="py-8 text-center text-[15px] text-slate-500">
+                No se encontraron departamentos con los filtros actuales.
+              </td>
+            </tr>
+          );
+        }
+        return filteredDepts.map((item, idx) => (
+          <tr 
+            key={`dept-row-${item.name}-${idx}`} 
+            onClick={() => handleDeptFilterChange(item.name)}
+            className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
+          >
+            <td className="px-4 py-4 flex items-center gap-2">
+              <Map className="text-slate-600 group-hover:text-emerald-500 transition-colors shrink-0" size={16} />
+              <span className="text-[15px] font-bold text-slate-200 group-hover:text-emerald-400 transition-colors truncate">
+                {item.name}
+              </span>
+            </td>
+            <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
+            <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
+            <td className="px-4 py-4">
+              <div className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
+                  item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
+                  item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
+                  'bg-rose-500 ring-rose-500/10'
+                }`} />
+                <span className={`text-[15px] font-mono font-bold ${
+                  item.status === 'green' ? 'text-emerald-400' :
+                  item.status === 'yellow' ? 'text-amber-400' :
+                  'text-rose-400'
+                }`}>
+                  {item.deliveryRate.toFixed(1)}%
+                </span>
+              </div>
+            </td>
+            <td className={`px-4 py-4 text-right text-[15px] font-mono ${
+              item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
+            }`}>
+              {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
+            </td>
+            <td className="px-4 py-4 text-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeptFilterChange(item.name);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/20 text-emerald-400 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1 group-hover:border-emerald-500/40"
+              >
+                <span>Explorar ({item.citiesCount || stats.citiesList.filter(c => c.dept === item.name).length})</span>
+                <ChevronRight size={12} />
+              </button>
+            </td>
+          </tr>
+        ));
+      }
+
+      // Department IS selected -> show its cities
+      if (filteredCities.length === 0) {
+        return (
+          <tr key="no-cities-dept">
+            <td colSpan={6} className="py-8 text-center text-[15px] text-slate-500">
+              No se encontraron ciudades en {selectedDeptFilter} con los filtros actuales.
+            </td>
+          </tr>
+        );
+      }
+      return filteredCities.map((item, idx) => (
+        <tr key={`dept-city-row-${item.dept}-${item.name}-${idx}`} className="hover:bg-white/[0.01] transition-colors group">
+          <td className="px-4 py-4">
+            <div className="flex items-center gap-1.5">
+              <MapPin className="text-slate-600 group-hover:text-cyan-400 transition-colors shrink-0" size={16} />
+              <span className="text-[15px] font-bold text-slate-200 truncate">{item.name}</span>
+            </div>
+          </td>
+          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
+          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
+          <td className="px-4 py-4">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
+                item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
+                item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
+                'bg-rose-500 ring-rose-500/10'
+              }`} />
+              <span className={`text-[15px] font-mono font-bold ${
+                item.status === 'green' ? 'text-emerald-400' :
+                item.status === 'yellow' ? 'text-amber-400' :
+                'text-rose-400'
+              }`}>
+                {item.deliveryRate.toFixed(1)}%
+              </span>
+            </div>
+          </td>
+          <td className={`px-4 py-4 text-right text-[15px] font-mono ${
+            item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
+          }`}>
+            {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
+          </td>
+          <td className="px-4 py-4 text-center">
+            <span className="text-[11px] font-mono text-cyan-400/90 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20">
+              {item.carriers?.length ? `${item.carriers.length} carriers` : 'Local'}
+            </span>
+          </td>
+        </tr>
+      ));
+    }
+
+    if (activeTab === 'ciudad') {
+      if (filteredCities.length === 0) {
+        return (
+          <tr key="no-cities">
+            <td colSpan={6} className="py-8 text-center text-[15px] text-slate-500">
+              No se encontraron ciudades con los filtros actuales.
+            </td>
+          </tr>
+        );
+      }
+      return filteredCities.map((item, idx) => (
+        <tr key={`city-row-${item.dept}-${item.name}-${idx}`} className="hover:bg-white/[0.01] transition-colors group">
+          <td className="px-4 py-4">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <MapPin className="text-slate-600 group-hover:text-emerald-500 transition-colors shrink-0" size={16} />
+                <span className="text-[15px] font-bold text-slate-200 truncate">{item.name}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleDeptFilterChange(item.dept)}
+                className="text-[11px] font-mono text-slate-500 hover:text-emerald-400 ml-6 text-left cursor-pointer transition-colors mt-0.5 inline-flex items-center gap-1"
+                title={`Filtrar únicamente departamento ${item.dept}`}
+              >
+                📍 Depto: {item.dept}
+              </button>
+            </div>
+          </td>
+          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
+          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
+          <td className="px-4 py-4">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
+                item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
+                item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
+                'bg-rose-500 ring-rose-500/10'
+              }`} />
+              <span className={`text-[15px] font-mono font-bold ${
+                item.status === 'green' ? 'text-emerald-400' :
+                item.status === 'yellow' ? 'text-amber-400' :
+                'text-rose-400'
+              }`}>
+                {item.deliveryRate.toFixed(1)}%
+              </span>
+            </div>
+          </td>
+          <td className={`px-4 py-4 text-right text-[15px] font-mono ${
+            item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
+          }`}>
+            {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
+          </td>
+          <td className="px-4 py-4 text-center">
+            <span className="text-[11px] font-mono text-slate-400">
+              {item.carriers?.length ? `${item.carriers.length} carriers` : '---'}
+            </span>
+          </td>
+        </tr>
+      ));
+    }
+
+    // activeTab === 'transportadora'
+    if (filteredCarriers.length === 0) {
+      return (
+        <tr key="no-carriers">
+          <td colSpan={6} className="py-8 text-center text-[15px] text-slate-500">
+            No se encontraron transportadoras con los filtros actuales.
+          </td>
+        </tr>
+      );
+    }
+    return filteredCarriers.map((item, idx) => (
+      <tr key={`carrier-row-${item.name}-${idx}`} className="hover:bg-white/[0.01] transition-colors group">
+        <td className="px-4 py-4">
+          <div className="flex flex-col">
+            <span className="text-[15px] font-bold text-slate-200 uppercase truncate">{item.name}</span>
+            {item.incidentCount > 0 && (
+              <span className="text-[12px] font-mono text-amber-500 font-bold flex items-center gap-1 mt-0.5">
+                <AlertCircle size={13} />
+                {item.incidentCount} incidencias registradas
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
+        <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
+        <td className="px-4 py-4">
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
+              item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
+              item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
+              'bg-rose-500 ring-rose-500/10'
+            }`} />
+            <span className={`text-[15px] font-mono font-bold ${
+              item.status === 'green' ? 'text-emerald-400' :
+              item.status === 'yellow' ? 'text-amber-400' :
+              'text-rose-400'
+            }`}>
+              {item.deliveryRate.toFixed(1)}%
+            </span>
+          </div>
+        </td>
+        <td className={`px-4 py-4 text-right text-[15px] font-mono ${
+          item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
+        }`}>
+          {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
+        </td>
+        <td className="px-4 py-4 text-center">
+          <span className="text-[11px] font-mono text-purple-400/80 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20">
+            {item.depts?.length ? `${item.depts.length} deptos` : '---'}
+          </span>
+        </td>
+      </tr>
+    ));
+  };
 
   return (
     <div className="space-y-8">
@@ -926,7 +1157,10 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
 
             {/* Unified Table view */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[500px]">
+              <table 
+                key={`shipping-table-${activeTab}-${selectedDeptFilter || 'all'}`} 
+                className="w-full text-left border-collapse min-w-[500px]"
+              >
                 <thead>
                   <tr className="border-b border-slate-900 bg-slate-950/20 text-[15px] uppercase tracking-wider text-slate-400 font-bold">
                     <th className="px-4 py-3.5 font-display">
@@ -938,217 +1172,17 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                     <th className="px-4 py-3.5 font-display text-center">Entregas</th>
                     <th className="px-4 py-3.5 font-display">Tasa Entrega</th>
                     <th className="px-4 py-3.5 font-display text-right">Resultado Flete</th>
-                    {activeTab === 'departamento' && !selectedDeptFilter && (
-                      <th className="px-4 py-3.5 font-display text-center">Ciudades</th>
-                    )}
+                    <th className="px-4 py-3.5 font-display text-center">
+                      {activeTab === 'departamento' && !selectedDeptFilter 
+                        ? 'Ciudades' 
+                        : activeTab === 'departamento' || activeTab === 'ciudad' 
+                          ? 'Transporte' 
+                          : 'Cobertura'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-900/60">
-                  {/* Departamento Tab - WHEN NO DEPARTMENT IS FILTERED */}
-                  {activeTab === 'departamento' && !selectedDeptFilter && (
-                    filteredDepts.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-8 text-center text-[15px] text-slate-500">No se encontraron departamentos con los filtros actuales.</td>
-                      </tr>
-                    ) : (
-                      filteredDepts.map((item) => (
-                        <tr 
-                          key={item.name} 
-                          onClick={() => handleDeptFilterChange(item.name)}
-                          className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
-                        >
-                          <td className="px-4 py-4 flex items-center gap-2">
-                            <Map className="text-slate-600 group-hover:text-emerald-500 transition-colors shrink-0" size={16} />
-                            <span className="text-[15px] font-bold text-slate-200 group-hover:text-emerald-400 transition-colors truncate">
-                              {item.name}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
-                                item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
-                                item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
-                                'bg-rose-500 ring-rose-500/10'
-                              }`} />
-                              <span className={`text-[15px] font-mono font-bold ${
-                                item.status === 'green' ? 'text-emerald-400' :
-                                item.status === 'yellow' ? 'text-amber-400' :
-                                'text-rose-400'
-                              }`}>
-                                {item.deliveryRate.toFixed(1)}%
-                              </span>
-                            </div>
-                          </td>
-                          <td className={`px-4 py-4 text-right text-[15px] font-mono ${
-                            item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
-                          }`}>
-                            {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
-                          </td>
-                          <td className="px-4 py-4 text-center">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeptFilterChange(item.name);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/20 text-emerald-400 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1 group-hover:border-emerald-500/40"
-                            >
-                              <span>Explorar ({item.citiesCount || stats.citiesList.filter(c => c.dept === item.name).length})</span>
-                              <ChevronRight size={12} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )
-                  )}
-
-                  {/* Departamento Tab - WHEN A DEPARTMENT IS FILTERED (SHOW ITS CITIES) */}
-                  {activeTab === 'departamento' && selectedDeptFilter && (
-                    filteredCities.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-[15px] text-slate-500">
-                          No se encontraron ciudades en {selectedDeptFilter} con los filtros actuales.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredCities.map((item) => (
-                        <tr key={item.name} className="hover:bg-white/[0.01] transition-colors group">
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-1.5">
-                              <MapPin className="text-slate-600 group-hover:text-cyan-400 transition-colors shrink-0" size={16} />
-                              <span className="text-[15px] font-bold text-slate-200 truncate">{item.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
-                                item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
-                                item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
-                                'bg-rose-500 ring-rose-500/10'
-                              }`} />
-                              <span className={`text-[15px] font-mono font-bold ${
-                                item.status === 'green' ? 'text-emerald-400' :
-                                item.status === 'yellow' ? 'text-amber-400' :
-                                'text-rose-400'
-                              }`}>
-                                {item.deliveryRate.toFixed(1)}%
-                              </span>
-                            </div>
-                          </td>
-                          <td className={`px-4 py-4 text-right text-[15px] font-mono ${
-                            item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
-                          }`}>
-                            {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
-                          </td>
-                        </tr>
-                      ))
-                    )
-                  )}
-
-                  {/* Ciudad Tab */}
-                  {activeTab === 'ciudad' && (
-                    filteredCities.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-[15px] text-slate-500">No se encontraron ciudades con los filtros actuales.</td>
-                      </tr>
-                    ) : (
-                      filteredCities.map((item) => (
-                        <tr key={item.name} className="hover:bg-white/[0.01] transition-colors group">
-                          <td className="px-4 py-4">
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5">
-                                <MapPin className="text-slate-600 group-hover:text-emerald-500 transition-colors shrink-0" size={16} />
-                                <span className="text-[15px] font-bold text-slate-200 truncate">{item.name}</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleDeptFilterChange(item.dept)}
-                                className="text-[11px] font-mono text-slate-500 hover:text-emerald-400 ml-6 text-left cursor-pointer transition-colors mt-0.5 inline-flex items-center gap-1"
-                                title={`Filtrar únicamente departamento ${item.dept}`}
-                              >
-                                📍 Depto: {item.dept}
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
-                                item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
-                                item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
-                                'bg-rose-500 ring-rose-500/10'
-                              }`} />
-                              <span className={`text-[15px] font-mono font-bold ${
-                                item.status === 'green' ? 'text-emerald-400' :
-                                item.status === 'yellow' ? 'text-amber-400' :
-                                'text-rose-400'
-                              }`}>
-                                {item.deliveryRate.toFixed(1)}%
-                              </span>
-                            </div>
-                          </td>
-                          <td className={`px-4 py-4 text-right text-[15px] font-mono ${
-                            item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
-                          }`}>
-                            {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
-                          </td>
-                        </tr>
-                      ))
-                    )
-                  )}
-
-                  {/* Transportadoras Tab */}
-                  {activeTab === 'transportadora' && (
-                    filteredCarriers.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-[15px] text-slate-500">No se encontraron transportadoras con los filtros actuales.</td>
-                      </tr>
-                    ) : (
-                      filteredCarriers.map((item) => (
-                        <tr key={item.name} className="hover:bg-white/[0.01] transition-colors group">
-                          <td className="px-4 py-4">
-                            <div className="flex flex-col">
-                              <span className="text-[15px] font-bold text-slate-200 uppercase truncate">{item.name}</span>
-                              {item.incidentCount > 0 && (
-                                <span className="text-[12px] font-mono text-amber-500 font-bold flex items-center gap-1 mt-0.5">
-                                  <AlertCircle size={13} />
-                                  {item.incidentCount} incidencias registradas
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
-                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
-                                item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
-                                item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
-                                'bg-rose-500 ring-rose-500/10'
-                              }`} />
-                              <span className={`text-[15px] font-mono font-bold ${
-                                item.status === 'green' ? 'text-emerald-400' :
-                                item.status === 'yellow' ? 'text-amber-400' :
-                                'text-rose-400'
-                              }`}>
-                                {item.deliveryRate.toFixed(1)}%
-                              </span>
-                            </div>
-                          </td>
-                          <td className={`px-4 py-4 text-right text-[15px] font-mono ${
-                            item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
-                          }`}>
-                            {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
-                          </td>
-                        </tr>
-                      ))
-                    )
-                  )}
+                  {renderTableRows()}
                 </tbody>
               </table>
             </div>
@@ -1222,6 +1256,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
             </div>
           ) : (
             <div 
+              key={`chart-container-${activeTab}-${selectedDeptFilter || 'all'}`}
               className="w-full"
               style={{ height: isMobile ? `${Math.max(320, chartData.length * 32)}px` : '380px' }}
             >
@@ -1246,7 +1281,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
                       itemStyle={{ color: '#fff', fontSize: '13px', fontFamily: 'DM Mono' }}
                     />
-                    <Bar dataKey="Tasa de Entrega" radius={[0, 4, 4, 0]} barSize={13}>
+                    <Bar dataKey="Tasa de Entrega" radius={[0, 4, 4, 0]} barSize={13} isAnimationActive={false}>
                       {chartData.map((entry, index) => {
                         const barColor = entry.status === 'green' ? '#10b981' : entry.status === 'yellow' ? '#f59e0b' : '#ef4444';
                         return <Cell key={`cell-${index}`} fill={barColor} />;
@@ -1263,7 +1298,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       fontSize={12} 
                       tickLine={false} 
                       axisLine={false} 
-                      interval={0}
+                      interval={0} 
                       angle={-35}
                       textAnchor="end"
                       height={65}
@@ -1274,7 +1309,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       contentStyle={{ backgroundColor: '#000000', border: '1px solid #1f1f2e', borderRadius: '8px' }}
                       itemStyle={{ color: '#fff', fontSize: '13px', fontFamily: 'DM Mono' }}
                     />
-                    <Bar dataKey="Tasa de Entrega" radius={[4, 4, 0, 0]} barSize={28}>
+                    <Bar dataKey="Tasa de Entrega" radius={[4, 4, 0, 0]} barSize={28} isAnimationActive={false}>
                       {chartData.map((entry, index) => {
                         const barColor = entry.status === 'green' ? '#10b981' : entry.status === 'yellow' ? '#f59e0b' : '#ef4444';
                         return <Cell key={`cell-${index}`} fill={barColor} />;
