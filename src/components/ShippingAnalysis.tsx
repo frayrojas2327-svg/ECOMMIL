@@ -1,8 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
-import { Truck, TrendingDown, ShieldCheck, Zap, Globe, Search, MapPin, Map, AlertTriangle, AlertCircle, ChevronRight, Sliders, Bot, Sparkles, Loader2 } from 'lucide-react';
+import { 
+  Truck, TrendingDown, ShieldCheck, Zap, Globe, Search, MapPin, Map, 
+  AlertTriangle, AlertCircle, ChevronRight, Sliders, Bot, Sparkles, Loader2,
+  X, Filter, Building2, ArrowRight
+} from 'lucide-react';
 import { Order, CurrencyCode } from '../mockData';
 import Markdown from 'react-markdown';
+import { getClientGeminiApiKeys } from '../services/aiConfigService';
 
 interface ShippingAnalysisProps {
   orders: Order[];
@@ -17,6 +22,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
   const [activeTab, setActiveTab] = useState<'departamento' | 'ciudad' | 'transportadora'>('departamento');
   const [semaforoFilter, setSemaforoFilter] = useState<'all' | 'green' | 'yellow' | 'red'>('all');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState('');
+  const [selectedCityFilter, setSelectedCityFilter] = useState('');
   const [selectedCarrierFilter, setSelectedCarrierFilter] = useState('');
   
   // Tag Filtering states (sin etiqueta / TikTok Orgánico)
@@ -104,7 +110,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     let absorbedLossCount = 0;
     
     // Aggregates
-    const deptData: Record<string, { total: number; delivered: number; returned: number; charged: number; real: number }> = {};
+    const deptData: Record<string, { total: number; delivered: number; returned: number; charged: number; real: number; cities: Set<string> }> = {};
     const cityData: Record<string, { total: number; delivered: number; returned: number; dept: string; charged: number; real: number; carriers: Set<string> }> = {};
     const carrierData: Record<string, { total: number; delivered: number; returned: number; active: number; charged: number; real: number; incidentCount: number; depts: Set<string> }> = {};
 
@@ -124,7 +130,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       const deptRaw = o.departamentoDestino || 'No especificado';
       const dept = deptRaw.trim().toUpperCase();
       if (!deptData[dept]) {
-        deptData[dept] = { total: 0, delivered: 0, returned: 0, charged: 0, real: 0 };
+        deptData[dept] = { total: 0, delivered: 0, returned: 0, charged: 0, real: 0, cities: new Set() };
       }
       deptData[dept].total++;
       deptData[dept].charged += o.shippingCharged;
@@ -135,6 +141,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       // City aggregate
       const cityRaw = o.ciudadDestino || 'No especificada';
       const city = cityRaw.trim().toUpperCase();
+      deptData[dept].cities.add(city);
       if (!cityData[city]) {
         cityData[city] = { total: 0, delivered: 0, returned: 0, dept: dept, charged: 0, real: 0, carriers: new Set() };
       }
@@ -187,7 +194,8 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
         status,
         loss,
         charged: data.charged,
-        real: data.real
+        real: data.real,
+        citiesCount: data.cities ? data.cities.size : 0
       };
     }).sort((a, b) => b.total - a.total);
 
@@ -269,6 +277,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     setAiLoading(true);
     setAiError(null);
     try {
+      const apiKeys = getClientGeminiApiKeys();
       const response = await fetch("/api/analisis-fletes-pro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -280,7 +289,8 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
           deptsList: stats.deptsList.slice(0, 8),
           citiesList: stats.citiesList.slice(0, 15),
           carriersList: stats.carriersList,
-          tagFilter: tagFilter
+          tagFilter: tagFilter,
+          apiKeys
         })
       });
       if (!response.ok) {
@@ -296,14 +306,60 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     }
   };
 
+  const handleDeptFilterChange = (newDept: string) => {
+    setSelectedDeptFilter(newDept);
+    // If a city is currently selected and does not belong to newDept, reset city
+    if (selectedCityFilter && newDept) {
+      const cityObj = stats.citiesList.find(c => c.name === selectedCityFilter);
+      if (cityObj && cityObj.dept !== newDept) {
+        setSelectedCityFilter('');
+      }
+    }
+  };
+
+  const handleCityFilterChange = (newCity: string) => {
+    setSelectedCityFilter(newCity);
+    if (newCity) {
+      const cityObj = stats.citiesList.find(c => c.name === newCity);
+      if (cityObj && cityObj.dept) {
+        setSelectedDeptFilter(cityObj.dept);
+      }
+    }
+  };
+
+  const clearAllFilters = () => {
+    setSelectedDeptFilter('');
+    setSelectedCityFilter('');
+    setSelectedCarrierFilter('');
+    setSemaforoFilter('all');
+    setTagFilter('all');
+    setProductFilter('all');
+    setSearchTerm('');
+  };
+
+  // Available cities list for the dropdown - dynamically filtered if a department is selected
+  const availableCitiesForFilter = useMemo(() => {
+    if (!selectedDeptFilter) {
+      return stats.citiesList;
+    }
+    return stats.citiesList.filter(c => c.dept === selectedDeptFilter);
+  }, [stats.citiesList, selectedDeptFilter]);
+
+  // Currently selected department details object
+  const currentSelectedDeptObj = useMemo(() => {
+    if (!selectedDeptFilter) return null;
+    return stats.deptsList.find(d => d.name === selectedDeptFilter) || null;
+  }, [stats.deptsList, selectedDeptFilter]);
+
   // Filter elements computed dynamically
   const filteredDepts = useMemo(() => {
     return stats.deptsList.filter(item => {
       const matchSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchSemaforo = semaforoFilter === 'all' || item.status === semaforoFilter;
-      return matchSearch && matchSemaforo;
+      const matchDept = !selectedDeptFilter || item.name === selectedDeptFilter;
+      return matchSearch && matchSemaforo && matchDept;
     });
-  }, [stats.deptsList, searchTerm, semaforoFilter]);
+  }, [stats.deptsList, searchTerm, semaforoFilter, selectedDeptFilter]);
 
   const filteredCities = useMemo(() => {
     return stats.citiesList.filter(item => {
@@ -311,10 +367,11 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                           item.dept.toLowerCase().includes(searchTerm.toLowerCase());
       const matchSemaforo = semaforoFilter === 'all' || item.status === semaforoFilter;
       const matchDept = !selectedDeptFilter || item.dept === selectedDeptFilter;
+      const matchCity = !selectedCityFilter || item.name === selectedCityFilter;
       const matchCarrier = !selectedCarrierFilter || item.carriers.includes(selectedCarrierFilter);
-      return matchSearch && matchSemaforo && matchDept && matchCarrier;
+      return matchSearch && matchSemaforo && matchDept && matchCity && matchCarrier;
     });
-  }, [stats.citiesList, searchTerm, semaforoFilter, selectedDeptFilter, selectedCarrierFilter]);
+  }, [stats.citiesList, searchTerm, semaforoFilter, selectedDeptFilter, selectedCityFilter, selectedCarrierFilter]);
 
   const filteredCarriers = useMemo(() => {
     return stats.carriersList.filter(item => {
@@ -332,12 +389,19 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
     let sliceLimit = 6;
     
     if (activeTab === 'departamento') {
-      sourceList = filteredDepts;
-      shouldSlice = false; // Show all departments
+      if (selectedDeptFilter) {
+        // When a department is selected, show its cities in the chart!
+        sourceList = filteredCities;
+        shouldSlice = true;
+        sliceLimit = 15;
+      } else {
+        sourceList = filteredDepts;
+        shouldSlice = false; // Show all departments
+      }
     } else if (activeTab === 'ciudad') {
       sourceList = filteredCities;
       shouldSlice = true;
-      sliceLimit = 12; // Allow more cities for better readability if filtered
+      sliceLimit = 15; // Allow more cities for better readability if filtered
     } else {
       sourceList = filteredCarriers;
       shouldSlice = false; // Show all carriers
@@ -351,7 +415,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
       total: item.total,
       status: item.status
     }));
-  }, [activeTab, filteredDepts, filteredCities, filteredCarriers]);
+  }, [activeTab, selectedDeptFilter, filteredDepts, filteredCities, filteredCarriers]);
 
   return (
     <div className="space-y-8">
@@ -399,7 +463,7 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
             <p className="text-xs text-slate-400 mt-1">
               {stats.globalSemaf === 'green' ? '🟢 Operación altamente eficiente' :
                stats.globalSemaf === 'yellow' ? '🟡 Rendimiento regular' :
-               '������ Alerta crítica de logística'}
+               '🔴 Alerta crítica de logística'}
             </p>
           </div>
         </div>
@@ -525,108 +589,71 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
         {/* LEFT COLUMN (COL-SPAN 2): INTERACTIVE TABLE DETAILS */}
         <div className="lg:col-span-2 glass-card p-6 border border-slate-900 !bg-black flex flex-col justify-between text-[15px]">
           <div>
-            {/* Header with Switcher Tabs */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-5 mb-5">
-              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-900 shrink-0">
-                <button
-                  onClick={() => { setActiveTab('departamento'); setSearchTerm(''); setSelectedDeptFilter(''); setSelectedCarrierFilter(''); }}
-                  className={`px-3 py-2 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                    activeTab === 'departamento' 
-                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]' 
-                      : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
-                  }`}
+            {/* Filters Toolbar */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-white/5 pb-5 mb-5 w-full">
+              {/* Department Dropdown */}
+              <div className="relative">
+                <select
+                  value={selectedDeptFilter}
+                  onChange={(e) => handleDeptFilterChange(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-2.5 pr-7 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full sm:w-44 occurrence-none appearance-none font-bold truncate"
                 >
-                  Departamentos
-                </button>
-                <button
-                  onClick={() => { setActiveTab('ciudad'); setSearchTerm(''); setSelectedDeptFilter(''); setSelectedCarrierFilter(''); }}
-                  className={`px-3 py-2 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                    activeTab === 'ciudad' 
-                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]' 
-                      : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
-                  }`}
-                >
-                  Ciudades
-                </button>
-                <button
-                  onClick={() => { setActiveTab('transportadora'); setSearchTerm(''); setSelectedDeptFilter(''); setSelectedCarrierFilter(''); }}
-                  className={`px-3 py-2 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                    activeTab === 'transportadora' 
-                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]' 
-                      : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
-                  }`}
-                >
-                  Transportadoras
-                </button>
+                  <option value="">📍 Todos los Deptos ({stats.deptsList.length})</option>
+                  {stats.deptsList.map(dept => (
+                    <option key={dept.name} value={dept.name}>
+                      {dept.name} ({dept.total})
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-slate-500 text-[10px]">
+                  ▼
+                </div>
               </div>
 
-              {/* Filters container (Dropdown + Search) */}
-              <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2.5 w-full xl:w-auto">
-                {activeTab === 'ciudad' && (
-                  <>
-                    {/* Department Dropdown for Cities */}
-                    <div className="relative">
-                      <select
-                        value={selectedDeptFilter}
-                        onChange={(e) => setSelectedDeptFilter(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-36 occurrence-none appearance-none font-bold"
-                      >
-                        <option value="">Filtro Deptos</option>
-                        {stats.deptsList.map(dept => (
-                           <option key={dept.name} value={dept.name}>
-                             {dept.name}
-                           </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
-                        ▼
-                      </div>
-                    </div>
-
-                    {/* Carrier Dropdown for Cities */}
-                    <div className="relative">
-                      <select
-                        value={selectedCarrierFilter}
-                        onChange={(e) => setSelectedCarrierFilter(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-36 occurrence-none appearance-none font-bold"
-                      >
-                        <option value="">Filtro Carrier</option>
-                        {stats.carriersList.map(carrier => (
-                           <option key={carrier.name} value={carrier.name}>
-                             {carrier.name}
-                           </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
-                        ▼
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'transportadora' && (
-                  /* Department Dropdown for Carriers */
-                  <div className="relative">
-                    <select
-                      value={selectedDeptFilter}
-                      onChange={(e) => setSelectedDeptFilter(e.target.value)}
-                      className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full xl:w-44 occurrence-none appearance-none font-bold"
-                    >
-                      <option value="">Filtro Deptos</option>
-                      {stats.deptsList.map(dept => (
-                        <option key={dept.name} value={dept.name}>
-                          {dept.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
-                      ▼
-                    </div>
+              {/* City Dropdown (hierarchically filtered by selectedDeptFilter) */}
+                <div className="relative">
+                  <select
+                    value={selectedCityFilter}
+                    onChange={(e) => handleCityFilterChange(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-2.5 pr-7 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full sm:w-44 occurrence-none appearance-none font-bold truncate"
+                  >
+                    <option value="">
+                      {selectedDeptFilter 
+                        ? `🏙️ Ciudades de ${selectedDeptFilter} (${availableCitiesForFilter.length})` 
+                        : `🏙️ Todas las Ciudades (${stats.citiesList.length})`}
+                    </option>
+                    {availableCitiesForFilter.map(city => (
+                      <option key={city.name} value={city.name}>
+                        {city.name} {!selectedDeptFilter ? `(${city.dept})` : ''} ({city.total})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-slate-500 text-[10px]">
+                    ▼
                   </div>
-                )}
+                </div>
 
-                {/* Filtro por Canal / Tag (TAC) dropdown */}
-                <div className="relative w-[143px] xl:w-[143px] shrink-0">
+                {/* Carrier Dropdown */}
+                <div className="relative">
+                  <select
+                    value={selectedCarrierFilter}
+                    onChange={(e) => setSelectedCarrierFilter(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-2.5 pr-7 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full sm:w-36 occurrence-none appearance-none font-bold truncate"
+                  >
+                    <option value="">🚚 Todas Carriers ({stats.carriersList.length})</option>
+                    {stats.carriersList.map(carrier => (
+                      <option key={carrier.name} value={carrier.name}>
+                        {carrier.name} ({carrier.total})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-slate-500 text-[10px]">
+                    ▼
+                  </div>
+                </div>
+
+                {/* Filtro por Canal / Tag */}
+                <div className="relative w-full sm:w-36 shrink-0">
                   <select
                     value={tagFilter}
                     onChange={(e) => {
@@ -634,19 +661,19 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       setAiResult(null);
                       setAiError(null);
                     }}
-                    className="bg-slate-950 border border-slate-800 rounded-lg text-[15px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-[143px] xl:w-[143px] occurrence-none appearance-none font-bold"
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-2.5 pr-7 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full occurrence-none appearance-none font-bold"
                   >
                     <option value="all">Canal: Todos</option>
                     <option value="sin_etiqueta">Sin Etiqueta</option>
                     <option value="tiktok_organico">TikTok Orgánico 🏷️</option>
                   </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
+                  <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-slate-500 text-[10px]">
                     ▼
                   </div>
                 </div>
 
-                {/* Filtro por Producto dropdown */}
-                <div className="relative w-[180px] xl:w-[180px] shrink-0">
+                {/* Filtro por Producto */}
+                <div className="relative w-full sm:w-40 shrink-0">
                   <select
                     value={productFilter}
                     onChange={(e) => {
@@ -654,54 +681,245 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                       setAiResult(null);
                       setAiError(null);
                     }}
-                    className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-3 pr-8 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-[180px] xl:w-[180px] occurrence-none appearance-none font-bold truncate"
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-[13px] py-1.5 pl-2.5 pr-7 text-slate-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer w-full occurrence-none appearance-none font-bold truncate"
                   >
-                    <option value="all">📦 Producto: Todos</option>
-                    <option value="sin_producto">📦 Sin producto</option>
-                    {uniqueProducts.map(prod => (
-                      <option key={prod} value={prod}>
-                        {prod}
+                    <option value="all">📦 Todos los Productos</option>
+                    <option value="sin_producto">Sin Producto</option>
+                    {uniqueProducts.map(p => (
+                      <option key={p} value={p}>
+                        {p}
                       </option>
                     ))}
                   </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-500 text-[10px]">
+                  <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-slate-500 text-[10px]">
                     ▼
                   </div>
                 </div>
 
                 {/* Quick Search */}
-                <div className="relative w-[108px] xl:w-[108px] shrink-0">
-                  <Search size={16} className="absolute left-2.5 top-[10px] text-slate-500" />
+                <div className="relative w-full sm:w-36 shrink-0">
+                  <Search size={14} className="absolute left-2.5 top-[11px] text-slate-500" />
                   <input
                     type="text"
-                    placeholder={`Buscar ${activeTab}...`}
+                    placeholder={`Buscar...`}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-[108px] h-[35.9922px] bg-slate-950/80 border border-slate-800 rounded-lg pl-9 pr-4 py-1.5 text-[15px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full bg-slate-950/80 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-emerald-500/40"
                   />
                 </div>
-
-
               </div>
-            </div>
 
-            {/* If actively filtered by Semáforo, show informative badge to easily reset */}
-            {semaforoFilter !== 'all' && (
-              <div className="mb-4 flex items-center justify-between bg-slate-900/40 border border-slate-800/80 px-4 py-2 rounded-xl">
+            {/* ACTIVE FILTERS CHIPS BAR */}
+            {(selectedDeptFilter || selectedCityFilter || semaforoFilter !== 'all' || selectedCarrierFilter || tagFilter !== 'all' || productFilter !== 'all' || searchTerm) && (
+              <div className="mb-4 flex flex-wrap items-center gap-2 bg-slate-950/80 border border-slate-800/80 p-2.5 rounded-xl text-xs">
+                <span className="text-slate-500 font-mono flex items-center gap-1 shrink-0">
+                  <Filter size={12} /> Filtros Activos:
+                </span>
+
+                {selectedDeptFilter && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold">
+                    <span>📍 Depto: {selectedDeptFilter}</span>
+                    <button
+                      onClick={() => handleDeptFilterChange('')}
+                      className="hover:text-white cursor-pointer ml-0.5"
+                      title="Eliminar filtro departamento"
+                    >
+                      <X size={13} />
+                    </button>
+                  </span>
+                )}
+
+                {selectedCityFilter && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-bold">
+                    <span>🏙️ Ciudad: {selectedCityFilter}</span>
+                    <button
+                      onClick={() => handleCityFilterChange('')}
+                      className="hover:text-white cursor-pointer ml-0.5"
+                      title="Eliminar filtro ciudad"
+                    >
+                      <X size={13} />
+                    </button>
+                  </span>
+                )}
+
+                {semaforoFilter !== 'all' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold">
+                    <span>{semaforoFilter === 'green' ? '🟢 Óptimo' : semaforoFilter === 'yellow' ? '🟡 En Observación' : '🔴 Crítico'}</span>
+                    <button
+                      onClick={() => setSemaforoFilter('all')}
+                      className="hover:text-white cursor-pointer ml-0.5"
+                      title="Eliminar filtro semáforo"
+                    >
+                      <X size={13} />
+                    </button>
+                  </span>
+                )}
+
+                {selectedCarrierFilter && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 font-bold">
+                    <span>🚚 {selectedCarrierFilter}</span>
+                    <button
+                      onClick={() => setSelectedCarrierFilter('')}
+                      className="hover:text-white cursor-pointer ml-0.5"
+                    >
+                      <X size={13} />
+                    </button>
+                  </span>
+                )}
+
+                {tagFilter !== 'all' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 font-bold">
+                    <span>🏷️ {tagFilter === 'tiktok_organico' ? 'TikTok Orgánico' : 'Sin Etiqueta'}</span>
+                    <button
+                      onClick={() => setTagFilter('all')}
+                      className="hover:text-white cursor-pointer ml-0.5"
+                    >
+                      <X size={13} />
+                    </button>
+                  </span>
+                )}
+
+                {productFilter !== 'all' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-500/10 border border-pink-500/30 text-pink-400 font-bold">
+                    <span>📦 {productFilter === 'sin_producto' ? 'Sin Producto' : productFilter}</span>
+                    <button
+                      onClick={() => setProductFilter('all')}
+                      className="hover:text-white cursor-pointer ml-0.5"
+                    >
+                      <X size={13} />
+                    </button>
+                  </span>
+                )}
+
+                {searchTerm && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono">
+                    <span>Buscar: "{searchTerm}"</span>
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="hover:text-white cursor-pointer ml-0.5"
+                    >
+                      <X size={13} />
+                    </button>
+                  </span>
+                )}
+
+                <button
+                  onClick={clearAllFilters}
+                  className="ml-auto text-[11px] text-slate-400 hover:text-white underline cursor-pointer transition-colors"
+                >
+                  Limpiar todos los filtros
+                </button>
+              </div>
+            )}
+
+            {/* SECTIONS FOR DEPARTMENTS & CITIES */}
+
+            {/* CASE 1: DEPARTMENT TAB WITH SELECTED DEPARTMENT (SPOTLIGHT CARD + ITS CITIES SECTION) */}
+            {activeTab === 'departamento' && currentSelectedDeptObj && (
+              <div className="mb-6 p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900/60 to-slate-950 border border-emerald-500/30 shadow-lg">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                      <Map size={24} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] uppercase font-mono tracking-widest text-slate-400">Departamento Filtrado</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                          currentSelectedDeptObj.status === 'green' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                          currentSelectedDeptObj.status === 'yellow' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                          'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}>
+                          <span className={`w-2 h-2 rounded-full ${
+                            currentSelectedDeptObj.status === 'green' ? 'bg-emerald-400' :
+                            currentSelectedDeptObj.status === 'yellow' ? 'bg-amber-400' :
+                            'bg-rose-400'
+                          }`} />
+                          {currentSelectedDeptObj.status === 'green' ? 'Óptimo' : currentSelectedDeptObj.status === 'yellow' ? 'En Observación' : 'Crítico'}
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-bold font-display text-white mt-0.5">{selectedDeptFilter}</h3>
+                    </div>
+                  </div>
+
+                  {/* Action */}
+                  <div>
+                    <button
+                      onClick={() => handleDeptFilterChange('')}
+                      className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border border-slate-700 shadow-sm"
+                    >
+                      <X size={14} /> Volver a Todos los Deptos
+                    </button>
+                  </div>
+                </div>
+
+                {/* Summary metrics for this department */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800/60 text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/50">
+                    <span className="text-slate-500 block text-[11px]">Total Pedidos</span>
+                    <span className="text-base font-bold font-mono text-white">{currentSelectedDeptObj.total}</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/50">
+                    <span className="text-slate-500 block text-[11px]">Entregados</span>
+                    <span className="text-base font-bold font-mono text-slate-200">
+                      {currentSelectedDeptObj.delivered} ({currentSelectedDeptObj.deliveryRate.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/50">
+                    <span className="text-slate-500 block text-[11px]">Ciudades Registradas</span>
+                    <span className="text-base font-bold font-mono text-cyan-400">{filteredCities.length} ciudades</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/50">
+                    <span className="text-slate-500 block text-[11px]">Resultado Flete</span>
+                    <span className={`text-base font-bold font-mono ${currentSelectedDeptObj.loss > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {currentSelectedDeptObj.loss > 0 ? `-${localFormatCurrency(currentSelectedDeptObj.loss)}` : localFormatCurrency(Math.abs(currentSelectedDeptObj.loss))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION TITLE WHEN A DEPARTMENT IS FILTERED */}
+            {activeTab === 'departamento' && selectedDeptFilter && (
+              <div className="flex items-center justify-between mb-3 px-1">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[15px] text-slate-400">
-                    Mostrando únicamente elementos con estado de entrega:{' '}
-                    <strong className="text-slate-200 font-semibold uppercase">
-                      {semaforoFilter === 'green' ? '🟢 Óptimo' : semaforoFilter === 'yellow' ? '🟡 En Observación' : '🔴 Crítico'}
-                    </strong>
+                  <Building2 size={16} className="text-cyan-400" />
+                  <span className="text-sm font-bold font-display uppercase tracking-wider text-slate-200">
+                    Ciudades en {selectedDeptFilter}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    {filteredCities.length} ciudades
                   </span>
                 </div>
-                <button 
-                  onClick={() => setSemaforoFilter('all')}
-                  className="text-[13px] text-emerald-400 hover:text-white uppercase font-black tracking-wider cursor-pointer transition-colors"
+                <span className="text-xs text-slate-500">Semáforo por efectividad local</span>
+              </div>
+            )}
+
+            {/* TIP NOTICE WHEN BROWSING ALL DEPARTMENTS */}
+            {activeTab === 'departamento' && !selectedDeptFilter && (
+              <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-slate-900 text-xs text-slate-400 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <MapPin size={14} className="text-emerald-400 shrink-0" />
+                  <span>Haz clic en cualquier departamento o en <strong>"Explorar Ciudades"</strong> para filtrar y ver únicamente sus ciudades.</span>
+                </span>
+                <span className="text-slate-500 font-mono text-[11px] hidden sm:inline">{filteredDepts.length} departamentos</span>
+              </div>
+            )}
+
+            {/* NOTICE IN CITY TAB WHEN A DEPARTMENT IS FILTERED */}
+            {activeTab === 'ciudad' && selectedDeptFilter && (
+              <div className="mb-4 flex items-center justify-between bg-slate-900/60 border border-emerald-500/20 px-4 py-2.5 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <Map size={16} className="text-emerald-400 shrink-0" />
+                  <span className="text-[14px] text-slate-300">
+                    Mostrando ciudades de <strong className="text-white font-bold">{selectedDeptFilter}</strong> ({filteredCities.length} ciudades encontradas)
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleDeptFilterChange('')}
+                  className="text-xs text-emerald-400 hover:text-white font-bold transition-colors cursor-pointer flex items-center gap-1"
                 >
-                  Eliminar Filtro [X]
+                  <X size={13} /> Ver ciudades de todo el país
                 </button>
               </div>
             )}
@@ -712,27 +930,96 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                 <thead>
                   <tr className="border-b border-slate-900 bg-slate-950/20 text-[15px] uppercase tracking-wider text-slate-400 font-bold">
                     <th className="px-4 py-3.5 font-display">
-                      {activeTab === 'departamento' ? 'Departamento' : activeTab === 'ciudad' ? 'Ciudad / Depto' : 'Transportadora'}
+                      {activeTab === 'departamento' 
+                        ? (selectedDeptFilter ? `Ciudad (${selectedDeptFilter})` : 'Departamento') 
+                        : activeTab === 'ciudad' ? 'Ciudad / Depto' : 'Transportadora'}
                     </th>
                     <th className="px-4 py-3.5 font-display text-center">Pedidos</th>
                     <th className="px-4 py-3.5 font-display text-center">Entregas</th>
                     <th className="px-4 py-3.5 font-display">Tasa Entrega</th>
                     <th className="px-4 py-3.5 font-display text-right">Resultado Flete</th>
+                    {activeTab === 'departamento' && !selectedDeptFilter && (
+                      <th className="px-4 py-3.5 font-display text-center">Ciudades</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-900/60">
-                  {/* Departamento Tab */}
-                  {activeTab === 'departamento' && (
+                  {/* Departamento Tab - WHEN NO DEPARTMENT IS FILTERED */}
+                  {activeTab === 'departamento' && !selectedDeptFilter && (
                     filteredDepts.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-[15px] text-slate-500">No se encontraron departamentos con los filtros actuales.</td>
+                        <td colSpan={6} className="py-8 text-center text-[15px] text-slate-500">No se encontraron departamentos con los filtros actuales.</td>
                       </tr>
                     ) : (
                       filteredDepts.map((item) => (
-                        <tr key={item.name} className="hover:bg-white/[0.01] transition-colors group">
+                        <tr 
+                          key={item.name} 
+                          onClick={() => handleDeptFilterChange(item.name)}
+                          className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
+                        >
                           <td className="px-4 py-4 flex items-center gap-2">
                             <Map className="text-slate-600 group-hover:text-emerald-500 transition-colors shrink-0" size={16} />
-                            <span className="text-[15px] font-bold text-slate-200 truncate">{item.name}</span>
+                            <span className="text-[15px] font-bold text-slate-200 group-hover:text-emerald-400 transition-colors truncate">
+                              {item.name}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
+                          <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2.5 h-2.5 rounded-full ring-4 shrink-0 ${
+                                item.status === 'green' ? 'bg-emerald-500 ring-emerald-500/10' :
+                                item.status === 'yellow' ? 'bg-amber-500 ring-amber-500/10' :
+                                'bg-rose-500 ring-rose-500/10'
+                              }`} />
+                              <span className={`text-[15px] font-mono font-bold ${
+                                item.status === 'green' ? 'text-emerald-400' :
+                                item.status === 'yellow' ? 'text-amber-400' :
+                                'text-rose-400'
+                              }`}>
+                                {item.deliveryRate.toFixed(1)}%
+                              </span>
+                            </div>
+                          </td>
+                          <td className={`px-4 py-4 text-right text-[15px] font-mono ${
+                            item.loss > 0 ? 'text-red-400' : 'text-emerald-400'
+                          }`}>
+                            {item.loss > 0 ? `-${localFormatCurrency(item.loss)}` : localFormatCurrency(Math.abs(item.loss))}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeptFilterChange(item.name);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/20 text-emerald-400 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1 group-hover:border-emerald-500/40"
+                            >
+                              <span>Explorar ({item.citiesCount || stats.citiesList.filter(c => c.dept === item.name).length})</span>
+                              <ChevronRight size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )
+                  )}
+
+                  {/* Departamento Tab - WHEN A DEPARTMENT IS FILTERED (SHOW ITS CITIES) */}
+                  {activeTab === 'departamento' && selectedDeptFilter && (
+                    filteredCities.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-[15px] text-slate-500">
+                          No se encontraron ciudades en {selectedDeptFilter} con los filtros actuales.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCities.map((item) => (
+                        <tr key={item.name} className="hover:bg-white/[0.01] transition-colors group">
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-1.5">
+                              <MapPin className="text-slate-600 group-hover:text-cyan-400 transition-colors shrink-0" size={16} />
+                              <span className="text-[15px] font-bold text-slate-200 truncate">{item.name}</span>
+                            </div>
                           </td>
                           <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
                           <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-500">{item.delivered}</td>
@@ -777,7 +1064,14 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
                                 <MapPin className="text-slate-600 group-hover:text-emerald-500 transition-colors shrink-0" size={16} />
                                 <span className="text-[15px] font-bold text-slate-200 truncate">{item.name}</span>
                               </div>
-                              <span className="text-[12px] text-slate-500 ml-6">{item.dept}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeptFilterChange(item.dept)}
+                                className="text-[11px] font-mono text-slate-500 hover:text-emerald-400 ml-6 text-left cursor-pointer transition-colors mt-0.5 inline-flex items-center gap-1"
+                                title={`Filtrar únicamente departamento ${item.dept}`}
+                              >
+                                📍 Depto: {item.dept}
+                              </button>
                             </div>
                           </td>
                           <td className="px-4 py-4 text-center text-[15px] font-mono text-slate-300 font-bold">{item.total}</td>
@@ -914,7 +1208,12 @@ const ShippingAnalysis: React.FC<ShippingAnalysisProps> = ({ orders, formatCurre
 
         {/* DELIVERY RATES CHART (FULL WIDTH UNDERNEATH THE METRIC / TABLE CONTENT) */}
         <div className="lg:col-span-3 glass-card p-4 sm:p-6 border border-slate-900 !bg-black">
-          <h3 className="text-[17px] font-display font-bold text-white mb-1 uppercase tracking-wide">Efectividad de Entrega %</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
+            <h3 className="text-[17px] font-display font-bold text-white uppercase tracking-wide">Efectividad de Entrega %</h3>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono font-bold w-fit">
+              {activeTab === 'departamento' ? 'Sección: Departamentos' : activeTab === 'ciudad' ? 'Sección: Ciudades' : 'Sección: Transportadoras'}
+            </span>
+          </div>
           <p className="text-[15px] text-slate-500 mb-6">Gráfica comparativa de tasa de éxito de los líderes en esta vista</p>
           
           {chartData.length === 0 ? (

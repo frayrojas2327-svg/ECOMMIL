@@ -3,13 +3,15 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis
 import { 
   AlertTriangle, RotateCcw, XCircle, TrendingDown, Globe, Brain, Sparkles, Cpu, Loader2, 
   BarChart3, TrendingUp, CheckCircle, ArrowRight, Plus, Trash2, Edit2, Calendar, FileText, X, 
-  Search, Info, AlertCircle, RefreshCw, Palette, Tag, Check
+  Search, Info, AlertCircle, RefreshCw, Palette, Tag, Check,
+  MapPin, Building2, Truck, Sliders, ChevronRight, Filter
 } from 'lucide-react';
 import { Order, calculateOrderProfit, CurrencyCode } from '../mockData';
 import Markdown from 'react-markdown';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseConfigValid } from '../firebase';
 import { useAuth } from './Auth';
+import { getClientGeminiApiKeys, cleanAiErrorMessage } from '../services/aiConfigService';
 
 export interface ReturnNovelty {
   id: string;
@@ -390,6 +392,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
   const [noveltySearch, setNoveltySearch] = useState<string>('');
   const [noveltyTagFilter, setNoveltyTagFilter] = useState<string>('TODOS');
   const [noveltyDevolucionFilter, setNoveltyDevolucionFilter] = useState<string>('TODOS');
+  const [noveltyCarrierFilter, setNoveltyCarrierFilter] = useState<string>('TODOS');
   const [formEtiquetaDevolucion, setFormEtiquetaDevolucion] = useState<string>('');
   const [showCustomCauseInput, setShowCustomCauseInput] = useState(false);
   const [tempCauseName, setTempCauseName] = useState('');
@@ -398,6 +401,14 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
   const [activeSubTab, setActiveSubTab] = useState<'novelties' | 'all-returns'>('all-returns');
   const [allReturnsSearch, setAllReturnsSearch] = useState<string>('');
   const [allReturnsTagFilter, setAllReturnsTagFilter] = useState<string>('TODOS');
+
+  // Filtro de Secciones en Devoluciones: Departamento, Ciudad y Transportadora
+  const [activeSection, setActiveSection] = useState<'departamento' | 'ciudad' | 'transportadora'>('departamento');
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('');
+  const [selectedCityFilter, setSelectedCityFilter] = useState<string>('');
+  const [selectedCarrierFilter, setSelectedCarrierFilter] = useState<string>('');
+  const [sectionSearchTerm, setSectionSearchTerm] = useState<string>('');
+  const [sectionRiskFilter, setSectionRiskFilter] = useState<'all' | 'green' | 'yellow' | 'red'>('all');
 
   // Selection and Deletion states for returned orders list
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -629,6 +640,24 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
     return Array.from(tagsSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [orders]);
 
+  // Extract unique carriers available for novelty records (from orders and novelties)
+  const availableNoveltyCarriers = useMemo(() => {
+    const carriersSet = new Set<string>();
+    novelties.forEach(n => {
+      const c = (n.transportadora || '').trim();
+      if (c && c !== '-' && c.toLowerCase() !== 'sin transportadora' && c.toLowerCase() !== 'n/a') {
+        carriersSet.add(c);
+      }
+    });
+    orders.forEach(o => {
+      const c = (o.transportadora || (o as any).carrier || '').trim();
+      if (c && c !== '-' && c.toLowerCase() !== 'sin transportadora' && c.toLowerCase() !== 'n/a') {
+        carriersSet.add(c);
+      }
+    });
+    return Array.from(carriersSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [novelties, orders]);
+
   const orderLookupMap = useMemo(() => {
     const map = new Map<string, Order>();
     orders.forEach(o => {
@@ -697,6 +726,24 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
   // Filter returned orders for the "Todos los Pedidos Devueltos" list
   const filteredReturnedOrders = useMemo(() => {
     return returnedOrders.filter(o => {
+      // Filter by Department
+      if (selectedDeptFilter) {
+        const oDept = (o.departamentoDestino || '').trim().toUpperCase();
+        if (oDept !== selectedDeptFilter.toUpperCase()) return false;
+      }
+
+      // Filter by City
+      if (selectedCityFilter) {
+        const oCity = (o.ciudadDestino || '').trim().toUpperCase();
+        if (oCity !== selectedCityFilter.toUpperCase()) return false;
+      }
+
+      // Filter by Carrier
+      if (selectedCarrierFilter) {
+        const oCarrier = (o.transportadora || '').trim().toUpperCase();
+        if (oCarrier !== selectedCarrierFilter.toUpperCase()) return false;
+      }
+
       // Filter by tag
       if (allReturnsTagFilter !== 'TODOS') {
         if (!o.tags) return false;
@@ -721,10 +768,12 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
         o.product?.toLowerCase().includes(queryLower) ||
         o.trackingId?.toLowerCase().includes(queryLower) ||
         o.tags?.toLowerCase().includes(queryLower) ||
-        o.transportadora?.toLowerCase().includes(queryLower)
+        o.transportadora?.toLowerCase().includes(queryLower) ||
+        o.departamentoDestino?.toLowerCase().includes(queryLower) ||
+        o.ciudadDestino?.toLowerCase().includes(queryLower)
       );
     });
-  }, [returnedOrders, allReturnsSearch, allReturnsTagFilter]);
+  }, [returnedOrders, allReturnsSearch, allReturnsTagFilter, selectedDeptFilter, selectedCityFilter, selectedCarrierFilter]);
 
   const handleToggleSelectOrder = (id: string) => {
     setSelectedOrderIds(prev => 
@@ -853,6 +902,24 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
         }
       }
 
+      // Carrier filter
+      if (noveltyCarrierFilter !== 'TODOS') {
+        const orderIdKey = n.orderId?.toLowerCase() || '';
+        const relatedOrder = orderLookupMap.get(orderIdKey);
+        const noveltyCarrier = (n.transportadora || '').trim();
+        const orderCarrier = (relatedOrder?.transportadora || (relatedOrder as any)?.carrier || '').trim();
+
+        if (noveltyCarrierFilter === 'SIN_TRANSPORTADORA') {
+          const hasNoCarrier = (!noveltyCarrier || noveltyCarrier === '-') && (!orderCarrier || orderCarrier === '-');
+          if (!hasNoCarrier) return false;
+        } else {
+          const targetCarrierLower = noveltyCarrierFilter.toLowerCase();
+          const matchesNoveltyCarrier = noveltyCarrier.toLowerCase() === targetCarrierLower;
+          const matchesOrderCarrier = orderCarrier.toLowerCase() === targetCarrierLower;
+          if (!matchesNoveltyCarrier && !matchesOrderCarrier) return false;
+        }
+      }
+
       const queryLower = noveltySearch.toLowerCase();
       if (!queryLower) return true;
       return (
@@ -866,7 +933,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
         n.mes?.toLowerCase().includes(queryLower)
       );
     });
-  }, [noveltiesInDateRange, noveltySearch, noveltyTagFilter, noveltyDevolucionFilter, orderLookupMap]);
+  }, [noveltiesInDateRange, noveltySearch, noveltyTagFilter, noveltyDevolucionFilter, noveltyCarrierFilter, orderLookupMap]);
 
   const localFormatCurrency = (amount: number) => {
     const isUSD = !isConversionActive;
@@ -920,6 +987,153 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
 
     return { returnRate, cancelRate, totalReturnCost, potentialEarnedIfDelivered, pieData, returnsCount: returns.length, cancellationsCount: cancellations.length };
   }, [orders, localCancellationReasons]);
+
+  // Agrupación analítica de Devoluciones por Departamentos, Ciudades y Transportadoras
+  const returnsByZoneAndCarrier = useMemo(() => {
+    const deptMap: Record<string, { total: number, returned: number, delivered: number, returnCost: number, cities: Set<string>, carriers: Set<string> }> = {};
+    const cityMap: Record<string, { dept: string, total: number, returned: number, delivered: number, returnCost: number, carriers: Set<string> }> = {};
+    const carrierMap: Record<string, { total: number, returned: number, delivered: number, returnCost: number, depts: Set<string>, cities: Set<string> }> = {};
+
+    orders.forEach(o => {
+      const deptRaw = (o.departamentoDestino || '').trim();
+      const dept = deptRaw ? deptRaw.toUpperCase() : 'NO ESPECIFICADO';
+
+      const cityRaw = (o.ciudadDestino || '').trim();
+      const city = cityRaw ? cityRaw.toUpperCase() : 'NO ESPECIFICADA';
+
+      const carrierRaw = (o.transportadora || '').trim();
+      const carrier = carrierRaw ? carrierRaw.toUpperCase() : 'NO ESPECIFICADA';
+
+      const isReturned = (o.status || '').trim().toLowerCase() === 'devuelto';
+      const isDelivered = ['entregado', 'exitoso', 'finalizado', 'cod pagado'].includes((o.status || '').trim().toLowerCase());
+
+      const cost = isReturned ? Math.abs(calculateOrderProfit(o).netProfit) : 0;
+
+      // Department Map
+      if (!deptMap[dept]) {
+        deptMap[dept] = { total: 0, returned: 0, delivered: 0, returnCost: 0, cities: new Set(), carriers: new Set() };
+      }
+      deptMap[dept].total++;
+      if (isReturned) {
+        deptMap[dept].returned++;
+        deptMap[dept].returnCost += cost;
+      }
+      if (isDelivered) deptMap[dept].delivered++;
+      if (cityRaw) deptMap[dept].cities.add(city);
+      if (carrierRaw) deptMap[dept].carriers.add(carrier);
+
+      // City Map
+      if (!cityMap[city]) {
+        cityMap[city] = { dept, total: 0, returned: 0, delivered: 0, returnCost: 0, carriers: new Set() };
+      }
+      cityMap[city].total++;
+      if (isReturned) {
+        cityMap[city].returned++;
+        cityMap[city].returnCost += cost;
+      }
+      if (isDelivered) cityMap[city].delivered++;
+      if (carrierRaw) cityMap[city].carriers.add(carrier);
+
+      // Carrier Map
+      if (!carrierMap[carrier]) {
+        carrierMap[carrier] = { total: 0, returned: 0, delivered: 0, returnCost: 0, depts: new Set(), cities: new Set() };
+      }
+      carrierMap[carrier].total++;
+      if (isReturned) {
+        carrierMap[carrier].returned++;
+        carrierMap[carrier].returnCost += cost;
+      }
+      if (isDelivered) carrierMap[carrier].delivered++;
+      if (deptRaw) carrierMap[carrier].depts.add(dept);
+      if (cityRaw) carrierMap[carrier].cities.add(city);
+    });
+
+    const deptsList = Object.entries(deptMap).map(([name, data]) => {
+      const returnRate = data.total > 0 ? (data.returned / data.total) * 100 : 0;
+      let risk: 'green' | 'yellow' | 'red' = 'yellow';
+      if (returnRate <= 15) risk = 'green';
+      else if (returnRate > 25) risk = 'red';
+
+      return {
+        name,
+        total: data.total,
+        returned: data.returned,
+        delivered: data.delivered,
+        returnRate,
+        returnCost: data.returnCost,
+        citiesCount: data.cities.size,
+        carriers: Array.from(data.carriers),
+        risk
+      };
+    }).sort((a, b) => b.returned - a.returned || b.returnRate - a.returnRate);
+
+    const citiesList = Object.entries(cityMap).map(([name, data]) => {
+      const returnRate = data.total > 0 ? (data.returned / data.total) * 100 : 0;
+      let risk: 'green' | 'yellow' | 'red' = 'yellow';
+      if (returnRate <= 15) risk = 'green';
+      else if (returnRate > 25) risk = 'red';
+
+      return {
+        name,
+        dept: data.dept,
+        total: data.total,
+        returned: data.returned,
+        delivered: data.delivered,
+        returnRate,
+        returnCost: data.returnCost,
+        carriers: Array.from(data.carriers),
+        risk
+      };
+    }).sort((a, b) => b.returned - a.returned || b.returnRate - a.returnRate);
+
+    const carriersList = Object.entries(carrierMap).map(([name, data]) => {
+      const returnRate = data.total > 0 ? (data.returned / data.total) * 100 : 0;
+      let risk: 'green' | 'yellow' | 'red' = 'yellow';
+      if (returnRate <= 15) risk = 'green';
+      else if (returnRate > 25) risk = 'red';
+
+      return {
+        name,
+        total: data.total,
+        returned: data.returned,
+        delivered: data.delivered,
+        returnRate,
+        returnCost: data.returnCost,
+        deptsCount: data.depts.size,
+        citiesCount: data.cities.size,
+        risk
+      };
+    }).sort((a, b) => b.returned - a.returned || b.returnRate - a.returnRate);
+
+    return { deptsList, citiesList, carriersList, deptMap, cityMap };
+  }, [orders]);
+
+  const availableCitiesForDept = useMemo(() => {
+    if (!selectedDeptFilter) return returnsByZoneAndCarrier.citiesList;
+    return returnsByZoneAndCarrier.citiesList.filter(c => c.dept.toUpperCase() === selectedDeptFilter.toUpperCase());
+  }, [selectedDeptFilter, returnsByZoneAndCarrier.citiesList]);
+
+  const handleDeptFilterChange = (dept: string) => {
+    setSelectedDeptFilter(dept);
+    if (selectedCityFilter) {
+      const cityMatches = returnsByZoneAndCarrier.citiesList.some(
+        c => c.name.toUpperCase() === selectedCityFilter.toUpperCase() && c.dept.toUpperCase() === dept.toUpperCase()
+      );
+      if (!cityMatches) {
+        setSelectedCityFilter('');
+      }
+    }
+  };
+
+  const handleCityFilterChange = (cityName: string) => {
+    setSelectedCityFilter(cityName);
+    if (cityName) {
+      const foundCity = returnsByZoneAndCarrier.citiesList.find(c => c.name.toUpperCase() === cityName.toUpperCase());
+      if (foundCity && foundCity.dept && foundCity.dept !== 'NO ESPECIFICADO') {
+        setSelectedDeptFilter(foundCity.dept);
+      }
+    }
+  };
 
   // AI Analysis States
   const [aiLoading, setAiLoading] = useState(false);
@@ -1070,20 +1284,24 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
     setAiLoading(true);
     setAiError(null);
     try {
+      const apiKeys = getClientGeminiApiKeys();
       const response = await fetch("/api/analisis-devoluciones-pro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(aiPreparedData)
+        body: JSON.stringify({
+          ...aiPreparedData,
+          apiKeys
+        })
       });
       if (!response.ok) {
-        const errJson = await response.json();
-        throw new Error(errJson.error || "Ocurrió un error al procesar el análisis de Inteligencia Artificial.");
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(cleanAiErrorMessage(errJson.error || "Ocurrió un error al procesar el análisis de Inteligencia Artificial."));
       }
       const data = await response.json();
       setAiResult(data);
     } catch (err: any) {
       console.error(err);
-      setAiError(err.message || "La conexión con el proveedor de IA falló en este momento.");
+      setAiError(cleanAiErrorMessage(err.message || "La conexión con el proveedor de IA falló en este momento."));
     } finally {
       setAiLoading(false);
     }
@@ -1322,6 +1540,456 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
             <p className="text-[15px] text-emerald-400/80 mt-1 italic">Utilidad neta que hubieras ganado de mas</p>
           </div>
         </div>
+      </div>
+
+      {/* SECCIÓN ANALÍTICA DE DEVOLUCIONES: FILTRO DE SECCIONES POR DEPARTAMENTO, CIUDADES Y TRANSPORTADORA */}
+      <div className={`glass-card p-6 sm:p-8 border ${isLightWhite ? 'bg-white border-slate-200' : '!bg-black border-slate-900 shadow-[0_0_30px_rgba(0,0,0,0.9)]'} space-y-6`}>
+        {/* HEADER & FILTRO DE SECCIONES */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-5">
+          <div>
+            <div className="flex items-center gap-2 text-orange-400 font-bold mb-1">
+              <RotateCcw size={16} />
+              <span className="text-xs tracking-wider uppercase font-mono">Filtro de Secciones y Zonas</span>
+            </div>
+            <h3 className={`text-2xl font-display font-extrabold ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>
+              Devoluciones por Departamento, Ciudades y Transportadora
+            </h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+              Filtra y analiza la concentración de pedidos devueltos, tasa de retorno % y pérdidas absorbidas según la sección que elijas.
+            </p>
+          </div>
+        </div>
+
+        {/* TOOLBAR DE FILTROS JERÁRQUICOS */}
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-white/5 pb-5">
+          {/* Selector de Agrupación Principal (Ver por) */}
+          <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+            <Sliders size={13} className="text-orange-400 shrink-0" />
+            <select
+              value={activeSection}
+              onChange={(e) => {
+                setActiveSection(e.target.value as any);
+                setSectionSearchTerm('');
+              }}
+              className="bg-transparent border-none text-xs font-bold focus:outline-none focus:ring-0 text-white cursor-pointer"
+            >
+              <option value="departamento" className="bg-[#111] text-white">Ver por Departamento ({returnsByZoneAndCarrier.deptsList.length})</option>
+              <option value="ciudad" className="bg-[#111] text-white">Ver por Ciudad ({returnsByZoneAndCarrier.citiesList.length})</option>
+              <option value="transportadora" className="bg-[#111] text-white">Ver por Carrier ({returnsByZoneAndCarrier.carriersList.length})</option>
+            </select>
+          </div>
+
+          {/* Dropdown Departamentos */}
+          <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+            <MapPin size={13} className="text-orange-400 shrink-0" />
+            <select
+              value={selectedDeptFilter}
+              onChange={(e) => handleDeptFilterChange(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold focus:outline-none focus:ring-0 text-white cursor-pointer"
+            >
+              <option value="" className="bg-[#111] text-slate-400">Todos los Departamentos</option>
+              {returnsByZoneAndCarrier.deptsList.map(d => (
+                <option key={d.name} value={d.name} className="bg-[#111] text-white">
+                  {d.name} ({d.returned} devueltos - {d.returnRate.toFixed(1)}%)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Dropdown Ciudades */}
+          <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+            <Building2 size={13} className="text-orange-400 shrink-0" />
+            <select
+              value={selectedCityFilter}
+              onChange={(e) => handleCityFilterChange(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold focus:outline-none focus:ring-0 text-white cursor-pointer"
+            >
+              <option value="" className="bg-[#111] text-slate-400">
+                {selectedDeptFilter ? `Ciudades en ${selectedDeptFilter}` : 'Todas las Ciudades'}
+              </option>
+              {availableCitiesForDept.map(c => (
+                <option key={c.name} value={c.name} className="bg-[#111] text-white">
+                  {c.name} ({c.returned} devueltos - {c.returnRate.toFixed(1)}%)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Dropdown Transportadoras */}
+          <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+            <Truck size={13} className="text-orange-400 shrink-0" />
+            <select
+              value={selectedCarrierFilter}
+              onChange={(e) => setSelectedCarrierFilter(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold focus:outline-none focus:ring-0 text-white cursor-pointer"
+            >
+              <option value="" className="bg-[#111] text-slate-400">Todas las Transportadoras</option>
+              {returnsByZoneAndCarrier.carriersList.map(c => (
+                <option key={c.name} value={c.name} className="bg-[#111] text-white">
+                  {c.name} ({c.returned} devueltos - {c.returnRate.toFixed(1)}%)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Dropdown Semáforo de Riesgo */}
+          <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+            <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" />
+            <select
+              value={sectionRiskFilter}
+              onChange={(e) => setSectionRiskFilter(e.target.value as any)}
+              className="bg-transparent border-none text-xs font-bold focus:outline-none focus:ring-0 text-white cursor-pointer"
+            >
+              <option value="all" className="bg-[#111] text-slate-300">Todos los Niveles de Riesgo</option>
+              <option value="green" className="bg-[#111] text-emerald-400">🟢 Riesgo Bajo (≤ 15% retornos)</option>
+              <option value="yellow" className="bg-[#111] text-amber-400">🟡 Riesgo Medio (15% - 25%)</option>
+              <option value="red" className="bg-[#111] text-red-400">🔴 Riesgo Crítico (&gt; 25% retornos)</option>
+            </select>
+          </div>
+
+          {/* Buscador Rápido */}
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              placeholder={activeSection === 'departamento' ? "Buscar departamento..." : activeSection === 'ciudad' ? "Buscar ciudad..." : "Buscar carrier..."}
+              value={sectionSearchTerm}
+              onChange={(e) => setSectionSearchTerm(e.target.value)}
+              className="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 transition-colors"
+            />
+          </div>
+
+          {/* Reset Filters */}
+          {(selectedDeptFilter || selectedCityFilter || selectedCarrierFilter || sectionRiskFilter !== 'all' || sectionSearchTerm) && (
+            <button
+              onClick={() => {
+                setSelectedDeptFilter('');
+                setSelectedCityFilter('');
+                setSelectedCarrierFilter('');
+                setSectionRiskFilter('all');
+                setSectionSearchTerm('');
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold transition-all cursor-pointer"
+            >
+              <X size={13} /> Limpiar Filtros
+            </button>
+          )}
+        </div>
+
+        {/* SPOTLIGHT DE DEPARTAMENTO SELECCIONADO */}
+        {selectedDeptFilter && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent border border-orange-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400 shrink-0 font-display font-black text-lg">
+                📍
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs uppercase font-mono font-bold text-orange-400">Departamento Activo:</span>
+                  <span className="text-base font-extrabold text-white font-display">{selectedDeptFilter}</span>
+                </div>
+                {(() => {
+                  const deptItem = returnsByZoneAndCarrier.deptsList.find(d => d.name.toUpperCase() === selectedDeptFilter.toUpperCase());
+                  if (!deptItem) return null;
+                  return (
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-0.5">
+                      <span>Total: <strong className="text-white">{deptItem.total}</strong> pedidos</span>
+                      <span>Devueltos: <strong className="text-orange-400 font-mono font-bold">{deptItem.returned}</strong></span>
+                      <span>Tasa de Devolución: <strong className={`font-mono font-bold ${deptItem.returnRate > 25 ? 'text-red-400' : deptItem.returnRate > 15 ? 'text-amber-400' : 'text-emerald-400'}`}>{deptItem.returnRate.toFixed(1)}%</strong></span>
+                      <span>Pérdida Absorbida: <strong className="text-red-400 font-mono font-bold">{localFormatCurrency(deptItem.returnCost)}</strong></span>
+                      <span>Ciudades: <strong className="text-white">{deptItem.citiesCount}</strong></span>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {activeSection !== 'ciudad' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('ciudad')}
+                  className="px-3 py-1.5 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Building2 size={13} /> Ver Ciudades de {selectedDeptFilter}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedDeptFilter('')}
+                className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white text-xs transition-all cursor-pointer"
+                title="Quitar filtro de departamento"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TABLA PRINCIPAL SEGÚN LA SECCIÓN ACTIVA */}
+        {(() => {
+          // Compute filtered items according to active section
+          let rows: any[] = [];
+          if (activeSection === 'departamento') {
+            rows = returnsByZoneAndCarrier.deptsList.filter(d => {
+              if (selectedDeptFilter && d.name.toUpperCase() !== selectedDeptFilter.toUpperCase()) return false;
+              if (sectionRiskFilter !== 'all' && d.risk !== sectionRiskFilter) return false;
+              if (sectionSearchTerm && !d.name.toLowerCase().includes(sectionSearchTerm.toLowerCase())) return false;
+              return true;
+            });
+          } else if (activeSection === 'ciudad') {
+            rows = returnsByZoneAndCarrier.citiesList.filter(c => {
+              if (selectedDeptFilter && c.dept.toUpperCase() !== selectedDeptFilter.toUpperCase()) return false;
+              if (selectedCityFilter && c.name.toUpperCase() !== selectedCityFilter.toUpperCase()) return false;
+              if (selectedCarrierFilter && !c.carriers.some(car => car.toUpperCase() === selectedCarrierFilter.toUpperCase())) return false;
+              if (sectionRiskFilter !== 'all' && c.risk !== sectionRiskFilter) return false;
+              if (sectionSearchTerm && !(
+                c.name.toLowerCase().includes(sectionSearchTerm.toLowerCase()) || 
+                c.dept.toLowerCase().includes(sectionSearchTerm.toLowerCase())
+              )) return false;
+              return true;
+            });
+          } else {
+            rows = returnsByZoneAndCarrier.carriersList.filter(c => {
+              if (selectedCarrierFilter && c.name.toUpperCase() !== selectedCarrierFilter.toUpperCase()) return false;
+              if (sectionRiskFilter !== 'all' && c.risk !== sectionRiskFilter) return false;
+              if (sectionSearchTerm && !c.name.toLowerCase().includes(sectionSearchTerm.toLowerCase())) return false;
+              return true;
+            });
+          }
+
+          if (rows.length === 0) {
+            return (
+              <div className="flex flex-col items-center justify-center p-12 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 text-center space-y-2">
+                <AlertCircle size={32} className="text-slate-600" />
+                <p className="text-sm font-semibold text-slate-300">No hay registros con los filtros seleccionados</p>
+                <p className="text-xs text-slate-500">Prueba cambiando la búsqueda o limpiando los filtros superiores.</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className={`overflow-x-auto rounded-2xl border ${isLightWhite ? 'bg-white border-slate-200' : 'bg-slate-950/60 border-slate-900'}`}>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className={`border-b text-xs ${isLightWhite ? 'bg-slate-100/60 border-slate-200 text-slate-600' : 'bg-slate-900/90 border-slate-800 text-slate-400'}`}>
+                    <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display">
+                      {activeSection === 'departamento' ? 'Departamento' : activeSection === 'ciudad' ? 'Ciudad' : 'Transportadora'}
+                    </th>
+                    {activeSection === 'ciudad' && (
+                      <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display">Departamento</th>
+                    )}
+                    <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display text-right">Total Pedidos</th>
+                    <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display text-right">Devueltos</th>
+                    <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display text-center">Tasa Devolución %</th>
+                    <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display text-right">Pérdida Absorbida</th>
+                    <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display text-center">
+                      {activeSection === 'departamento' ? 'Ciudades' : activeSection === 'ciudad' ? 'Carriers' : 'Deptos Cubiertos'}
+                    </th>
+                    <th className="px-5 py-3.5 uppercase tracking-wider font-extrabold font-display text-center w-28">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className={`divide-y text-xs ${isLightWhite ? 'divide-slate-100' : 'divide-slate-900/60'}`}>
+                  {rows.map((row) => {
+                    const isHighRisk = row.returnRate > 25;
+                    const isMediumRisk = row.returnRate > 15 && row.returnRate <= 25;
+                    
+                    const badgeClass = isHighRisk 
+                      ? 'bg-red-500/15 border-red-500/30 text-red-400' 
+                      : isMediumRisk 
+                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' 
+                      : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400';
+
+                    return (
+                      <tr key={row.name} className={`transition-colors hover:bg-white/5 ${isLightWhite ? 'hover:bg-slate-50' : ''}`}>
+                        {/* NAME */}
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            {activeSection === 'departamento' && <MapPin size={14} className="text-orange-400 shrink-0" />}
+                            {activeSection === 'ciudad' && <Building2 size={14} className="text-cyan-400 shrink-0" />}
+                            {activeSection === 'transportadora' && <Truck size={14} className="text-purple-400 shrink-0" />}
+                            <span className="font-bold text-white text-sm">{row.name}</span>
+                          </div>
+                        </td>
+
+                        {/* DEPT COLUMN FOR CITIES */}
+                        {activeSection === 'ciudad' && (
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <span className="font-semibold text-slate-400">{row.dept}</span>
+                          </td>
+                        )}
+
+                        {/* TOTAL */}
+                        <td className="px-5 py-3.5 text-right font-mono font-bold text-slate-300">
+                          {row.total}
+                        </td>
+
+                        {/* RETURNED */}
+                        <td className="px-5 py-3.5 text-right font-mono font-bold text-orange-400">
+                          {row.returned}
+                        </td>
+
+                        {/* RETURN RATE % BADGE */}
+                        <td className="px-5 py-3.5 text-center">
+                          <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-mono font-bold border ${badgeClass}`}>
+                            {row.returnRate.toFixed(1)}%
+                          </span>
+                        </td>
+
+                        {/* ABSORBED LOSS */}
+                        <td className="px-5 py-3.5 text-right font-mono font-bold text-red-400">
+                          {localFormatCurrency(row.returnCost)}
+                        </td>
+
+                        {/* DETAIL COUNTS */}
+                        <td className="px-5 py-3.5 text-center font-mono text-slate-400">
+                          {activeSection === 'departamento' && (
+                            <span className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
+                              {row.citiesCount} ciudades
+                            </span>
+                          )}
+                          {activeSection === 'ciudad' && (
+                            <span className="text-[11px] text-slate-400 truncate max-w-[150px] inline-block" title={row.carriers.join(', ')}>
+                              {row.carriers.length > 0 ? row.carriers.join(', ') : '---'}
+                            </span>
+                          )}
+                          {activeSection === 'transportadora' && (
+                            <span className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
+                              {row.deptsCount} deptos
+                            </span>
+                          )}
+                        </td>
+
+                        {/* ACTION BUTTON */}
+                        <td className="px-5 py-3.5 text-center">
+                          {activeSection === 'departamento' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDeptFilter(row.name);
+                                setActiveSection('ciudad');
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/25 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 mx-auto"
+                            >
+                              <span>Ciudades</span>
+                              <ChevronRight size={12} />
+                            </button>
+                          ) : activeSection === 'ciudad' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDeptFilter(row.dept);
+                                setSelectedCityFilter(row.name);
+                                setActiveSubTab('all-returns');
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 mx-auto"
+                              title="Ver pedidos devueltos de esta ciudad"
+                            >
+                              <span>Ver Pedidos</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCarrierFilter(row.name);
+                                setActiveSubTab('all-returns');
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 mx-auto"
+                              title="Ver pedidos devueltos de esta transportadora"
+                            >
+                              <span>Ver Pedidos</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
+
+        {/* COMPARATIVE CHART FOR ACTIVE SECTION */}
+        {(() => {
+          let chartItems: { name: string, returnRate: number, returned: number, returnCost: number }[] = [];
+          if (activeSection === 'departamento') {
+            chartItems = returnsByZoneAndCarrier.deptsList
+              .filter(d => d.returned > 0)
+              .slice(0, 10)
+              .map(d => ({ name: d.name, returnRate: Number(d.returnRate.toFixed(1)), returned: d.returned, returnCost: d.returnCost }));
+          } else if (activeSection === 'ciudad') {
+            const list = selectedDeptFilter ? availableCitiesForDept : returnsByZoneAndCarrier.citiesList;
+            chartItems = list
+              .filter(c => c.returned > 0)
+              .slice(0, 10)
+              .map(c => ({ name: c.name, returnRate: Number(c.returnRate.toFixed(1)), returned: c.returned, returnCost: c.returnCost }));
+          } else {
+            chartItems = returnsByZoneAndCarrier.carriersList
+              .filter(c => c.returned > 0)
+              .slice(0, 10)
+              .map(c => ({ name: c.name, returnRate: Number(c.returnRate.toFixed(1)), returned: c.returned, returnCost: c.returnCost }));
+          }
+
+          if (chartItems.length === 0) return null;
+
+          return (
+            <div className="pt-6 border-t border-white/5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                <div>
+                  <h4 className="text-base font-bold text-white font-display uppercase tracking-wide">
+                    Top Devoluciones: {activeSection === 'departamento' ? 'Departamentos' : activeSection === 'ciudad' ? 'Ciudades' : 'Transportadoras'}
+                  </h4>
+                  <p className="text-xs text-slate-500">Comparativa de tasa de devolución % de los líderes con mayor volumen de retornos</p>
+                </div>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 font-mono font-bold w-fit">
+                  {activeSection === 'departamento' ? 'Sección: Departamentos' : activeSection === 'ciudad' ? 'Sección: Ciudades' : 'Sección: Transportadoras'}
+                </span>
+              </div>
+
+              <div className="h-[260px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartItems} margin={{ top: 10, right: 20, left: 0, bottom: 25 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1f293d" vertical={false} />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="#64748b" 
+                      fontSize={11} 
+                      tickLine={false} 
+                      angle={-20} 
+                      textAnchor="end" 
+                    />
+                    <YAxis 
+                      stroke="#64748b" 
+                      fontSize={11} 
+                      tickLine={false} 
+                      unit="%" 
+                      domain={[0, 'auto']} 
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#000000', 
+                        border: '1px solid #334155', 
+                        borderRadius: '10px',
+                        color: '#ffffff'
+                      }}
+                      formatter={(val: any, name: string) => {
+                        if (name === 'returnRate') return [`${val}%`, 'Tasa de Devolución'];
+                        return [val, name];
+                      }}
+                    />
+                    <Bar 
+                      dataKey="returnRate" 
+                      name="returnRate" 
+                      fill="#f97316" 
+                      radius={[6, 6, 0, 0]} 
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Historial y Gestión de Novedades de Devoluciones */}
@@ -1879,6 +2547,25 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 </select>
               </div>
 
+              {/* Filtro de TRANSPORTADORA */}
+              <div className={`flex items-center gap-2 border rounded-xl px-3 py-1.5 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
+                <Truck size={13} className="text-purple-400 shrink-0" />
+                <span className={`uppercase font-black tracking-widest text-slate-500 ${isLightWhite ? 'text-[12px]' : 'text-[10px]'}`}>Transportadora:</span>
+                <select 
+                  value={noveltyCarrierFilter}
+                  onChange={(e) => setNoveltyCarrierFilter(e.target.value)}
+                  className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[13px]' : 'text-xs'} font-bold text-purple-400 uppercase focus:outline-none focus:ring-0 cursor-pointer h-full`}
+                >
+                  <option value="TODOS" className="bg-[#111] text-white font-bold">TODAS</option>
+                  <option value="SIN_TRANSPORTADORA" className="bg-[#111] text-[#ef4444] font-bold">SIN TRANSPORTADORA</option>
+                  {availableNoveltyCarriers.map(carrierName => (
+                    <option key={carrierName} value={carrierName} className="bg-[#111] text-purple-300 font-bold">
+                      {carrierName.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Botón rápido paleta */}
               <button
                 type="button"
@@ -1911,6 +2598,24 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                   }`}
                 />
               </div>
+
+              {/* Botón para limpiar filtros de novedades */}
+              {(noveltyTagFilter !== 'TODOS' || noveltyDevolucionFilter !== 'TODOS' || noveltyCarrierFilter !== 'TODOS' || noveltySearch) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNoveltyTagFilter('TODOS');
+                    setNoveltyDevolucionFilter('TODOS');
+                    setNoveltyCarrierFilter('TODOS');
+                    setNoveltySearch('');
+                  }}
+                  title="Limpiar todos los filtros"
+                  className="h-8 px-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <X size={13} />
+                  <span className="hidden sm:inline">Limpiar</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2101,7 +2806,58 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 Pedidos Devueltos en el Sistema ({filteredReturnedOrders.length})
               </h4>
               
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Filter Depto */}
+                <div className={`flex items-center gap-1.5 border rounded-xl px-2.5 py-1 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
+                  <MapPin size={12} className="text-orange-400 shrink-0" />
+                  <select
+                    value={selectedDeptFilter}
+                    onChange={(e) => handleDeptFilterChange(e.target.value)}
+                    className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[12px]' : 'text-[11px]'} font-bold text-slate-300 focus:outline-none focus:ring-0 cursor-pointer h-full`}
+                  >
+                    <option value="" className="bg-[#111] text-slate-400">Depto: Todos</option>
+                    {returnsByZoneAndCarrier.deptsList.map(d => (
+                      <option key={d.name} value={d.name} className="bg-[#111] text-white">
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Ciudad */}
+                <div className={`flex items-center gap-1.5 border rounded-xl px-2.5 py-1 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
+                  <Building2 size={12} className="text-cyan-400 shrink-0" />
+                  <select
+                    value={selectedCityFilter}
+                    onChange={(e) => handleCityFilterChange(e.target.value)}
+                    className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[12px]' : 'text-[11px]'} font-bold text-slate-300 focus:outline-none focus:ring-0 cursor-pointer h-full`}
+                  >
+                    <option value="" className="bg-[#111] text-slate-400">Ciudad: Todas</option>
+                    {availableCitiesForDept.map(c => (
+                      <option key={c.name} value={c.name} className="bg-[#111] text-white">
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Carrier */}
+                <div className={`flex items-center gap-1.5 border rounded-xl px-2.5 py-1 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
+                  <Truck size={12} className="text-purple-400 shrink-0" />
+                  <select
+                    value={selectedCarrierFilter}
+                    onChange={(e) => setSelectedCarrierFilter(e.target.value)}
+                    className={`bg-transparent border-none p-0 ${isLightWhite ? 'text-[12px]' : 'text-[11px]'} font-bold text-slate-300 focus:outline-none focus:ring-0 cursor-pointer h-full`}
+                  >
+                    <option value="" className="bg-[#111] text-slate-400">Carrier: Todos</option>
+                    {returnsByZoneAndCarrier.carriersList.map(c => (
+                      <option key={c.name} value={c.name} className="bg-[#111] text-white">
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Filter tags */}
                 <div className={`flex items-center gap-2 border rounded-xl px-3 py-1.5 h-8 ${isLightWhite ? 'bg-white border-[#f3e8e8]' : 'border-border bg-[#0c0c14]'}`}>
                   <span className={`uppercase font-black tracking-widest text-slate-500 ${isLightWhite ? 'text-[12px]' : 'text-[10px]'}`}>Etiqueta Dropi:</span>
@@ -2121,7 +2877,7 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                 </div>
 
                 {/* Search returned orders */}
-                <div className={`relative w-full sm:w-64 h-8 flex items-center rounded-xl ${isLightWhite ? 'bg-[#edf2f8] border border-slate-200' : ''}`}>
+                <div className={`relative w-full sm:w-56 h-8 flex items-center rounded-xl ${isLightWhite ? 'bg-[#edf2f8] border border-slate-200' : ''}`}>
                   <span className={`absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 pointer-events-none ${isLightWhite ? 'text-[12px]' : ''}`}>
                     <Search size={15} />
                   </span>
@@ -2137,6 +2893,23 @@ const ReturnsAnalysis: React.FC<ReturnsAnalysisProps> = ({ orders, formatCurrenc
                     }`}
                   />
                 </div>
+
+                {/* Clear filters if active */}
+                {(selectedDeptFilter || selectedCityFilter || selectedCarrierFilter || allReturnsTagFilter !== 'TODOS' || allReturnsSearch) && (
+                  <button
+                    onClick={() => {
+                      setSelectedDeptFilter('');
+                      setSelectedCityFilter('');
+                      setSelectedCarrierFilter('');
+                      setAllReturnsTagFilter('TODOS');
+                      setAllReturnsSearch('');
+                    }}
+                    title="Limpiar filtros"
+                    className="h-8 px-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
               </div>
             </div>
 

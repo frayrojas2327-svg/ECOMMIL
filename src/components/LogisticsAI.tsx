@@ -34,6 +34,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Order, CurrencyCode } from '../mockData';
 import Markdown from 'react-markdown';
 import CryptoJS from 'crypto-js';
+import { cleanAiErrorMessage } from '../services/aiConfigService';
 
 const ENCRYPTION_SECRET = 'profit-os-ai-secret-key';
 
@@ -77,19 +78,19 @@ const PROVIDER_INFO: Record<AIProvider, {
   gemini: {
     name: 'Google Gemini',
     shortName: 'Gemini',
-    tagline: 'Integrado de fábrica • Baja latencia',
+    tagline: 'Gemini 3.8 Flash • Máxima velocidad, estabilidad y razonamiento',
     icon: Zap,
     accentColor: 'text-cyan-400',
     bgLight: 'bg-cyan-500/10',
     borderLight: 'border-cyan-500/30',
     models: [
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tag: 'Estable & Ultra Rápido (Recomendado)' },
-      { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', tag: 'Avanzado' },
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tag: 'Alta Complejidad' },
+      { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', tag: 'Ultra Rápido & Recomendado' },
+      { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', tag: 'Baja Latencia & Eficiente' },
+      { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', tag: 'Razonamiento Complejo' },
     ],
-    defaultModel: 'gemini-2.5-flash',
-    keyPlaceholder: 'AIzaSy... (Opcional: ya activo por defecto)',
-    keyPrefix: 'AIzaSy',
+    defaultModel: 'gemini-3.8-flash',
+    keyPlaceholder: 'AQ... o AIzaSy... (API Key de Gemini)',
+    keyPrefix: 'AIzaSy / AQ',
     helpUrl: 'https://aistudio.google.com/app/apikey',
   },
   openai: {
@@ -198,18 +199,31 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({
   const [serverStatus, setServerStatus] = useState<Record<string, any>>({});
   
   // AI Config State
+  const DEFAULT_USER_GEMINI_KEY = 'AQ.Ab8RN6JZYP3o2uPxeueCNTTDIM0p14n0ksYdwHYiLZNj9_BqfQ';
+
   const [aiConfig, setAiConfig] = useState({
     provider: 'gemini' as AIProvider,
-    geminiKey: '',
+    geminiKey: DEFAULT_USER_GEMINI_KEY,
+    geminiKey2: '',
+    geminiKey3: '',
     openaiKey: '',
     anthropicKey: '',
     deepseekKey: '',
-    geminiModel: 'gemini-2.5-flash',
+    geminiModel: 'gemini-3.8-flash',
     openaiModel: 'gpt-4o',
     anthropicModel: 'claude-3-5-sonnet-latest',
     deepseekModel: 'deepseek-chat',
     customInstruction: '',
   });
+
+  const [multiKeyResults, setMultiKeyResults] = useState<Array<{
+    index: number;
+    active: boolean;
+    success: boolean;
+    latencyMs?: number;
+    message?: string;
+    error?: string;
+  }> | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -229,8 +243,23 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({
     if (savedConfig) {
       try {
         const bytes = CryptoJS.AES.decrypt(savedConfig, ENCRYPTION_SECRET);
-        const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
-        setAiConfig(prev => ({ ...prev, ...decryptedData }));
+        const decryptedStr = bytes.toString(CryptoJS.enc.Utf8);
+        if (decryptedStr && decryptedStr.trim().startsWith('{')) {
+          const decryptedData = JSON.parse(decryptedStr);
+          // Auto-upgrade any deprecated or old gemini-2.5 / 3.6 models
+          if (!decryptedData.geminiModel || decryptedData.geminiModel === 'gemini-3.6-flash' || decryptedData.geminiModel === 'gemini-2.5-flash' || decryptedData.geminiModel === 'gemini-2.5-pro') {
+            decryptedData.geminiModel = 'gemini-3.8-flash';
+          }
+          if (!decryptedData.geminiKey) {
+            decryptedData.geminiKey = DEFAULT_USER_GEMINI_KEY;
+          }
+          setAiConfig(prev => ({
+            ...prev,
+            geminiKey2: '',
+            geminiKey3: '',
+            ...decryptedData
+          }));
+        }
       } catch (e) {
         console.error("Failed to decrypt AI config v3:", e);
       }
@@ -240,16 +269,22 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({
       if (v2Config) {
         try {
           const bytes = CryptoJS.AES.decrypt(v2Config, ENCRYPTION_SECRET);
-          const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
-          setAiConfig(prev => ({
-            ...prev,
-            provider: decryptedData.provider || 'gemini',
-            geminiKey: decryptedData.geminiKey || '',
-            openaiKey: decryptedData.openaiKey || '',
-            anthropicKey: decryptedData.anthropicKey || '',
-            deepseekKey: decryptedData.deepseekKey || '',
-            customInstruction: decryptedData.customInstruction || '',
-          }));
+          const decryptedStr = bytes.toString(CryptoJS.enc.Utf8);
+          if (decryptedStr && decryptedStr.trim().startsWith('{')) {
+            const decryptedData = JSON.parse(decryptedStr);
+            setAiConfig(prev => ({
+              ...prev,
+              provider: decryptedData.provider || 'gemini',
+              geminiKey: decryptedData.geminiKey || DEFAULT_USER_GEMINI_KEY,
+              geminiKey2: '',
+              geminiKey3: '',
+              openaiKey: decryptedData.openaiKey || '',
+              anthropicKey: decryptedData.anthropicKey || '',
+              deepseekKey: decryptedData.deepseekKey || '',
+              geminiModel: 'gemini-3.8-flash',
+              customInstruction: decryptedData.customInstruction || '',
+            }));
+          }
         } catch (e) {
           console.error("Failed to migrate AI config:", e);
         }
@@ -259,9 +294,25 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({
   }, []);
 
   const saveConfig = (newConfig?: typeof aiConfig) => {
-    const configToSave = newConfig || aiConfig;
-    const encrypted = CryptoJS.AES.encrypt(JSON.stringify(configToSave), ENCRYPTION_SECRET).toString();
-    localStorage.setItem('profit_os_ai_config_v3', encrypted);
+    const configToSave = { ...(newConfig || aiConfig) };
+    if (!configToSave.geminiModel || configToSave.geminiModel === 'gemini-3.6-flash' || configToSave.geminiModel === 'gemini-2.5-flash' || configToSave.geminiModel === 'gemini-2.5-pro') {
+      configToSave.geminiModel = 'gemini-3.8-flash';
+    }
+    if (configToSave.geminiKey) {
+      configToSave.geminiKey = configToSave.geminiKey.trim().replace(/^["']|["']$/g, '').trim();
+    }
+    if (configToSave.geminiKey2) {
+      configToSave.geminiKey2 = configToSave.geminiKey2.trim().replace(/^["']|["']$/g, '').trim();
+    }
+    if (configToSave.geminiKey3) {
+      configToSave.geminiKey3 = configToSave.geminiKey3.trim().replace(/^["']|["']$/g, '').trim();
+    }
+    try {
+      const encrypted = CryptoJS.AES.encrypt(JSON.stringify(configToSave), ENCRYPTION_SECRET).toString();
+      localStorage.setItem('profit_os_ai_config_v3', encrypted);
+    } catch (err) {
+      console.error("Error al cifrar configuración con AES:", err);
+    }
     setAiConfig(configToSave);
     setIsConfigOpen(false);
   };
@@ -273,8 +324,9 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({
   }, [messages, isLoading]);
 
   // Test live connection for an assistant
-  const testConnection = async (provider: AIProvider, explicitKey?: string, explicitModel?: string) => {
+  const testConnection = async (provider: AIProvider, explicitKey?: string, explicitModel?: string, testAllGemini = false) => {
     setTestingProvider(provider);
+    setMultiKeyResults(null);
     const key = explicitKey !== undefined 
       ? explicitKey 
       : provider === 'gemini' 
@@ -285,35 +337,65 @@ const LogisticsAI: React.FC<LogisticsAIProps> = ({
             ? aiConfig.anthropicKey 
             : aiConfig.deepseekKey;
 
-    const model = explicitModel || (
+    let model = explicitModel || (
       provider === 'gemini' ? aiConfig.geminiModel :
       provider === 'openai' ? aiConfig.openaiModel :
       provider === 'anthropic' ? aiConfig.anthropicModel :
       aiConfig.deepseekModel
     );
 
+    if (provider === 'gemini' && (!model || model === 'gemini-2.5-flash' || model === 'gemini-2.5-pro')) {
+      model = 'gemini-3.6-flash';
+    }
+
     try {
+      const bodyPayload = (provider === 'gemini' && testAllGemini)
+        ? {
+            provider: 'gemini',
+            apiKeys: [aiConfig.geminiKey, aiConfig.geminiKey2, aiConfig.geminiKey3].filter(Boolean),
+            testAll: true,
+            model
+          }
+        : {
+            provider,
+            apiKey: (key || '').trim(),
+            model
+          };
+
       const res = await fetch('/api/ai/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey: key, model })
+        body: JSON.stringify(bodyPayload)
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ success: false, error: 'Respuesta inválida del servidor' }));
+
+      if (data.keyResults) {
+        const cleanedKeyResults = (data.keyResults || []).map((kr: any) => ({
+          ...kr,
+          error: kr.error ? cleanAiErrorMessage(kr.error) : undefined,
+          message: kr.message ? cleanAiErrorMessage(kr.message) : undefined
+        }));
+        setMultiKeyResults(cleanedKeyResults);
+      }
+
+      const displayMessage = cleanAiErrorMessage(data.message || data.error);
+
       setConnectionStatus(prev => ({
         ...prev,
         [provider]: {
           success: data.success,
           latencyMs: data.latencyMs,
-          message: data.message || data.error,
+          message: displayMessage,
           testedAt: Date.now()
         }
       }));
     } catch (err: any) {
+      const errMsg = cleanAiErrorMessage(err);
       setConnectionStatus(prev => ({
         ...prev,
         [provider]: {
           success: false,
-          message: err.message || 'Error al verificar conexión',
+          message: errMsg,
           testedAt: Date.now()
         }
       }));
@@ -414,6 +496,7 @@ Datos operativos actuales:
       );
 
       // Call server proxy
+      const geminiApiKeys = [aiConfig.geminiKey, aiConfig.geminiKey2, aiConfig.geminiKey3].filter(Boolean);
       const response = await fetch('/api/ai/advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -423,13 +506,14 @@ Datos operativos actuales:
           provider: providerToUse,
           model: modelToUse,
           apiKey: activeApiKey,
+          apiKeys: providerToUse === 'gemini' ? geminiApiKeys : undefined,
           context,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Error en el servicio de IA (${response.status})`);
+        throw new Error(cleanAiErrorMessage(errorData.error || `Error en el servicio de IA (${response.status})`));
       }
 
       const data = await response.json();
@@ -454,7 +538,7 @@ Datos operativos actuales:
       }
     } catch (err: any) {
       console.error("AI Error:", err);
-      const errorMessage = err.message || (typeof err === 'string' ? err : "Error de conexión con el proveedor");
+      const errorMessage = cleanAiErrorMessage(err);
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -1156,13 +1240,16 @@ Datos operativos actuales:
                   </h4>
 
                   {/* 1. Google Gemini */}
-                  <div className="p-4 rounded-xl bg-background/50 border border-border/70 space-y-3">
+                  <div className="p-4 rounded-xl bg-background/50 border border-border/70 space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Zap size={16} className="text-cyan-400" />
                         <span className="text-sm font-bold text-white">Google Gemini</span>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
                           {serverStatus?.gemini?.available ? '⚡ Servidor Activo' : 'Clave requerida'}
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hidden sm:inline">
+                          🛡️ Failover Multi-Clave (3x)
                         </span>
                       </div>
                       <a
@@ -1175,44 +1262,117 @@ Datos operativos actuales:
                       </a>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1 font-mono">Modelo Gemini</label>
-                        <select
-                          value={aiConfig.geminiModel}
-                          onChange={(e) => setAiConfig(prev => ({ ...prev, geminiModel: e.target.value }))}
-                          className="w-full bg-card border border-border rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-neon"
-                        >
-                          {PROVIDER_INFO.gemini.models.map(m => (
-                            <option key={m.id} value={m.id}>{m.name} ({m.tag})</option>
-                          ))}
-                        </select>
-                      </div>
+                    <div className="p-2.5 rounded-lg bg-cyan-950/20 border border-cyan-800/30 text-[11px] text-cyan-200/90 leading-relaxed">
+                      💡 <strong>Rotación Anti-Agotamiento de Cuota:</strong> Puedes configurar hasta 3 claves de Gemini gratuitas. Si una clave llega al límite de peticiones (429 Quota/Resource Exhausted), el sistema rota instantáneamente a la siguiente clave para que nunca se interrumpan tus análisis.
+                    </div>
 
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1 font-mono">Modelo Gemini Preferido</label>
+                      <select
+                        value={aiConfig.geminiModel}
+                        onChange={(e) => setAiConfig(prev => ({ ...prev, geminiModel: e.target.value }))}
+                        className="w-full bg-card border border-border rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-neon"
+                      >
+                        {PROVIDER_INFO.gemini.models.map(m => (
+                          <option key={m.id} value={m.id}>{m.name} ({m.tag})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-3 pt-1">
                       <div>
-                        <label className="text-[11px] text-slate-400 block mb-1 font-mono">API Key Personal (Opcional)</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] text-slate-300 font-mono font-bold flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-400 text-[10px] flex items-center justify-center font-black">1</span>
+                            API Key Principal (Gemini 1)
+                          </label>
+                          <span className="text-[10px] text-slate-500 font-mono">Prioritaria</span>
+                        </div>
                         <input
                           type={showApiKey ? "text" : "password"}
                           value={aiConfig.geminiKey}
                           onChange={(e) => setAiConfig(prev => ({ ...prev, geminiKey: e.target.value }))}
-                          placeholder="AIzaSy... (Usa la del sistema si está vacía)"
+                          placeholder="AQ... o AIzaSy... (API Key Principal)"
                           className="w-full bg-card border border-border rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-neon"
                         />
                       </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-full bg-slate-800 text-slate-300 text-[10px] flex items-center justify-center font-black">2</span>
+                              API Key Respaldo 1 (Gemini 2)
+                            </label>
+                            <span className="text-[10px] text-slate-500 font-mono">Failover</span>
+                          </div>
+                          <input
+                            type={showApiKey ? "text" : "password"}
+                            value={aiConfig.geminiKey2 || ''}
+                            onChange={(e) => setAiConfig(prev => ({ ...prev, geminiKey2: e.target.value }))}
+                            placeholder="AQ... o AIzaSy... (Opcional - Failover)"
+                            className="w-full bg-card border border-border rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-neon"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-full bg-slate-800 text-slate-300 text-[10px] flex items-center justify-center font-black">3</span>
+                              API Key Respaldo 2 (Gemini 3)
+                            </label>
+                            <span className="text-[10px] text-slate-500 font-mono">Failover</span>
+                          </div>
+                          <input
+                            type={showApiKey ? "text" : "password"}
+                            value={aiConfig.geminiKey3 || ''}
+                            onChange={(e) => setAiConfig(prev => ({ ...prev, geminiKey3: e.target.value }))}
+                            placeholder="AQ... o AIzaSy... (Opcional - Failover)"
+                            className="w-full bg-card border border-border rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-neon"
+                          />
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
+                    {multiKeyResults && (
+                      <div className="p-3 rounded-lg bg-black/60 border border-border space-y-1.5 text-xs font-mono">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Diagnóstico Multi-Clave:</span>
+                        {multiKeyResults.map((kr) => (
+                          <div key={kr.index} className="flex items-center justify-between py-0.5">
+                            <span className="flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full ${kr.success ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                              <span>Clave #{kr.index + 1}:</span>
+                            </span>
+                            <span className={kr.success ? 'text-emerald-400 font-bold' : 'text-red-400'}>
+                              {kr.success ? `Activa (${kr.latencyMs}ms)` : (cleanAiErrorMessage(kr.error) || 'Inactiva')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
                       <span className="text-[11px] text-slate-400">
-                        {connectionStatus.gemini?.message || 'Gemini 3.8 / 2.5 Flash optimizado para máxima velocidad'}
+                        {connectionStatus.gemini?.message || 'Gemini 3.8 Flash / 3.1 Flash Lite con rotación de claves activo'}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => testConnection('gemini', aiConfig.geminiKey, aiConfig.geminiModel)}
-                        disabled={testingProvider === 'gemini'}
-                        className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold transition-all cursor-pointer"
-                      >
-                        {testingProvider === 'gemini' ? 'Verificando...' : 'Probar Gemini'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => testConnection('gemini', aiConfig.geminiKey, aiConfig.geminiModel, false)}
+                          disabled={testingProvider === 'gemini'}
+                          className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold transition-all cursor-pointer"
+                        >
+                          {testingProvider === 'gemini' ? 'Verificando...' : 'Probar Principal'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => testConnection('gemini', undefined, aiConfig.geminiModel, true)}
+                          disabled={testingProvider === 'gemini'}
+                          className="px-3 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold transition-all cursor-pointer"
+                        >
+                          Probar Todas (Failover)
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1384,24 +1544,64 @@ Datos operativos actuales:
                           type={showApiKey ? "text" : "password"}
                           value={aiConfig.deepseekKey}
                           onChange={(e) => setAiConfig(prev => ({ ...prev, deepseekKey: e.target.value }))}
-                          placeholder="sk-..."
+                          placeholder="sk-... (Requiere saldo prepagado en DeepSeek)"
                           className="w-full bg-card border border-border rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-neon"
                         />
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-slate-400 truncate max-w-sm">
-                        {connectionStatus.deepseek?.message || 'Requiere clave DeepSeek'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => testConnection('deepseek', aiConfig.deepseekKey, aiConfig.deepseekModel)}
-                        disabled={testingProvider === 'deepseek' || !aiConfig.deepseekKey}
-                        className="px-3 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold transition-all cursor-pointer disabled:opacity-40"
-                      >
-                        {testingProvider === 'deepseek' ? 'Verificando...' : 'Probar DeepSeek'}
-                      </button>
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">
+                          {connectionStatus.deepseek?.message && connectionStatus.deepseek.success
+                            ? connectionStatus.deepseek.message
+                            : 'Requiere saldo en platform.deepseek.com'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => testConnection('deepseek', aiConfig.deepseekKey, aiConfig.deepseekModel)}
+                          disabled={testingProvider === 'deepseek' || !aiConfig.deepseekKey}
+                          className="px-3 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold transition-all cursor-pointer disabled:opacity-40"
+                        >
+                          {testingProvider === 'deepseek' ? 'Verificando...' : 'Probar DeepSeek'}
+                        </button>
+                      </div>
+
+                      {connectionStatus.deepseek?.message && !connectionStatus.deepseek.success && (
+                        <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 ${
+                          (connectionStatus.deepseek.message.toLowerCase().includes('saldo') || connectionStatus.deepseek.message.includes('402'))
+                            ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200'
+                            : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+                        }`}>
+                          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                          <div className="flex-1 space-y-1">
+                            <p>{connectionStatus.deepseek.message}</p>
+                            {(connectionStatus.deepseek.message.toLowerCase().includes('saldo') || connectionStatus.deepseek.message.includes('402')) && (
+                              <div className="flex items-center gap-3 pt-1">
+                                <a 
+                                  href="https://platform.deepseek.com/top_up" 
+                                  target="_blank" 
+                                  rel="noreferrer" 
+                                  className="text-[11px] text-blue-400 underline hover:text-blue-300 font-mono"
+                                >
+                                  Recargar saldo en DeepSeek ↗
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = { ...aiConfig, provider: 'gemini' as AIProvider, geminiModel: 'gemini-3.6-flash' };
+                                    setAiConfig(updated);
+                                    saveConfig(updated);
+                                  }}
+                                  className="text-[11px] text-emerald-400 underline hover:text-emerald-300 font-mono font-bold cursor-pointer"
+                                >
+                                  Activar Google Gemini (Con cuota activa)
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

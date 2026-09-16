@@ -35,12 +35,22 @@ export default class ErrorBoundary extends Component<Props, State> {
       let isFirebaseError = false;
 
       try {
-        if (this.state.error?.message) {
-          const parsed = JSON.parse(this.state.error.message);
-          if (parsed.error && parsed.authInfo) {
-            errorMessage = `Error de base de datos: ${parsed.error}`;
-            isFirebaseError = true;
+        const rawMsg = this.state.error?.message || "";
+        if (rawMsg.trim().startsWith('{') || rawMsg.includes('{"error"')) {
+          const match = rawMsg.match(/\{[\s\S]*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            if (parsed.error && parsed.authInfo) {
+              errorMessage = `Error de base de datos: ${parsed.error}`;
+              isFirebaseError = true;
+            } else if (parsed?.error?.message) {
+              errorMessage = parsed.error.message;
+            }
+          } else {
+            errorMessage = rawMsg || errorMessage;
           }
+        } else {
+          errorMessage = rawMsg || errorMessage;
         }
       } catch (e) {
         // Not a JSON error

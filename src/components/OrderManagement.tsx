@@ -1569,6 +1569,11 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       .sort((a, b) => b.total - a.total)
       .slice(0, 8);
 
+    const statusLevel: 'normal' | 'warning' | 'danger' = 
+      currentRate >= 70 ? 'normal' : currentRate >= 50 ? 'warning' : 'danger';
+    const statusLabel = 
+      currentRate >= 70 ? 'Normal / Óptimo' : currentRate >= 50 ? 'Regular' : 'Menos de lo normal';
+
     return {
       total,
       delivered,
@@ -1579,6 +1584,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       pending,
       currentRate,
       returnRate,
+      statusLevel,
+      statusLabel,
       distributionData,
       deptChartData,
       cityChartData,
@@ -4376,23 +4383,41 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   onClick={() => setShowDeliveryRateFloating(!showDeliveryRateFloating)}
                   className={`flex items-center gap-2 py-2 px-3.5 rounded-xl border text-[12px] font-black transition-all cursor-pointer shadow-sm h-[38px] ${
                     showDeliveryRateFloating
-                      ? 'bg-[#00df9a] text-black border-[#00df9a] shadow-[0_0_15px_rgba(0,223,154,0.35)]'
-                      : (cityFilter || deptFilter)
-                        ? 'bg-[#00df9a]/15 text-[#00df9a] border-[#00df9a]/40 hover:bg-[#00df9a]/25'
-                        : 'bg-[#111] text-slate-300 border-white/10 hover:border-white/25 hover:text-white hover:bg-[#1a1a1c]'
+                      ? deliveryStatsByLocation.statusLevel === 'normal'
+                        ? 'bg-[#00df9a] text-black border-[#00df9a] shadow-[0_0_15px_rgba(0,223,154,0.35)]'
+                        : deliveryStatsByLocation.statusLevel === 'warning'
+                          ? 'bg-[#ff9100] text-black border-[#ff9100] shadow-[0_0_15px_rgba(255,145,0,0.35)]'
+                          : 'bg-[#ff4b4b] text-white border-[#ff4b4b] shadow-[0_0_15px_rgba(255,75,75,0.35)]'
+                      : deliveryStatsByLocation.statusLevel === 'normal'
+                        ? 'bg-[#00df9a]/10 text-[#00df9a] border-[#00df9a]/40 hover:bg-[#00df9a]/20 hover:border-[#00df9a]/70'
+                        : deliveryStatsByLocation.statusLevel === 'warning'
+                          ? 'bg-[#ff9100]/10 text-[#ff9100] border-[#ff9100]/40 hover:bg-[#ff9100]/20 hover:border-[#ff9100]/70'
+                          : 'bg-[#ff4b4b]/10 text-[#ff4b4b] border-[#ff4b4b]/40 hover:bg-[#ff4b4b]/20 hover:border-[#ff4b4b]/70'
                   }`}
-                  title="Ver gráfica en mensaje flotante del porcentaje de entrega por departamento y ciudad"
+                  title={`Porcentaje de entrega: ${deliveryStatsByLocation.currentRate.toFixed(1)}% (${deliveryStatsByLocation.statusLabel})`}
                 >
-                  <BarChart3 size={15} className={showDeliveryRateFloating ? 'text-black' : 'text-[#00df9a]'} />
+                  <BarChart3 
+                    size={15} 
+                    className={
+                      showDeliveryRateFloating 
+                        ? (deliveryStatsByLocation.statusLevel === 'danger' ? 'text-white' : 'text-black')
+                        : (deliveryStatsByLocation.statusLevel === 'normal' ? 'text-[#00df9a]' : deliveryStatsByLocation.statusLevel === 'warning' ? 'text-[#ff9100]' : 'text-[#ff4b4b]')
+                    } 
+                  />
                   <span className="whitespace-nowrap font-bold">
                     {cityFilter ? `📍 ${cityFilter}` : deptFilter ? `🗺️ ${deptFilter}` : '% Entrega'}
                   </span>
-                  <span className={`px-1.5 py-0.5 rounded-md text-[11px] font-black ${
+                  <span className={`px-1.5 py-0.5 rounded-md text-[11px] font-black flex items-center gap-1 ${
                     showDeliveryRateFloating 
-                      ? 'bg-black/20 text-black' 
-                      : 'bg-[#00df9a]/20 text-[#00df9a]'
+                      ? 'bg-black/20 text-inherit' 
+                      : (deliveryStatsByLocation.statusLevel === 'normal'
+                          ? 'bg-[#00df9a]/20 text-[#00df9a]'
+                          : deliveryStatsByLocation.statusLevel === 'warning'
+                            ? 'bg-[#ff9100]/20 text-[#ff9100]'
+                            : 'bg-[#ff4b4b]/20 text-[#ff4b4b]')
                   }`}>
-                    {deliveryStatsByLocation.currentRate.toFixed(1)}%
+                    <span>{deliveryStatsByLocation.statusLevel === 'normal' ? '🟢' : deliveryStatsByLocation.statusLevel === 'warning' ? '🟠' : '🔴'}</span>
+                    <span>{deliveryStatsByLocation.currentRate.toFixed(1)}%</span>
                   </span>
                 </button>
 
@@ -4402,14 +4427,31 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     {/* Header */}
                     <div className="flex items-center justify-between pb-3 border-b border-white/10">
                       <div className="flex items-center gap-2.5">
-                        <div className="p-2 bg-[#00df9a]/10 border border-[#00df9a]/20 rounded-xl text-[#00df9a]">
+                        <div className={`p-2 rounded-xl border ${
+                          deliveryStatsByLocation.statusLevel === 'normal'
+                            ? 'bg-[#00df9a]/10 border-[#00df9a]/20 text-[#00df9a]'
+                            : deliveryStatsByLocation.statusLevel === 'warning'
+                              ? 'bg-[#ff9100]/10 border-[#ff9100]/20 text-[#ff9100]'
+                              : 'bg-[#ff4b4b]/10 border-[#ff4b4b]/20 text-[#ff4b4b]'
+                        }`}>
                           <BarChart3 size={17} />
                         </div>
                         <div>
-                          <h4 className="text-[13px] font-black text-white leading-tight">
-                            Porcentaje de Entrega
-                          </h4>
-                          <p className="text-[11px] text-slate-400 font-medium">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-[13px] font-black text-white leading-tight">
+                              Porcentaje de Entrega
+                            </h4>
+                            <span className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded-md border ${
+                              deliveryStatsByLocation.statusLevel === 'normal'
+                                ? 'bg-[#00df9a]/15 text-[#00df9a] border-[#00df9a]/30'
+                                : deliveryStatsByLocation.statusLevel === 'warning'
+                                  ? 'bg-[#ff9100]/15 text-[#ff9100] border-[#ff9100]/30'
+                                  : 'bg-[#ff4b4b]/15 text-[#ff4b4b] border-[#ff4b4b]/30'
+                            }`}>
+                              {deliveryStatsByLocation.statusLabel}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-medium mt-0.5">
                             {cityFilter && deptFilter ? (
                               <span>📍 {cityFilter} · 🗺️ {deptFilter}</span>
                             ) : cityFilter ? (
@@ -4436,12 +4478,19 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     <div className="mt-3 p-3.5 bg-black/40 border border-white/5 rounded-xl">
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <span className="text-[10px] uppercase font-black tracking-wider text-slate-500 block">
-                            Efectividad de Entrega
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] uppercase font-black tracking-wider text-slate-500">
+                              Efectividad de Entrega
+                            </span>
+                            <span className={`text-[10px] font-bold ${
+                              deliveryStatsByLocation.statusLevel === 'normal' ? 'text-[#00df9a]' : deliveryStatsByLocation.statusLevel === 'warning' ? 'text-[#ff9100]' : 'text-[#ff4b4b]'
+                            }`}>
+                              ({deliveryStatsByLocation.statusLabel})
+                            </span>
+                          </div>
                           <div className="flex items-baseline gap-2 mt-0.5">
                             <span className={`text-2xl font-black ${
-                              deliveryStatsByLocation.currentRate >= 70 ? 'text-[#00df9a]' : deliveryStatsByLocation.currentRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                              deliveryStatsByLocation.statusLevel === 'normal' ? 'text-[#00df9a]' : deliveryStatsByLocation.statusLevel === 'warning' ? 'text-[#ff9100]' : 'text-[#ff4b4b]'
                             }`}>
                               {deliveryStatsByLocation.currentRate.toFixed(1)}%
                             </span>

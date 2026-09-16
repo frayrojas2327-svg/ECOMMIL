@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Order, CurrencyCode } from '../mockData';
 import Markdown from 'react-markdown';
 import CryptoJS from 'crypto-js';
+import { getClientAIConfig, getClientGeminiApiKeys, cleanAiErrorMessage } from '../services/aiConfigService';
 
 const ENCRYPTION_SECRET = 'profit-os-ai-secret-key';
 
@@ -84,44 +85,18 @@ export const FloatingAIAssistant: React.FC<FloatingAIAssistantProps> = ({
   // Decrypt and load AI Config
   useEffect(() => {
     const loadConfig = () => {
-      const savedConfigV3 = localStorage.getItem('profit_os_ai_config_v3');
-      if (savedConfigV3) {
-        try {
-          const bytes = CryptoJS.AES.decrypt(savedConfigV3, ENCRYPTION_SECRET);
-          const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
-          setAiConfigState({
-            provider: decryptedData.provider || 'gemini',
-            geminiKey: decryptedData.geminiKey || '',
-            openaiKey: decryptedData.openaiKey || '',
-            anthropicKey: decryptedData.anthropicKey || '',
-            deepseekKey: decryptedData.deepseekKey || '',
-            model: decryptedData.provider === 'openai' ? decryptedData.openaiModel :
-                   decryptedData.provider === 'anthropic' ? decryptedData.anthropicModel :
-                   decryptedData.provider === 'deepseek' ? decryptedData.deepseekModel :
-                   decryptedData.geminiModel,
-          });
-          return;
-        } catch (e) {
-          console.error("Failed to decrypt v3 config in floating advisor:", e);
-        }
-      }
-
-      const savedConfig = localStorage.getItem('profit_os_ai_config_v2');
-      if (savedConfig) {
-        try {
-          const bytes = CryptoJS.AES.decrypt(savedConfig, ENCRYPTION_SECRET);
-          const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
-          setAiConfigState({
-            provider: decryptedData.provider || 'gemini',
-            geminiKey: decryptedData.geminiKey || '',
-            openaiKey: decryptedData.openaiKey || '',
-            anthropicKey: decryptedData.anthropicKey || '',
-            deepseekKey: decryptedData.deepseekKey || '',
-          });
-        } catch (e) {
-          console.error("Failed to decrypt AI config in floating advisor:", e);
-        }
-      }
+      const cfg = getClientAIConfig();
+      setAiConfigState({
+        provider: cfg.provider || 'gemini',
+        geminiKey: cfg.geminiKey || '',
+        openaiKey: cfg.openaiKey || '',
+        anthropicKey: cfg.anthropicKey || '',
+        deepseekKey: cfg.deepseekKey || '',
+        model: cfg.provider === 'openai' ? cfg.openaiModel :
+               cfg.provider === 'anthropic' ? cfg.anthropicModel :
+               cfg.provider === 'deepseek' ? cfg.deepseekModel :
+               cfg.geminiModel,
+      });
     };
 
     loadConfig();
@@ -273,13 +248,14 @@ export const FloatingAIAssistant: React.FC<FloatingAIAssistantProps> = ({
           provider: activeProvider,
           model: activeModel,
           apiKey: activeApiKey,
+          apiKeys: activeProvider === 'gemini' ? getClientGeminiApiKeys() : undefined,
           context,
         }),
       });
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.error || `Error HTTP ${res.status}`);
+        throw new Error(cleanAiErrorMessage(errorJson.error || `Error HTTP ${res.status}`));
       }
 
       const data = await res.json();
@@ -287,7 +263,7 @@ export const FloatingAIAssistant: React.FC<FloatingAIAssistantProps> = ({
       setMessages(prev => [...prev, { role: 'ai', content: responseText, id: aiMessageId }]);
     } catch (err: any) {
       console.error("Gemini Error:", err);
-      setError(`Error: ${err.message || err.toString()}`);
+      setError(cleanAiErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

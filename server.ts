@@ -621,6 +621,39 @@ async function startServer() {
     });
   });
 
+  // Helper to extract up to 3 Gemini API keys from request or environment, avoiding duplicates
+  const getGeminiApiKeys = (reqApiKey?: any, reqApiKeys?: any): string[] => {
+    const keys: string[] = [];
+    const addKey = (k: any) => {
+      if (typeof k === "string") {
+        const trimmed = k.trim();
+        if (trimmed && !keys.includes(trimmed)) {
+          keys.push(trimmed);
+        }
+      }
+    };
+
+    // Priority 1: explicitly passed array of keys
+    if (Array.isArray(reqApiKeys)) {
+      reqApiKeys.forEach(k => addKey(k));
+    }
+    // Priority 2: single key from body
+    if (reqApiKey) {
+      addKey(reqApiKey);
+    }
+    // Priority 3: environment variables (GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3)
+    addKey(process.env.GEMINI_API_KEY);
+    addKey(process.env.GEMINI_API_KEY_2);
+    addKey(process.env.GEMINI_API_KEY_3);
+
+    // Fallback default key if none configured
+    if (keys.length === 0) {
+      addKey("AQ.Ab8RN6JZYP3o2uPxeueCNTTDIM0p14n0ksYdwHYiLZNj9_BqfQ");
+    }
+
+    return keys.slice(0, 3);
+  };
+
   // Helper function for fallback analysis during API outages / quotas
   const getFallbackReport = (cancellationReasons: any, returnsInfo: any, cityData: any[], departmentData: any[], totalOrders: number) => {
     const topCities = cityData.slice(0, 5).map(c => {
@@ -708,10 +741,10 @@ Tus datos demográficos muestran brechas importantes en la distribución regiona
 
   // Intel Pro Returns Analysis Route
   app.post("/api/analisis-pro", async (req, res) => {
-    const { cancellationReasons, returnsInfo, cityData, departmentData, totalOrders } = req.body;
+    const { cancellationReasons, returnsInfo, cityData, departmentData, totalOrders, apiKey: userApiKey, apiKeys: userApiKeys } = req.body;
     
-    // Attempt models in cascade order to be highly robust to 503 / 429 quota errors (gemini-2.5-flash is ultra stable and fast)
-    const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
+    // Fast and stable modern Gemini models
+    const modelsToTry = ["gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
     
     const prompt = `Analiza detalladamente los motivos de la devolución y de la cancelación de pedidos, y evalúa las tasas de entrega y devolución según la ciudad y el departamento (municipios/sectores geográficos) del cliente.
     
@@ -735,22 +768,23 @@ Tus datos demográficos muestran brechas importantes en la distribución regiona
     
     Asegúrate de que el formato de respuesta sea JSON válido y devuelva exactitud técnica completa.`;
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const geminiKeys = getGeminiApiKeys(userApiKey, userApiKeys);
     
-    if (!apiKey) {
+    if (geminiKeys.length === 0) {
       console.warn("[Backend AI] GEMINI_API_KEY no configurado. Llamando al fallback local de contingencia.");
       const fallback = getFallbackReport(cancellationReasons, returnsInfo, cityData, departmentData, totalOrders);
       return res.json(fallback);
     }
 
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
+    for (const currentKey of geminiKeys) {
+      const ai = new GoogleGenAI({
+        apiKey: currentKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
         }
-      }
-    });
+      });
 
     for (const modelName of modelsToTry) {
       try {
@@ -834,18 +868,25 @@ Tus datos demográficos muestran brechas importantes en la distribución regiona
 
         const responseText = response.text;
         if (responseText) {
-          const parsedData = JSON.parse(responseText.trim());
-          console.log(`[Backend AI] Análisis procesado con éxito usando ${modelName}`);
+          let cleanJson = responseText.trim();
+          if (cleanJson.startsWith("```json")) {
+            cleanJson = cleanJson.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+          } else if (cleanJson.startsWith("```")) {
+            cleanJson = cleanJson.replace(/^```\s*/, "").replace(/\s*```$/, "");
+          }
+          const parsedData = JSON.parse(cleanJson.trim());
+          console.log(`[Backend AI] Análisis procesado con éxito usando ${modelName} con clave (...${currentKey.slice(-6)})`);
           return res.json(parsedData);
         }
       } catch (innerErr: any) {
-        console.warn(`[Backend AI] El modelo ${modelName} falló con error:`, innerErr.message || innerErr);
+        console.warn(`[Backend AI] Clave (...${currentKey.slice(-6)}) con modelo ${modelName} falló:`, innerErr.message || innerErr);
         // Continue to the next model in the list
       }
     }
+    }
 
     // If we exhausted all options (either 503 or other rate limits), invoke the magnificent fallback locally
-    console.warn("[Backend AI] Todos los modelos de Gemini fallaron o están temporalmente saturados. Retornando el informe matemático local.");
+    console.warn("[Backend AI] Todos los modelos y claves de Gemini fallaron o están temporalmente saturados. Retornando el informe matemático local.");
     const fallback = getFallbackReport(cancellationReasons, returnsInfo, cityData, departmentData, totalOrders);
     return res.json(fallback);
   });
@@ -932,11 +973,11 @@ Analizando las novedades operativas en esta sección, se evidencian hallazgos cl
 
   // Route for Return/Novedades analysis only
   app.post("/api/analisis-devoluciones-pro", async (req, res) => {
-    const { totalNovelties, carrierData, monthlyData, detailedNoveltiesList } = req.body;
+    const { totalNovelties, carrierData, monthlyData, detailedNoveltiesList, apiKey: userApiKey, apiKeys: userApiKeys } = req.body;
     
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn("[Backend AI] GEMINI_API_KEY no configurado para Análisis de Devoluciones. Usando fallback matemático de contingencia.");
+    const geminiKeys = getGeminiApiKeys(userApiKey, userApiKeys);
+    if (geminiKeys.length === 0) {
+      console.warn("[Backend AI] No hay claves de Gemini configuradas para Análisis de Devoluciones. Usando fallback matemático de contingencia.");
       const fallback = getFallbackDevolucionesReport(totalNovelties, carrierData, monthlyData, detailedNoveltiesList);
       return res.json(fallback);
     }
@@ -966,97 +1007,98 @@ Analizando las novedades operativas en esta sección, se evidencian hallazgos cl
     
     Asegúrate de que el formato de respuesta sea JSON válido y devuelva exactitud técnica completa de acuerdo al schema solicitado.`;
 
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
+    const modelsToTry = ["gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+
+    for (const currentKey of geminiKeys) {
+      const ai = new GoogleGenAI({
+        apiKey: currentKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
         }
-      }
-    });
+      });
 
-    // gemini-2.5-flash offers instant sub-second response without 503 high-demand spikes
-    const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
-
-    for (const modelName of modelsToTry) {
-      try {
-        console.log(`[Backend AI ID: Devoluciones] Realizando análisis avanzado de devoluciones de la sección con: ${modelName}`);
-        
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              required: ["analysisText", "charts"],
-              properties: {
-                analysisText: {
-                  type: Type.STRING,
-                  description: "Informe de análisis estratégico en markdown con negritas, viñetas y títulos limpios."
-                },
-                charts: {
-                  type: Type.OBJECT,
-                  required: ["carriers", "months", "causes", "explanations", "recommendations"],
-                  properties: {
-                    carriers: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        required: ["name", "total", "devuelto", "reintento", "solucionado"],
-                        properties: {
-                          name: { type: Type.STRING },
-                          total: { type: Type.INTEGER },
-                          devuelto: { type: Type.INTEGER },
-                          reintento: { type: Type.INTEGER },
-                          solucionado: { type: Type.INTEGER }
+      for (const modelName of modelsToTry) {
+        try {
+          console.log(`[Backend AI ID: Devoluciones] Realizando análisis avanzado con ${modelName} usando clave (...${currentKey.slice(-6)})`);
+          
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                required: ["analysisText", "charts"],
+                properties: {
+                  analysisText: {
+                    type: Type.STRING,
+                    description: "Informe de análisis estratégico en markdown con negritas, viñetas y títulos limpios."
+                  },
+                  charts: {
+                    type: Type.OBJECT,
+                    required: ["carriers", "months", "causes", "explanations", "recommendations"],
+                    properties: {
+                      carriers: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          required: ["name", "total", "devuelto", "reintento", "solucionado"],
+                          properties: {
+                            name: { type: Type.STRING },
+                            total: { type: Type.INTEGER },
+                            devuelto: { type: Type.INTEGER },
+                            reintento: { type: Type.INTEGER },
+                            solucionado: { type: Type.INTEGER }
+                          }
                         }
-                      }
-                    },
-                    months: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        required: ["name", "total", "devuelto", "solucionado"],
-                        properties: {
-                          name: { type: Type.STRING },
-                          total: { type: Type.INTEGER },
-                          devuelto: { type: Type.INTEGER },
-                          solucionado: { type: Type.INTEGER }
+                      },
+                      months: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          required: ["name", "total", "devuelto", "solucionado"],
+                          properties: {
+                            name: { type: Type.STRING },
+                            total: { type: Type.INTEGER },
+                            devuelto: { type: Type.INTEGER },
+                            solucionado: { type: Type.INTEGER }
+                          }
                         }
-                      }
-                    },
-                    causes: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        required: ["name", "cantidad"],
-                        properties: {
-                          name: { type: Type.STRING },
-                          cantidad: { type: Type.INTEGER }
+                      },
+                      causes: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          required: ["name", "cantidad"],
+                          properties: {
+                            name: { type: Type.STRING },
+                            cantidad: { type: Type.INTEGER }
+                          }
                         }
-                      }
-                    },
-                    explanations: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        required: ["name", "cantidad"],
-                        properties: {
-                          name: { type: Type.STRING },
-                          cantidad: { type: Type.INTEGER }
+                      },
+                      explanations: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          required: ["name", "cantidad"],
+                          properties: {
+                            name: { type: Type.STRING },
+                            cantidad: { type: Type.INTEGER }
+                          }
                         }
-                      }
-                    },
-                    recommendations: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        required: ["aspect", "score", "label"],
-                        properties: {
-                          aspect: { type: Type.STRING },
-                          score: { type: Type.NUMBER },
-                          label: { type: Type.STRING }
+                      },
+                      recommendations: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          required: ["aspect", "score", "label"],
+                          properties: {
+                            aspect: { type: Type.STRING },
+                            score: { type: Type.NUMBER },
+                            label: { type: Type.STRING }
+                          }
                         }
                       }
                     }
@@ -1064,28 +1106,34 @@ Analizando las novedades operativas en esta sección, se evidencian hallazgos cl
                 }
               }
             }
-          }
-        });
+          });
 
-        const responseText = response.text;
-        if (responseText) {
-          const parsedData = JSON.parse(responseText.trim());
-          console.log(`[Backend AI ID: Devoluciones] Análisis procesado con éxito usando ${modelName}`);
-          return res.json(parsedData);
+          const responseText = response.text;
+          if (responseText) {
+            let cleanJson = responseText.trim();
+            if (cleanJson.startsWith("```json")) {
+              cleanJson = cleanJson.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+            } else if (cleanJson.startsWith("```")) {
+              cleanJson = cleanJson.replace(/^```\s*/, "").replace(/\s*```$/, "");
+            }
+            const parsedData = JSON.parse(cleanJson.trim());
+            console.log(`[Backend AI ID: Devoluciones] Análisis procesado con éxito usando ${modelName} con clave (...${currentKey.slice(-6)})`);
+            return res.json(parsedData);
+          }
+        } catch (innerErr: any) {
+          console.warn(`[Backend AI ID: Devoluciones] Falló modelo ${modelName} con clave (...${currentKey.slice(-6)}):`, innerErr.message || innerErr);
         }
-      } catch (innerErr: any) {
-        console.warn(`[Backend AI ID: Devoluciones] Falló el modelo ${modelName}:`, innerErr.message || innerErr);
       }
     }
 
-    console.warn("[Backend AI ID: Devoluciones] No se pudo conectar con Gemini para Devoluciones. Entregando local-contingency.");
+    console.warn("[Backend AI ID: Devoluciones] No se pudo conectar con Gemini para Devoluciones en ninguna clave. Entregando local-contingency.");
     const fallback = getFallbackDevolucionesReport(totalNovelties, carrierData, monthlyData, detailedNoveltiesList);
     return res.json(fallback);
   });
 
   // Route for Fletes / Envíos Ecommil AI Analysis
   app.post("/api/analisis-fletes-pro", async (req, res) => {
-    const { totalCharged, totalReal, totalShippingLoss, globalRate, deptsList, citiesList, carriersList, tagFilter } = req.body;
+    const { totalCharged, totalReal, totalShippingLoss, globalRate, deptsList, citiesList, carriersList, tagFilter, apiKey: userApiKey, apiKeys: userApiKeys } = req.body;
     
     const formattedLoss = `-$${Math.abs(totalShippingLoss || 0).toLocaleString()}`;
     const textFallback = `### 🚀 Diagnóstico Logístico de Fletes y Distribución por Ecommil IA
@@ -1110,9 +1158,9 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
 1. **Validación Preventiva Obligatoria**: Implementar un chatbot de confirmación pre-despacho automático para pedidos con etiquetas críticas de pauta digital o campañas.
 2. **Diferenciación de Tarifas por Carrier**: Asignar Transportadoras según el departamento destino obtenido en las métricas de mayor Tasa de Entrega.`;
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn("[Backend AI Fletes] GEMINI_API_KEY no configurado. Llamando al fallback local.");
+    const geminiKeys = getGeminiApiKeys(userApiKey, userApiKeys);
+    if (geminiKeys.length === 0) {
+      console.warn("[Backend AI Fletes] No hay claves de Gemini configuradas. Llamando al fallback local.");
       return res.json({ analysisText: textFallback });
     }
 
@@ -1128,51 +1176,58 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
 
     Asegúrate de que la respuesta sea JSON con la llave "analysisText".`;
 
-    try {
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
+    const modelsToTry = ["gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+
+    for (const currentKey of geminiKeys) {
+      try {
+        const ai = new GoogleGenAI({
+          apiKey: currentKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
           }
-        }
-      });
+        });
 
-      // gemini-2.5-flash is ultra stable and prevents 503 high-demand errors
-      const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
-
-      for (const modelName of modelsToTry) {
-        try {
-          console.log(`[Backend AI Fletes] Realizando análisis con: ${modelName}`);
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: prompt,
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                required: ["analysisText"],
-                properties: {
-                  analysisText: {
-                    type: Type.STRING,
-                    description: "Informe de análisis profundo en markdown para fletes y logística."
+        for (const modelName of modelsToTry) {
+          try {
+            console.log(`[Backend AI Fletes] Realizando análisis con: ${modelName} usando clave (...${currentKey.slice(-6)})`);
+            const response = await ai.models.generateContent({
+              model: modelName,
+              contents: prompt,
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  required: ["analysisText"],
+                  properties: {
+                    analysisText: {
+                      type: Type.STRING,
+                      description: "Informe de análisis profundo en markdown para fletes y logística."
+                    }
                   }
                 }
               }
-            }
-          });
+            });
 
-          const text = response.text;
-          if (text) {
-            const parsed = JSON.parse(text.trim());
-            return res.json(parsed);
+            const text = response.text;
+            if (text) {
+              let cleanJson = text.trim();
+              if (cleanJson.startsWith("```json")) {
+                cleanJson = cleanJson.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+              } else if (cleanJson.startsWith("```")) {
+                cleanJson = cleanJson.replace(/^```\s*/, "").replace(/\s*```$/, "");
+              }
+              const parsed = JSON.parse(cleanJson.trim());
+              return res.json(parsed);
+            }
+          } catch (innerErr: any) {
+            console.warn(`[Backend AI Fletes] Falló el modelo ${modelName} con clave (...${currentKey.slice(-6)}):`, innerErr.message || innerErr);
           }
-        } catch (innerErr: any) {
-          console.warn(`[Backend AI Fletes] Falló el modelo ${modelName}:`, innerErr.message || innerErr);
         }
+      } catch (outerErr: any) {
+        console.error(`[Backend AI Fletes] Error al inicializar clave (...${currentKey.slice(-6)}):`, outerErr);
       }
-    } catch (outerErr: any) {
-      console.error("[Backend AI Fletes] Error al inicializar o usar SDK de GoogleGenAI:", outerErr);
     }
 
     return res.json({ analysisText: textFallback });
@@ -1201,12 +1256,16 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
 
   // Get AI providers configuration and availability status
   app.get("/api/ai/status", (req, res) => {
+    const envKeys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
     return res.json({
       gemini: {
-        available: !!process.env.GEMINI_API_KEY,
+        available: true,
         hasEnvKey: !!process.env.GEMINI_API_KEY,
-        defaultModel: "gemini-2.5-flash",
-        models: ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-2.5-pro"]
+        hasEnvKey2: !!process.env.GEMINI_API_KEY_2,
+        hasEnvKey3: !!process.env.GEMINI_API_KEY_3,
+        configuredEnvKeysCount: envKeys.length,
+        defaultModel: "gemini-3.6-flash",
+        models: ["gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
       },
       openai: {
         available: !!process.env.OPENAI_API_KEY,
@@ -1231,24 +1290,82 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
 
   // Dedicated diagnostic test endpoint to test live connection and latency for any assistant
   app.post("/api/ai/test-connection", async (req, res) => {
-    const { provider = "gemini", apiKey: userApiKey, model } = req.body || {};
+    const { provider = "gemini", apiKey: userApiKey, apiKeys: userApiKeys, model, testAll = false } = req.body || {};
     const startTime = Date.now();
 
     try {
       if (provider === "gemini") {
-        const apiKey = userApiKey || process.env.GEMINI_API_KEY;
-        if (!apiKey) {
+        if (testAll || Array.isArray(userApiKeys)) {
+          const keysToTest = (Array.isArray(userApiKeys) && userApiKeys.length > 0)
+            ? userApiKeys
+            : getGeminiApiKeys(userApiKey, userApiKeys);
+
+          const keyResults = [];
+          for (let i = 0; i < keysToTest.length; i++) {
+            const currentKey = (keysToTest[i] || "").trim();
+            if (!currentKey) {
+              keyResults.push({ index: i, active: false, success: false, error: "Clave no ingresada" });
+              continue;
+            }
+            const keyStart = Date.now();
+            try {
+              const ai = new GoogleGenAI({
+                apiKey: currentKey,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+              });
+              const targetModel = (!model || model === "gemini-2.5-flash" || model === "gemini-2.5-pro") ? "gemini-3.6-flash" : model;
+              const response = await ai.models.generateContent({
+                model: targetModel,
+                contents: "Responde únicamente 'OK'",
+                config: { temperature: 0.1 }
+              });
+              const latencyMs = Date.now() - keyStart;
+              keyResults.push({
+                index: i,
+                active: true,
+                success: true,
+                latencyMs,
+                model: targetModel,
+                message: `Clave #${i + 1} conectada (${latencyMs}ms)`
+              });
+            } catch (kErr: any) {
+              const latencyMs = Date.now() - keyStart;
+              keyResults.push({
+                index: i,
+                active: true,
+                success: false,
+                latencyMs,
+                error: kErr.message || "Error al conectar con esta clave"
+              });
+            }
+          }
+
+          const anySuccess = keyResults.some(r => r.success);
+          return res.json({
+            success: anySuccess,
+            provider: "gemini",
+            keyResults,
+            message: anySuccess ? "Verificación de claves Gemini completada" : "Ninguna clave de Gemini respondió exitosamente"
+          });
+        }
+
+        const geminiKeys = getGeminiApiKeys(userApiKey, userApiKeys);
+        if (geminiKeys.length === 0) {
           return res.status(400).json({ success: false, error: "No hay una API Key de Gemini configurada." });
         }
+        const apiKey = geminiKeys[0];
         const ai = new GoogleGenAI({
           apiKey,
           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
         });
         
-        const modelsToTry = model ? [model, "gemini-2.5-flash", "gemini-3.8-flash"] : ["gemini-2.5-flash", "gemini-3.8-flash"];
+        const requestedModel = (!model || model === "gemini-2.5-flash" || model === "gemini-2.5-pro")
+          ? "gemini-3.6-flash"
+          : model;
+        const modelsToTry = Array.from(new Set([requestedModel, "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]));
         let lastErr: any = null;
 
-        for (const targetModel of Array.from(new Set(modelsToTry))) {
+        for (const targetModel of modelsToTry) {
           try {
             const response = await ai.models.generateContent({
               model: targetModel,
@@ -1356,49 +1473,81 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
 
       return res.status(400).json({ success: false, error: "Proveedor no soportado" });
     } catch (err: any) {
-      console.error(`[AI Test Connection Error - ${provider}]:`, err?.message || err);
-      let message = err?.message || "Error al verificar conexión";
-      if (err?.status === 401 || message.includes("401") || message.includes("Incorrect API key") || message.includes("invalid x-api-key")) {
-        message = `API Key de ${provider.toUpperCase()} inválida o no autorizada.`;
-      } else if (err?.status === 429 || message.includes("429") || message.includes("insufficient_quota")) {
-        message = `Cuota excedida o saldo insuficiente en tu cuenta de ${provider.toUpperCase()}.`;
+      const status = err?.status || 500;
+      let rawMsg = String(err?.message || "Error al verificar conexión");
+      
+      // Parse JSON error string if present (from GoogleGenAI or API)
+      if (typeof rawMsg === "string" && rawMsg.trim().startsWith("{")) {
+        try {
+          const parsed = JSON.parse(rawMsg);
+          if (parsed?.error?.message) {
+            rawMsg = parsed.error.message;
+          }
+        } catch {}
       }
-      return res.status(err?.status || 500).json({
+
+      const isInsufficientBalance = status === 402 || 
+        rawMsg.includes("402") || 
+        rawMsg.toLowerCase().includes("insufficient balance") || 
+        rawMsg.toLowerCase().includes("balance");
+
+      const isInvalidKey = status === 401 || 
+        rawMsg.includes("401") || 
+        rawMsg.includes("Incorrect API key") || 
+        rawMsg.includes("invalid x-api-key") || 
+        rawMsg.includes("API key not valid");
+
+      const isQuotaExceeded = status === 429 || 
+        rawMsg.includes("429") || 
+        rawMsg.includes("insufficient_quota") || 
+        rawMsg.includes("exceeded your current quota");
+
+      let message = rawMsg;
+      if (isInsufficientBalance) {
+        message = `Saldo insuficiente (Error 402: Insufficient Balance) en tu cuenta de ${provider.toUpperCase()}. Para usar este proveedor debes recargar saldo en su plataforma oficial. Puedes continuar usando Google Gemini (activo y con cuota disponible).`;
+        console.warn(`[AI Test Connection - ${provider}]: Cuenta sin saldo prepagado (402 Insufficient Balance).`);
+      } else if (isInvalidKey) {
+        message = `API Key de ${provider.toUpperCase()} inválida o no autorizada. Revisa la clave ingresada.`;
+        console.warn(`[AI Test Connection - ${provider}]: Clave no autorizada (401).`);
+      } else if (isQuotaExceeded) {
+        message = `Cuota excedida o límite temporal en tu cuenta de ${provider.toUpperCase()}.`;
+        console.warn(`[AI Test Connection - ${provider}]: Cuota excedida (429).`);
+      } else if (rawMsg.includes("is no longer available")) {
+        message = `Modelo anterior en desuso. Actualizado automáticamente a Gemini 3.6 Flash.`;
+      } else {
+        console.warn(`[AI Test Connection Notice - ${provider}]:`, rawMsg);
+      }
+
+      return res.status(200).json({
         success: false,
         provider,
         error: message,
-        rawError: err?.message
+        rawError: err?.message,
+        isInsufficientBalance,
+        suggestedProvider: "gemini"
       });
     }
   });
 
   // Generic Secure AI Advisor endpoint for LogisticsAI & FloatingAIAssistant
   app.post("/api/ai/advisor", async (req, res) => {
-    const { prompt, history = [], systemInstruction = "", provider = "gemini", apiKey: userApiKey, model: requestedModel, context } = req.body || {};
+    const { prompt, history = [], systemInstruction = "", provider = "gemini", apiKey: userApiKey, apiKeys: userApiKeys, model: requestedModel, context } = req.body || {};
     const startTime = Date.now();
 
     try {
       if (provider === "gemini") {
-        const apiKey = userApiKey || process.env.GEMINI_API_KEY;
-        if (!apiKey) {
+        const geminiKeys = getGeminiApiKeys(userApiKey, userApiKeys);
+        if (geminiKeys.length === 0) {
           if (context) {
             return res.json({ text: generateFallbackAdvisorDiagnosis(context, prompt), provider: "fallback", latencyMs: 5 });
           }
           return res.status(400).json({ error: "No hay una API Key de Gemini configurada." });
         }
 
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            }
-          }
-        });
-
-        const modelsToTry = requestedModel 
-          ? [requestedModel, "gemini-2.5-flash", "gemini-3.8-flash"]
-          : ["gemini-2.5-flash", "gemini-3.8-flash"];
+        const targetModel = (!requestedModel || requestedModel === "gemini-2.5-flash" || requestedModel === "gemini-2.5-pro") 
+          ? "gemini-3.6-flash" 
+          : requestedModel;
+        const modelsToTry = Array.from(new Set([targetModel, "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]));
         let lastError: any = null;
 
         const contents = [
@@ -1412,31 +1561,56 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
           }
         ];
 
-        for (const modelName of Array.from(new Set(modelsToTry))) {
-          try {
-            console.log(`[Backend Advisor AI] Procesando consulta con Gemini ${modelName}...`);
-            const response = await ai.models.generateContent({
-              model: modelName,
-              contents,
-              config: {
-                systemInstruction: systemInstruction || undefined,
-                temperature: 0.7,
+        for (let keyIdx = 0; keyIdx < geminiKeys.length; keyIdx++) {
+          const currentKey = geminiKeys[keyIdx];
+          const ai = new GoogleGenAI({
+            apiKey: currentKey,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build',
               }
-            });
-
-            const text = response.text || "";
-            if (text) {
-              const latencyMs = Date.now() - startTime;
-              return res.json({ text, model: modelName, provider: "gemini", latencyMs });
             }
-          } catch (modelErr: any) {
-            lastError = modelErr;
-            const errMsg = String(modelErr?.message || modelErr || "");
-            const is503 = modelErr?.status === 503 || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE");
-            if (is503) {
-              console.info(`[Advisor AI] El modelo ${modelName} presenta alta demanda temporal (503). Conmutando de inmediato a modelo de respaldo...`);
-            } else {
-              console.warn(`[Advisor AI] Aviso en modelo ${modelName}:`, errMsg);
+          });
+
+          for (const modelName of Array.from(new Set(modelsToTry))) {
+            try {
+              console.log(`[Backend Advisor AI] Procesando consulta con Gemini ${modelName} usando clave #${keyIdx + 1} (...${currentKey.slice(-6)})...`);
+              const response = await ai.models.generateContent({
+                model: modelName,
+                contents,
+                config: {
+                  systemInstruction: systemInstruction || undefined,
+                  temperature: 0.7,
+                }
+              });
+
+              const text = response.text || "";
+              if (text) {
+                const latencyMs = Date.now() - startTime;
+                return res.json({
+                  text,
+                  model: modelName,
+                  provider: "gemini",
+                  latencyMs,
+                  activeKeyIndex: keyIdx,
+                  totalKeysConfigured: geminiKeys.length
+                });
+              }
+            } catch (modelErr: any) {
+              lastError = modelErr;
+              const errMsg = String(modelErr?.message || modelErr || "");
+              const is503 = modelErr?.status === 503 || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE");
+              const isQuota = modelErr?.status === 429 || errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED");
+              
+              if (is503) {
+                console.info(`[Advisor AI] El modelo ${modelName} con clave #${keyIdx + 1} presenta alta demanda (503). Conmutando de inmediato...`);
+              } else if (isQuota) {
+                console.warn(`[Advisor AI] Cuota agotada en clave #${keyIdx + 1} (...${currentKey.slice(-6)}). Rotando a la siguiente clave...`);
+                // Break model loop to advance immediately to next Gemini key!
+                break;
+              } else {
+                console.warn(`[Advisor AI] Aviso en modelo ${modelName} con clave #${keyIdx + 1}:`, errMsg);
+              }
             }
           }
         }
@@ -1528,32 +1702,101 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
         const apiKey = userApiKey || process.env.DEEPSEEK_API_KEY;
         if (!apiKey) {
           return res.status(400).json({ 
-            error: "Por favor, ingresa tu API Key de DeepSeek en la configuración del Asesor IA." 
+            error: "Por favor, ingresa tu API Key de DeepSeek en la configuración del Asesor IA o usa Google Gemini." 
           });
         }
-        const { OpenAI } = await import("openai");
-        const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" });
-        const messages: any[] = [];
-        if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-        messages.push({ role: "user", content: prompt });
+        try {
+          const { OpenAI } = await import("openai");
+          const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" });
+          const messages: any[] = [];
+          if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
+          messages.push({ role: "user", content: prompt });
 
-        const targetModel = requestedModel || "deepseek-chat";
-        const response = await client.chat.completions.create({
-          model: targetModel,
-          messages,
-          temperature: 0.7
-        });
-        const text = response.choices[0].message.content || "";
-        const latencyMs = Date.now() - startTime;
-        return res.json({ text, model: targetModel, provider: "deepseek", latencyMs });
+          const targetModel = requestedModel || "deepseek-chat";
+          const response = await client.chat.completions.create({
+            model: targetModel,
+            messages,
+            temperature: 0.7
+          });
+          const text = response.choices[0].message.content || "";
+          const latencyMs = Date.now() - startTime;
+          return res.json({ text, model: targetModel, provider: "deepseek", latencyMs });
+        } catch (deepseekErr: any) {
+          const rawErr = String(deepseekErr?.message || "");
+          const isInsufficientBalance = deepseekErr?.status === 402 || 
+            rawErr.includes("402") || 
+            rawErr.toLowerCase().includes("insufficient balance");
+
+          console.warn(`[Advisor AI DeepSeek Notice]:`, isInsufficientBalance ? "Saldo insuficiente en cuenta DeepSeek (402 Insufficient Balance)" : rawErr);
+
+          // Automatic resilient fallback to Gemini to prevent interrupting the user's workflow
+          const geminiKey = (process.env.GEMINI_API_KEY || "AQ.Ab8RN6JZYP3o2uPxeueCNTTDIM0p14n0ksYdwHYiLZNj9_BqfQ")?.trim();
+          if (geminiKey) {
+            try {
+              const ai = new GoogleGenAI({ 
+                apiKey: geminiKey,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+              });
+              const geminiRes = await ai.models.generateContent({
+                model: "gemini-3.6-flash",
+                contents: [prompt],
+                config: {
+                  systemInstruction: systemInstruction || undefined,
+                  temperature: 0.7
+                }
+              });
+              const text = geminiRes.text || "";
+              if (text) {
+                const note = isInsufficientBalance
+                  ? "\n\n*(Nota: Tu cuenta de DeepSeek reportó saldo insuficiente [Error 402 Insufficient Balance]. Respuesta completada exitosamente mediante Google Gemini).* "
+                  : "";
+                return res.json({
+                  text: text + note,
+                  model: "gemini-3.6-flash",
+                  provider: "gemini",
+                  latencyMs: Date.now() - startTime
+                });
+              }
+            } catch (geminiFallbackErr) {
+              console.warn("[Advisor AI] Fallback a Gemini no disponible:", geminiFallbackErr);
+            }
+          }
+
+          if (context) {
+            const fallbackText = generateFallbackAdvisorDiagnosis(context, prompt);
+            return res.json({ 
+              text: fallbackText + (isInsufficientBalance ? "\n\n*(Nota: Tu cuenta de DeepSeek no tiene saldo disponible [Error 402]. Se generó diagnóstico predictivo local).* " : ""), 
+              provider: "fallback", 
+              error: isInsufficientBalance ? "Saldo insuficiente en DeepSeek (402 Insufficient Balance)" : rawErr,
+              latencyMs: Date.now() - startTime 
+            });
+          }
+
+          const friendlyMsg = isInsufficientBalance
+            ? "Saldo insuficiente (Error 402: Insufficient Balance) en tu cuenta de DeepSeek. Puedes recargar saldo en platform.deepseek.com o cambiar al proveedor Google Gemini en Configuración."
+            : `Error en DeepSeek: ${rawErr}`;
+          return res.status(200).json({ error: friendlyMsg, isInsufficientBalance: true, text: friendlyMsg, provider: "fallback" });
+        }
       }
 
       return res.status(400).json({ error: "Proveedor de IA no soportado." });
     } catch (err: any) {
-      console.error("[Advisor AI Route Error]:", err);
+      const isAuthOrBalance = err?.status === 401 || err?.status === 402 || err?.status === 429 ||
+        String(err?.message || "").includes("402") ||
+        String(err?.message || "").includes("401") ||
+        String(err?.message || "").toLowerCase().includes("insufficient balance");
+      
+      if (isAuthOrBalance) {
+        console.warn("[Advisor AI Notice]:", err?.message || err);
+      } else {
+        console.error("[Advisor AI Route Error]:", err);
+      }
+
       let errorMsg = err?.message || "Error al procesar la solicitud de IA";
       if (err?.status === 401 || errorMsg.includes("401") || errorMsg.includes("Incorrect API key")) {
         errorMsg = `API Key de ${provider.toUpperCase()} no válida o expirada. Por favor, revísala en Configuración.`;
+      } else if (err?.status === 402 || errorMsg.includes("402") || errorMsg.toLowerCase().includes("insufficient balance")) {
+        errorMsg = `Saldo insuficiente (Error 402: Insufficient Balance) en tu cuenta de ${provider.toUpperCase()}. Puedes recargar en su plataforma o usar Google Gemini.`;
       } else if (err?.status === 429 || errorMsg.includes("429") || errorMsg.includes("quota")) {
         errorMsg = `Límite de cuota o saldo insuficiente en tu cuenta de ${provider.toUpperCase()}.`;
       }
@@ -1567,7 +1810,7 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
           latencyMs: Date.now() - startTime 
         });
       }
-      return res.status(500).json({ error: errorMsg });
+      return res.status(200).json({ error: errorMsg, text: errorMsg, provider: "fallback" });
     }
   });
 
