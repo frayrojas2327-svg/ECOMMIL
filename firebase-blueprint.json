@@ -242,6 +242,24 @@
         "timestamp": { "type": "number" }
       },
       "required": ["uid", "date", "month", "platform", "campaignType", "spend", "salesCount"]
+    },
+    "PlatformExpensesConfig": {
+      "title": "Platform Expenses Configuration",
+      "description": "User persistent fixed and variable operational platform expenses across devices",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "fixedExpenses": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "variableExpenses": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "fixedExpenses", "variableExpenses", "updatedAt"]
     }
   },
   "firestore": {
@@ -288,6 +306,10 @@
     "ad_panel_logs/{logId}": {
       "schema": "AdPanelLog",
       "description": "Collection of daily advertising logs from the Ad Panel"
+    },
+    "platform_expenses/{userId}": {
+      "schema": "PlatformExpensesConfig",
+      "description": "User persistent fixed and variable operational platform expenses configured in the platform expenses tab"
     }
   }
 }

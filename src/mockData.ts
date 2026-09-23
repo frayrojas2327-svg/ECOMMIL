@@ -21,6 +21,8 @@ export interface Order {
   trackingId?: string;
   cancellationReason?: string;
   isFavorite?: boolean;
+  uploadBatchId?: string;
+  uploadFileName?: string;
   
   // High detail logistics fields
   fechaReporte?: string;
@@ -97,22 +99,55 @@ const PRODUCTS = [
 ];
 
 const PROVIDERS = ['AliExpress Direct', 'CJ Dropshipping', 'Local Warehouse', 'Wiio'];
-export const parseFlexibleDate = (dateStr: string | Date | null | undefined): Date | null => {
-  if (!dateStr) return null;
+export const parseFlexibleDate = (dateStr: string | number | Date | null | undefined): Date | null => {
+  if (dateStr === null || dateStr === undefined || dateStr === '') return null;
   if (dateStr instanceof Date) {
     return isNaN(dateStr.getTime()) ? null : dateStr;
   }
+
+  // Handle Excel serial date numbers (e.g., 45550 -> 2024-09-15)
+  if (typeof dateStr === 'number') {
+    if (dateStr > 25569 && dateStr < 80000) {
+      const utcDays = dateStr - 25569;
+      const ms = Math.round(utcDays * 86400 * 1000);
+      const d = new Date(ms);
+      // Adjust timezone offset so it matches local date
+      const localDate = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+      return isNaN(localDate.getTime()) ? null : localDate;
+    }
+  }
+
   const str = String(dateStr).trim();
   if (!str || str === '---' || str === 'undefined' || str === 'null') return null;
 
+  // Check if string is purely an Excel numeric serial (e.g. "45550")
+  if (/^\d{5}(\.\d+)?$/.test(str)) {
+    const num = parseFloat(str);
+    if (num > 25569 && num < 80000) {
+      const utcDays = num - 25569;
+      const ms = Math.round(utcDays * 86400 * 1000);
+      const d = new Date(ms);
+      const localDate = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+      return isNaN(localDate.getTime()) ? null : localDate;
+    }
+  }
+
   // Handle YYYY-MM-DD or YYYY-MM-DD HH:mm:ss or ISO strings
-  if (str.includes('-') && str.split('-')[0].length === 4) {
+  if (str.includes('-')) {
     const parts = str.split(/[T ]/);
     const dateParts = parts[0].split('-').map(Number);
     if (dateParts.length === 3) {
-      const year = dateParts[0];
-      const month = dateParts[1] - 1;
-      const day = dateParts[2];
+      let year = dateParts[0];
+      let month = dateParts[1] - 1;
+      let day = dateParts[2];
+      
+      // If DD-MM-YYYY format
+      if (dateParts[2] > 1000) {
+        year = dateParts[2];
+        month = dateParts[1] - 1;
+        day = dateParts[0];
+      }
+
       let hours = 0, minutes = 0, seconds = 0;
       if (parts[1]) {
         const timeParts = parts[1].split(':').map(Number);
@@ -121,18 +156,39 @@ export const parseFlexibleDate = (dateStr: string | Date | null | undefined): Da
         seconds = timeParts[2] || 0;
       }
       const d = new Date(year, month, day, hours, minutes, seconds);
-      return isNaN(d.getTime()) ? null : d;
+      if (!isNaN(d.getTime())) return d;
     }
   }
 
-  // Handle DD/MM/YYYY or DD/MM/YYYY HH:mm:ss
+  // Handle DD/MM/YYYY or YYYY/MM/DD or MM/DD/YYYY
   if (str.includes('/')) {
     const parts = str.split(' ');
     const dateParts = parts[0].split('/').map(Number);
     if (dateParts.length === 3) {
-      const day = dateParts[0];
-      const month = dateParts[1] - 1;
-      const year = dateParts[2];
+      let year = dateParts[2];
+      let month = dateParts[1] - 1;
+      let day = dateParts[0];
+
+      if (dateParts[0] > 1000) {
+        // YYYY/MM/DD
+        year = dateParts[0];
+        month = dateParts[1] - 1;
+        day = dateParts[2];
+      } else if (dateParts[2] > 1000) {
+        // DD/MM/YYYY or MM/DD/YYYY
+        if (dateParts[0] > 12 && dateParts[1] <= 12) {
+          day = dateParts[0];
+          month = dateParts[1] - 1;
+        } else if (dateParts[1] > 12 && dateParts[0] <= 12) {
+          month = dateParts[0] - 1;
+          day = dateParts[1];
+        } else {
+          day = dateParts[0];
+          month = dateParts[1] - 1;
+        }
+        year = dateParts[2];
+      }
+
       let hours = 0, minutes = 0, seconds = 0;
       if (parts[1]) {
         const timeParts = parts[1].split(':').map(Number);
@@ -141,7 +197,7 @@ export const parseFlexibleDate = (dateStr: string | Date | null | undefined): Da
         seconds = timeParts[2] || 0;
       }
       const d = new Date(year, month, day, hours, minutes, seconds);
-      return isNaN(d.getTime()) ? null : d;
+      if (!isNaN(d.getTime())) return d;
     }
   }
 

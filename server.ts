@@ -1529,6 +1529,131 @@ Hemos procesado tus envíos utilizando algoritmos avanzados de IA para evaluar l
     }
   });
 
+  // Multi-Turn Gemini Chat Endpoint with role/systemInstruction and model switching
+  app.post("/api/ai/chat", async (req, res) => {
+    const { 
+      message, 
+      history = [], 
+      systemInstruction = "", 
+      model = "gemini-3.8-flash", 
+      apiKey: userApiKey, 
+      apiKeys: userApiKeys,
+      context 
+    } = req.body || {};
+    const startTime = Date.now();
+
+    try {
+      const geminiKeys = getGeminiApiKeys(userApiKey, userApiKeys);
+      if (geminiKeys.length === 0) {
+        if (context) {
+          return res.json({ 
+            text: generateFallbackAdvisorDiagnosis(context, message || "Resumen"), 
+            role: "model",
+            model: "fallback", 
+            latencyMs: 5 
+          });
+        }
+        return res.status(400).json({ error: "No se encontró una API Key de Gemini configurada." });
+      }
+
+      // Model priority mapping:
+      // - Complex tasks: gemini-3.1-pro-preview
+      // - General tasks: gemini-3.5-flash / gemini-3.8-flash
+      // - Fast tasks: gemini-3.1-flash-lite
+      const requestedModel = model || "gemini-3.8-flash";
+      const modelsToTry = Array.from(new Set([
+        requestedModel,
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-pro-preview"
+      ]));
+
+      const contents = [
+        ...history.map((h: any) => ({
+          role: h.role === "user" ? "user" : "model",
+          parts: [{ text: h.content || (h.parts && h.parts[0]?.text) || "" }]
+        })),
+        {
+          role: "user",
+          parts: [{ text: message }]
+        }
+      ];
+
+      let lastError: any = null;
+
+      for (let keyIdx = 0; keyIdx < geminiKeys.length; keyIdx++) {
+        const currentKey = geminiKeys[keyIdx];
+        const ai = new GoogleGenAI({
+          apiKey: currentKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
+          }
+        });
+
+        for (const modelName of modelsToTry) {
+          try {
+            console.log(`[Gemini Chat] Procesando turno con modelo ${modelName} usando clave #${keyIdx + 1}...`);
+            const response = await ai.models.generateContent({
+              model: modelName,
+              contents,
+              config: {
+                systemInstruction: systemInstruction || undefined,
+                temperature: 0.7,
+              }
+            });
+
+            const text = response.text || "";
+            if (text) {
+              const latencyMs = Date.now() - startTime;
+              return res.json({
+                text,
+                role: "model",
+                model: modelName,
+                latencyMs,
+                id: "ai-" + Date.now(),
+                activeKeyIndex: keyIdx,
+                totalKeysConfigured: geminiKeys.length
+              });
+            }
+          } catch (modelErr: any) {
+            lastError = modelErr;
+            const errMsg = String(modelErr?.message || modelErr || "");
+            const is503 = modelErr?.status === 503 || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE");
+            const isQuota = modelErr?.status === 429 || errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED");
+
+            if (is503) {
+              console.info(`[Gemini Chat] Modelo ${modelName} en alta demanda (503). Conmutando...`);
+            } else if (isQuota) {
+              console.warn(`[Gemini Chat] Cuota agotada en clave #${keyIdx + 1}. Probando siguiente clave...`);
+              break;
+            } else {
+              console.warn(`[Gemini Chat] Error con ${modelName} (clave #${keyIdx + 1}):`, errMsg);
+            }
+          }
+        }
+      }
+
+      if (context) {
+        const fallbackText = generateFallbackAdvisorDiagnosis(context, message);
+        return res.json({
+          text: fallbackText,
+          role: "model",
+          model: "fallback",
+          error: lastError?.message,
+          latencyMs: Date.now() - startTime
+        });
+      }
+
+      return res.status(500).json({ error: lastError?.message || "Error al comunicarse con Gemini" });
+    } catch (error: any) {
+      console.error("[Gemini Chat Endpoint Error]", error);
+      return res.status(500).json({ error: error?.message || "Error interno en el servidor de chat" });
+    }
+  });
+
   // Generic Secure AI Advisor endpoint for LogisticsAI & FloatingAIAssistant
   app.post("/api/ai/advisor", async (req, res) => {
     const { prompt, history = [], systemInstruction = "", provider = "gemini", apiKey: userApiKey, apiKeys: userApiKeys, model: requestedModel, context } = req.body || {};

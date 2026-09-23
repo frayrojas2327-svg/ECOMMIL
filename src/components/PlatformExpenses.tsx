@@ -7,9 +7,12 @@ import {
   Save,
   Check,
   Table as TableIcon,
-  Globe
+  Globe,
+  CloudCheck,
+  Cloud
 } from 'lucide-react';
 import { CurrencyCode } from '../mockData';
+import { useAuth } from './Auth';
 
 interface FixedExpense {
   id: string;
@@ -123,6 +126,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
     }).format(rawVal);
   };
 
+  const { user } = useAuth();
   const [isSaved, setIsSaved] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -212,10 +216,14 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
   }, 0);
 
   const handleSave = () => {
+    // Save to local storage as fallback and trigger state propagation for cloud sync
     localStorage.setItem('ecommil_fixed_expenses', JSON.stringify(fixedExpenses));
     localStorage.setItem('ecommil_variable_expenses', JSON.stringify(variableExpenses));
+    // Trigger setFixedExpenses and setVariableExpenses to propagate to Firestore
+    setFixedExpenses([...fixedExpenses]);
+    setVariableExpenses([...variableExpenses]);
     setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+    setTimeout(() => setIsSaved(false), 2500);
     
     // Scroll to table view
     const tableView = document.getElementById('excel-table-view');
@@ -228,10 +236,21 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
     <div className="space-y-[15px]">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
-            <CreditCard className="text-neon" size={28} /> Gastos de Plataforma
-          </h2>
-          <p className="text-slate-400 mt-1">Configura tus costos y visualiza el impacto en la tabla inferior.</p>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
+              <CreditCard className="text-neon" size={28} /> Gastos de Plataforma
+            </h2>
+            {user ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-neon/10 text-neon border border-neon/30 shadow-[0_0_10px_rgba(34,197,94,0.15)]">
+                <CloudCheck size={13} className="text-neon" /> Sincronizado en la Nube
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                <Cloud size={13} /> Modo Local
+              </span>
+            )}
+          </div>
+          <p className="text-slate-400 mt-1">Configura tus costos fijos y variables. Se sincronizan en cualquier dispositivo donde inicies sesión.</p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -435,7 +454,7 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
               <p className="text-[10px] text-slate-500 font-medium">Registro detallado de todos los costos operativos</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-neon" />
               <span className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">Fijos: {fixedExpenses.length}</span>
@@ -444,6 +463,26 @@ const PlatformExpenses: React.FC<PlatformExpensesProps> = ({
               <div className="w-2 h-2 rounded-full bg-gold" />
               <span className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">Variables: {variableExpenses.length}</span>
             </div>
+            <button
+              onClick={handleSave}
+              className={`ml-2 px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isSaved 
+                  ? 'bg-neon text-background shadow-[0_0_15px_rgba(34,197,94,0.4)]' 
+                  : 'bg-white/5 border border-border text-slate-300 hover:text-white hover:border-neon/40'
+              }`}
+            >
+              {isSaved ? (
+                <>
+                  <Check size={14} className="stroke-[3]" />
+                  <span>¡Sincronizado!</span>
+                </>
+              ) : (
+                <>
+                  <Save size={14} />
+                  <span>Guardar</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 

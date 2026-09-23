@@ -125,6 +125,14 @@ service cloud.firestore {
              (!('adId' in data) || (data.adId is string && data.adId.size() <= 100));
     }
 
+    // Helper for Platform Expenses Config
+    function isValidPlatformExpensesConfig(data) {
+      return data.get('uid', '') == request.auth.uid &&
+             data.fixedExpenses is list &&
+             data.variableExpenses is list &&
+             data.updatedAt is number;
+    }
+
     // 1. Orders Collection
     match /orders/{orderId} {
       allow get: if isOwner(resource.data.uid);
@@ -301,6 +309,12 @@ service cloud.firestore {
                        incoming().uid == resource.data.uid;
                         
       allow delete: if isVerified() && isOwner(resource.data.uid);
+    }
+
+    // 13. Platform Expenses Configuration Collection
+    match /platform_expenses/{userId} {
+      allow read: if isSignedIn() && userId == request.auth.uid;
+      allow write: if isVerified() && userId == request.auth.uid && isValidPlatformExpensesConfig(incoming());
     }
   }
 }

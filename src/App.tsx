@@ -30,7 +30,8 @@ import {
   Filter,
   StickyNote,
   Pin,
-  Cpu
+  Cpu,
+  MessageSquare
 } from 'lucide-react';
 import { parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -53,6 +54,7 @@ import PlatformExpenses from './components/PlatformExpenses';
 import KPIPanel from './components/KPIPanel';
 import Settings from './components/Settings';
 import SalesManagement from './components/SalesManagement';
+import { GeminiChat } from './components/GeminiChat';
 import { FloatingAIAssistant } from './components/FloatingAIAssistant';
 import { AuthProvider, AuthScreen, useAuth } from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -250,6 +252,9 @@ function AppContent() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Track if expenses have been loaded from Firestore to prevent overwriting cloud data on initial mount
+  const hasLoadedExpensesFromFirestore = useRef(false);
+
   useEffect(() => {
     localStorage.setItem('ecommil_fixed_expenses', JSON.stringify(fixedExpenses));
   }, [fixedExpenses]);
@@ -257,6 +262,89 @@ function AppContent() {
   useEffect(() => {
     localStorage.setItem('ecommil_variable_expenses', JSON.stringify(variableExpenses));
   }, [variableExpenses]);
+
+  // Firestore sync for platform expenses (Cross-device persistence per authenticated user)
+  useEffect(() => {
+    if (!user || isDemoMode || !isFirebaseConfigValid) {
+      hasLoadedExpensesFromFirestore.current = true;
+      return;
+    }
+
+    const docRef = doc(db, 'platform_expenses', user.uid);
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data?.fixedExpenses)) {
+          setFixedExpenses(data.fixedExpenses);
+          localStorage.setItem('ecommil_fixed_expenses', JSON.stringify(data.fixedExpenses));
+        }
+        if (Array.isArray(data?.variableExpenses)) {
+          setVariableExpenses(data.variableExpenses);
+          localStorage.setItem('ecommil_variable_expenses', JSON.stringify(data.variableExpenses));
+        }
+      } else {
+        // If document doesn't exist yet in Firestore, migrate whatever local expenses exist to Firestore
+        const localFixed = localStorage.getItem('ecommil_fixed_expenses');
+        const localVariable = localStorage.getItem('ecommil_variable_expenses');
+        const initFixed = localFixed ? JSON.parse(localFixed) : [];
+        const initVariable = localVariable ? JSON.parse(localVariable) : [];
+
+        if (initFixed.length > 0 || initVariable.length > 0) {
+          setDoc(docRef, {
+            uid: user.uid,
+            fixedExpenses: initFixed,
+            variableExpenses: initVariable,
+            updatedAt: Date.now()
+          }).catch(err => {
+            console.error("Error creating initial platform expenses in Firestore:", err);
+          });
+        }
+      }
+      hasLoadedExpensesFromFirestore.current = true;
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'platform_expenses');
+      hasLoadedExpensesFromFirestore.current = true;
+    });
+
+    return () => unsubscribe();
+  }, [user, isDemoMode]);
+
+  // Push changes to Firestore whenever fixedExpenses or variableExpenses update (after initial load)
+  const saveExpensesToFirestore = async (newFixed: any[], newVariable: any[]) => {
+    if (!user || isDemoMode || !isFirebaseConfigValid) return;
+    try {
+      const docRef = doc(db, 'platform_expenses', user.uid);
+      await setDoc(docRef, {
+        uid: user.uid,
+        fixedExpenses: newFixed,
+        variableExpenses: newVariable,
+        updatedAt: Date.now()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'platform_expenses');
+    }
+  };
+
+  // Wrapper handlers that update state, localStorage, and sync to Firestore
+  const handleUpdateFixedExpenses = (action: React.SetStateAction<any[]>) => {
+    setFixedExpenses(prev => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      if (hasLoadedExpensesFromFirestore.current && user && !isDemoMode && isFirebaseConfigValid) {
+        saveExpensesToFirestore(next, variableExpenses);
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateVariableExpenses = (action: React.SetStateAction<any[]>) => {
+    setVariableExpenses(prev => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      if (hasLoadedExpensesFromFirestore.current && user && !isDemoMode && isFirebaseConfigValid) {
+        saveExpensesToFirestore(fixedExpenses, next);
+      }
+      return next;
+    });
+  };
 
   // Global Product Filter states
   const [globalProductFilter, setGlobalProductFilter] = useState<string>('all');
@@ -637,18 +725,41 @@ function AppContent() {
     }
 
     try {
-      const batch = writeBatch(db);
-      newOrders.forEach(o => {
-        const newDoc = doc(collection(db, 'orders'));
-        const orderDate = o.date instanceof Date && !isNaN(o.date.getTime()) ? o.date : new Date();
-        batch.set(newDoc, { 
-          ...o, 
-          id: newDoc.id,
-          uid: user.uid,
-          date: orderDate.toISOString() 
+      // Chunk batches to respect Firestore 500-write limit (using 400 for safety)
+      const BATCH_SIZE = 400;
+      for (let i = 0; i < newOrders.length; i += BATCH_SIZE) {
+        const chunk = newOrders.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+
+        chunk.forEach(o => {
+          const newDoc = doc(collection(db, 'orders'));
+          const orderDate = o.date instanceof Date && !isNaN(o.date.getTime()) ? o.date : new Date();
+          
+          // Sanitize data for Firestore: remove undefined and NaN fields
+          const rawData: Record<string, any> = {
+            ...o,
+            id: newDoc.id,
+            uid: user.uid,
+            date: orderDate.toISOString()
+          };
+
+          const sanitizedData: Record<string, any> = {};
+          for (const key of Object.keys(rawData)) {
+            const val = rawData[key];
+            if (val === undefined) {
+              sanitizedData[key] = '';
+            } else if (typeof val === 'number' && isNaN(val)) {
+              sanitizedData[key] = 0;
+            } else {
+              sanitizedData[key] = val;
+            }
+          }
+
+          batch.set(newDoc, sanitizedData);
         });
-      });
-      await batch.commit();
+
+        await batch.commit();
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'orders');
     }
@@ -845,6 +956,7 @@ function AppContent() {
   const menuItems = [
     { id: 'dashboard', label: 'Panel Control', icon: LayoutDashboard },
     { id: 'kpis', label: 'Análisis Pro', icon: Activity, isGlowing: true },
+    { id: 'gemini-chat', label: 'Chat Gemini', icon: MessageSquare, isGlowing: true, badge: 'IA' },
     { id: 'logistics-ai', label: 'Asesor IA', icon: Bot, isGlowing: true, badge: 'Multi-IA' },
     { id: 'orders', label: 'DROPI', icon: ShoppingCart },
     { id: 'returns', label: 'Devoluciones', icon: RotateCcw },
@@ -1550,6 +1662,15 @@ function AppContent() {
                   setManualAdSpend={setManualAdSpend}
                 />
               )}
+              {activeTab === 'gemini-chat' && (
+                <GeminiChat 
+                  orders={filteredOrders} 
+                  stats={stats} 
+                  formatCurrency={formatCurrency} 
+                  currency={currency}
+                  theme={theme}
+                />
+              )}
               {activeTab === 'logistics-ai' && (
                 <LogisticsAI 
                   orders={filteredOrders} 
@@ -1656,9 +1777,9 @@ function AppContent() {
                   currencies={dynamicCurrencies}
                   isConversionActive={isConversionActive}
                   fixedExpenses={fixedExpenses}
-                  setFixedExpenses={setFixedExpenses}
+                  setFixedExpenses={handleUpdateFixedExpenses}
                   variableExpenses={variableExpenses}
-                  setVariableExpenses={setVariableExpenses}
+                  setVariableExpenses={handleUpdateVariableExpenses}
                 />
               )}
               {activeTab === 'shipping' && (
@@ -1680,9 +1801,9 @@ function AppContent() {
                     currencies={dynamicCurrencies}
                     isConversionActive={isConversionActive}
                     fixedExpenses={fixedExpenses}
-                    setFixedExpenses={setFixedExpenses}
+                    setFixedExpenses={handleUpdateFixedExpenses}
                     variableExpenses={variableExpenses}
-                    setVariableExpenses={setVariableExpenses}
+                    setVariableExpenses={handleUpdateVariableExpenses}
                     selectedYear={selectedYear}
                     setSelectedYear={setSelectedYear}
                     selectedMonth={selectedMonth}

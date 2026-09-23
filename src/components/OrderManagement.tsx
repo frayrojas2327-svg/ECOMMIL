@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp, Star, BarChart3, PieChart as PieChartIcon } from 'lucide-react';
+import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp, Star, BarChart3, PieChart as PieChartIcon, FileText } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Cell, PieChart, Pie } from 'recharts';
 import { Order, calculateOrderProfit, OrderStatus, parseFlexibleDate } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
@@ -1099,8 +1099,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
   const [deptFilter, setDeptFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
+  const [carrierFilter, setCarrierFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
   const [productFilter, setProductFilter] = useState('');
+  const [batchFilter, setBatchFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'All' | 'Shopify' | 'Dropi' | 'TikTok'>('All');
   const [favoriteFilter, setFavoriteFilter] = useState<'All' | 'Favorites' | 'NonFavorites'>('All');
   const [favoriteOrderIds, setFavoriteOrderIds] = useState<string[]>(() => {
@@ -1437,6 +1439,40 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
     return Array.from(cityMap.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }, [orders, deptFilter]);
 
+  const availableCarriers = useMemo(() => {
+    const carrierMap = new Map<string, string>();
+    orders.forEach(o => {
+      const carrier = o.transportadora?.trim();
+      if (carrier) {
+        const key = carrier.toLowerCase();
+        if (!carrierMap.has(key)) {
+          carrierMap.set(key, carrier);
+        }
+      }
+    });
+    return Array.from(carrierMap.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [orders]);
+
+  // Lista de archivos / lotes subidos para filtro individual
+  const availableBatches = useMemo(() => {
+    const batchMap = new Map<string, { id: string; name: string; count: number; date?: string; platform?: string }>();
+    orders.forEach(o => {
+      if (o.uploadBatchId) {
+        if (!batchMap.has(o.uploadBatchId)) {
+          batchMap.set(o.uploadBatchId, {
+            id: o.uploadBatchId,
+            name: o.uploadFileName || 'Archivo importado',
+            count: 0,
+            platform: o.provider,
+          });
+        }
+        const b = batchMap.get(o.uploadBatchId)!;
+        b.count += 1;
+      }
+    });
+    return Array.from(batchMap.values());
+  }, [orders]);
+
   // Si cambia el departamento y la ciudad seleccionada no pertenece al nuevo departamento, se limpia automáticamente
   useEffect(() => {
     if (deptFilter && cityFilter) {
@@ -1478,8 +1514,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   }, [deptFilter, cityFilter]);
 
   const deliveryStatsByLocation = useMemo(() => {
-    // Pedidos que coinciden con el filtro actual de Depto y Ciudad
+    // Pedidos que coinciden con el filtro actual de Depto, Ciudad y Lote de archivo
     const targetOrders = orders.filter(o => {
+      if (batchFilter && o.uploadBatchId !== batchFilter) return false;
       if (deptFilter) {
         const d = (o.departamentoDestino || o.country || '').toLowerCase();
         if (!d.includes(deptFilter.toLowerCase())) return false;
@@ -1590,7 +1627,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       deptChartData,
       cityChartData,
     };
-  }, [orders, deptFilter, cityFilter]);
+  }, [orders, deptFilter, cityFilter, batchFilter]);
 
   const handleBatchAssignProduct = async () => {
     const trimmedProduct = batchProductValue.trim();
@@ -1886,14 +1923,24 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const processFile = (file: File, platform: 'Dropi' | 'Shopify') => {
     if (!onAddOrders) return;
 
+    const currentBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const currentFileName = file.name || `${platform}_import_${new Date().toISOString().split('T')[0]}`;
+
     setIsImporting(platform);
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
+        const data = evt.target?.result;
+        const wb = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
+        let targetSheetName = wb.SheetNames[0];
+        for (const name of wb.SheetNames) {
+          const s = wb.Sheets[name];
+          if (s && Object.keys(s).some(k => !k.startsWith('!'))) {
+            targetSheetName = name;
+            break;
+          }
+        }
+        const ws = wb.Sheets[targetSheetName];
         
         const parseMoney = (val: any) => {
           if (val === undefined || val === null || val === '') return 0;
@@ -2108,7 +2155,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   status: 'Pendiente',
                   provider: 'Shopify',
                   priorityShipping: isPriorityShipping ? shippingVal : 0,
-                  notas: notes || 'Importado de Shopify'
+                  notas: notes || 'Importado de Shopify',
+                  uploadBatchId: currentBatchId,
+                  uploadFileName: currentFileName
                 });
               } else {
                 const existing = groupedMap.get(orderId)!;
@@ -2136,152 +2185,248 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             newOrders = Array.from(groupedMap.values()).filter(o => o.nombreCliente !== 'Desconocido' || o.telefono);
           }
         } else {
-          // Dropi Mapping
-          const jsonData = XLSX.utils.sheet_to_json(ws) as any[];
-          newOrders = jsonData.map(row => {
-            const keys = Object.keys(row);
-            const getField = (possibleNames: string[]) => {
-              // Priority 1: Exact matches (cleaner)
-              let key = keys.find(k => 
-                possibleNames.some(p => k.toLowerCase().trim() === p.toLowerCase().trim()) && 
-                row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== ''
-              );
-              
-              // Priority 2: Contains match (but avoiding greedy matches for common short terms)
-              if (!key) {
-                key = keys.find(k => 
-                  possibleNames.some(p => {
-                    const pk = k.toLowerCase().trim();
-                    const pp = p.toLowerCase().trim();
-                    // Avoid matching "Flete" inside "Flete Devolución" when looking for outbound flete
-                    if (pp === 'flete' || pp === 'venta' || pp === 'total' || pp === 'precio') {
-                      return pk === pp; 
-                    }
-                    return pk.includes(pp);
-                  }) && 
-                  row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== ''
-                );
-              }
-              return key ? row[key] : undefined;
-            };
+          // Robust Dropi Mapping
+          // 1. Recalculate sheet dimensions to avoid truncated exports
+          let minR = Infinity, maxR = -Infinity;
+          let minC = Infinity, maxC = -Infinity;
+          for (const cell in ws) {
+            if (cell[0] === '!') continue;
+            try {
+              const decoded = XLSX.utils.decode_cell(cell);
+              if (decoded.r < minR) minR = decoded.r;
+              if (decoded.r > maxR) maxR = decoded.r;
+              if (decoded.c < minC) minC = decoded.c;
+              if (decoded.c > maxC) maxC = decoded.c;
+            } catch (e) {
+              // ignore
+            }
+          }
+          if (minR <= maxR && minC <= maxC && isFinite(minR) && isFinite(maxR)) {
+            ws['!ref'] = XLSX.utils.encode_range({
+              s: { r: minR, c: minC },
+              e: { r: maxR, c: maxC }
+            });
+          }
 
-            const rawRecaudo = getField([
-              'VALOR FACTURADO', 
-              'PRECIO_VENTA', 
-              'VALOR_VENTA', 
-              'VALOR_RECAUDO',
-              'RECAUDO_TOTAL', 
-              'TOTAL_A_RECAUDAR', 
-              'TOTAL_RECAUDO', 
-              'RECAUDO', 
-              'Precio Venta', 
-              'Venta',
-              'Total'
+          // 2. Detect actual header row (in case the file has title rows or blank lines at top)
+          const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' }) as any[][];
+          let headerRowIndex = 0;
+          const knownHeaderKeywords = [
+            'id', 'pedido', 'orden', 'guia', 'tracking', 'fecha', 'cliente', 'destinatario',
+            'telefono', 'ciudad', 'departamento', 'producto', 'item', 'flete', 'total', 
+            'precio', 'recaudo', 'estado', 'status', 'transportadora', 'referencia'
+          ];
+
+          const normalizeKey = (val: any) => {
+            return String(val || '')
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, '');
+          };
+
+          let bestScore = 0;
+          for (let r = 0; r < Math.min(rawRows.length, 12); r++) {
+            const row = rawRows[r];
+            if (!Array.isArray(row)) continue;
+            const score = row.filter(cell => {
+              const str = normalizeKey(cell);
+              if (!str) return false;
+              return knownHeaderKeywords.some(k => str.includes(k));
+            }).length;
+            if (score > bestScore && score >= 2) {
+              bestScore = score;
+              headerRowIndex = r;
+            }
+          }
+
+          // 3. Extract JSON using identified header row
+          const jsonData = XLSX.utils.sheet_to_json(ws, { 
+            range: headerRowIndex, 
+            defval: '',
+            blankrows: false
+          }) as any[];
+
+          const getField = (row: any, possibleNames: string[]) => {
+            if (!row) return undefined;
+            const keys = Object.keys(row);
+            const normalizedTargets = possibleNames.map(p => normalizeKey(p));
+            
+            // Priority 1: Exact match with normalized key
+            for (const k of keys) {
+              const val = row[k];
+              if (val === undefined || val === null || String(val).trim() === '') continue;
+              const normK = normalizeKey(k);
+              if (normalizedTargets.includes(normK)) return val;
+            }
+            
+            // Priority 2: Contains match (safely avoiding false positives on short words)
+            for (const k of keys) {
+              const val = row[k];
+              if (val === undefined || val === null || String(val).trim() === '') continue;
+              const normK = normalizeKey(k);
+              for (const target of normalizedTargets) {
+                if (target.length <= 2) {
+                  if (normK === target) return val;
+                  continue;
+                }
+                // Avoid matching "flete" inside "fletedevolucion" when looking for outbound flete
+                if (target === 'flete' && (normK.includes('devolucion') || normK.includes('retorno') || normK.includes('regreso'))) {
+                  continue;
+                }
+                if (target === 'venta' && normK.includes('preventa')) continue;
+                if (normK.includes(target)) return val;
+              }
+            }
+            return undefined;
+          };
+
+          // 4. Map & Group by orderId / trackingId to handle multi-product / multi-row orders in Dropi
+          const dropiGroupMap = new Map<string, Omit<Order, 'id' | 'uid'>>();
+
+          jsonData.forEach((row, rowIndex) => {
+            // Check if row is a summary or totals row (e.g. "Totales", "Total", blank)
+            const rowValues = Object.values(row).map(v => String(v).trim().toLowerCase());
+            const isSummaryRow = rowValues.some(v => v === 'totales' || v === 'total general' || v === 'resumen') && 
+              !rowValues.some(v => v === 'entregado' || v === 'en transito' || v === 'devolucion' || v === 'pendiente' || v === 'guia generada');
+            if (isSummaryRow) return;
+
+            // Check if row has any content
+            const hasAnyContent = Object.values(row).some(v => v !== undefined && v !== null && String(v).trim() !== '');
+            if (!hasAnyContent) return;
+
+            const orderIdRaw = getField(row, [
+              'ID Pedido', 'ID_Pedido', 'ID DE PEDIDO', 'ID_DE_PEDIDO', 'ID DROPI', 'ID_DROPI', 'ID DROP',
+              'ID_ORDEN', 'ID ORDEN', 'ID_VENTA', 'ID VENTA', 'NUMERO_PEDIDO', 'NUMERO PEDIDO', 'NUMERO DE PEDIDO',
+              'NÚMERO DE PEDIDO', 'NRO_PEDIDO', 'NRO PEDIDO', 'NRO_ORDEN', 'NRO ORDEN', 'Número de Orden', 'Numero de Orden',
+              'NÚMERO DE ORDEN', 'NUMERO DE ORDEN', 'N° Orden', 'N° DE ORDEN', 'Nro Orden', 'Numero Orden', 'Número Orden',
+              'ORDEN', 'PEDIDO', 'Consecutivo', 'Referencia', 'Código', 'Codigo', 'ORDER ID', 'ORDER_ID', 'ID', 'Id', 'N°',
+              'NUMERO', 'NÚMERO', 'CONSECUTIVO DROPI', 'CONSECUTIVO_DROPI', 'COD_PEDIDO', 'COD PEDIDO'
             ]);
-            const rawProductoCol = getField(['PRODUCTO', 'ITEM', 'NOMBRE_PRODUCTO', 'NOMBRE PRODUCTO']);
-            
+
+            const trackingIdRaw = getField(row, [
+              'Guía', 'Guia', 'Número Guía', 'Numero Guia', 'NÚMERO GUÍA', 'NUMERO GUIA',
+              'N° Guía', 'N° Guia', 'Tracking', 'Tracking ID', 'Seguimiento', 'Numero de Seguimiento',
+              'GUIA_TRANSPORTE', 'GUIA DE TRANSPORTE', 'GUIA'
+            ]);
+
+            const trackingId = String(trackingIdRaw || '').trim();
+
+            let cleanOrderId = String(orderIdRaw || '').replace(/[#\s]/g, '').trim();
+            let isGeneratedId = false;
+            if (!cleanOrderId && trackingId) {
+              cleanOrderId = trackingId;
+            }
+            if (!cleanOrderId) {
+              isGeneratedId = true;
+              cleanOrderId = `DRP-${rowIndex + 1}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+            }
+
+            const rawRecaudo = getField(row, [
+              'VALOR FACTURADO', 'PRECIO_VENTA', 'PRECIO VENTA', 'VALOR_VENTA', 'VALOR VENTA',
+              'VALOR_RECAUDO', 'VALOR RECAUDO', 'RECAUDO_TOTAL', 'RECAUDO TOTAL',
+              'TOTAL_A_RECAUDAR', 'TOTAL A RECAUDAR', 'TOTAL_RECAUDO', 'TOTAL RECAUDO',
+              'RECAUDO', 'Precio Venta', 'Venta', 'Total', 'VALOR TOTAL', 'IMPORTE'
+            ]);
+
             let valorFacturadoRaw = parseMoney(rawRecaudo);
-            
-            // Priority: Product name often contains the real price in Dropi (e.g., "Producto - 179000" or "X3 - 179")
-            const pNameFull = String(getField(['Nombre Producto', 'Producto', 'Item', 'PRODUCTO', 'NOMBRE', 'ITEM', 'NOMBRE_PRODUCTO']) || '');
+            const rawProductoCol = getField(row, [
+              'PRODUCTO', 'NOMBRE PRODUCTO', 'NOMBRE DEL PRODUCTO', 'NOMBRE_PRODUCTO',
+              'ITEM', 'ITEMS', 'DETALLE', 'DESCRIPCION', 'DESCRIPCIÓN', 'ARTICULO', 'ARTÍCULO',
+              'PRODUCT', 'PRODUCT NAME', 'PRODUCT_NAME'
+            ]);
+
+            const pNameFull = String(rawProductoCol || '');
             const priceInNameMatch = pNameFull.match(/\d{3,}/);
             if (priceInNameMatch) {
               const extracted = parseMoney(priceInNameMatch[0]);
-              // If extracted looks like a realistic price (usually > 10 in custom markets like GTQ)
               if (extracted > valorFacturadoRaw || valorFacturadoRaw < 10) {
                 valorFacturadoRaw = extracted;
               }
             }
 
-            // Fallback for very low values (using 5 as a floor for GTQ/custom currencies)
             if (valorFacturadoRaw < 5 && rawProductoCol !== undefined) {
               const extractedPrice = parseMoney(rawProductoCol);
               if (extractedPrice >= 5) valorFacturadoRaw = extractedPrice;
             }
 
             const valorFacturado = normalize(valorFacturadoRaw);
-            const valorCompra = normalize(parseMoney(getField(['VALOR DE COMPRA EN PRODUCTOS', 'COSTO_PRODUCTO', 'COSTO_PROVEEDOR', 'VALOR_COMPRA', 'VALOR_UNITARIO_PROVEEDOR', 'Costo Producto', 'Costo'])));
-            
-            // Outbound shipping flete - specifically avoiding return columns
-            // Added stricter matching for outbound flete
-            const fleteField = getField([
-              'PRECIO FLETE', 
-              'VALOR_FLETE', 
-              'COSTO_ENVIO', 
-              'VALOR_ENVIO',
-              'FLETE_TOTAL', 
-              'Flete', 
-              'Valor Flete'
+            const valorCompra = normalize(parseMoney(getField(row, [
+              'VALOR DE COMPRA EN PRODUCTOS', 'COSTO_PRODUCTO', 'COSTO PRODUCTO', 'COSTO_PROVEEDOR', 
+              'COSTO PROVEEDOR', 'VALOR_COMPRA', 'VALOR COMPRA', 'VALOR_UNITARIO_PROVEEDOR', 
+              'Costo Producto', 'Costo', 'COST'
+            ])));
+
+            const fleteField = getField(row, [
+              'PRECIO FLETE', 'VALOR_FLETE', 'VALOR FLETE', 'COSTO_ENVIO', 'COSTO ENVIO',
+              'VALOR_ENVIO', 'VALOR ENVIO', 'FLETE_TOTAL', 'FLETE TOTAL', 'Flete', 'Valor Flete'
             ]);
             const flete = normalize(parseMoney(fleteField));
-            
-            const ganancia = normalize(parseMoney(getField(['GANANCIA', 'Profit', 'Utilidad', 'GANANCIA_VENDEDOR', 'LIQUIDACION', 'UTILIDAD_NETA'])));
-            const comision = normalize(parseMoney(getField(['COMISION', 'COMMISSION', 'FEE_PLATFORM', 'COMISION_TOTAL', 'Comisión'])));
-            
-            // Specific mapping for return/devolución columns - focusing on Dropi's "Flete Devolución"
-            const rawDevolucion = getField([
-              'VALOR FLETE DEVOLUCION', 
-              'FLETE_DEVOLUCION', 
-              'COSTO_RETORNO', 
-              'VALOR_DEVOLUCION_FLETE', 
-              'COSTO_LOGISTICA_DEVOLUCION',
-              'Flete Devolución',
-              'Costo Retorno',
-              'FLETE_REGRESO',
-              'ENVIO_DEVOLUCION'
-            ]);
-            const valorDevolucionRaw = parseMoney(rawDevolucion);
-            const costoDevolucion = normalize(valorDevolucionRaw);
-            
-            const totalPreciosProveedor = normalize(parseMoney(getField(['TOTAL PRECIOS PROVEEDOR', 'TOTAL_PROVEEDOR', 'Supplier Total', 'Costo Total Proveedor'])));
 
-            const rawStatus = String(getField(['Estado', 'Status', 'Estado Orden', 'Estado de la orden', 'Estado Actual', 'Seguimiento', 'Situación', 'ESTADO', 'ESTATUS']) || '').toUpperCase();
+            const ganancia = normalize(parseMoney(getField(row, [
+              'GANANCIA', 'Profit', 'Utilidad', 'GANANCIA_VENDEDOR', 'LIQUIDACION', 'UTILIDAD_NETA'
+            ])));
+            const comision = normalize(parseMoney(getField(row, [
+              'COMISION', 'COMMISSION', 'FEE_PLATFORM', 'COMISION_TOTAL', 'Comisión'
+            ])));
+
+            const rawDevolucion = getField(row, [
+              'VALOR FLETE DEVOLUCION', 'VALOR FLETE DEVOLUCIÓN', 'FLETE_DEVOLUCION', 'FLETE DEVOLUCION', 
+              'FLETE DEVOLUCIÓN', 'COSTO_RETORNO', 'COSTO RETORNO', 'VALOR_DEVOLUCION_FLETE', 
+              'COSTO_LOGISTICA_DEVOLUCION', 'Flete Devolución', 'Costo Retorno', 'FLETE_REGRESO', 
+              'FLETE REGRESO', 'ENVIO_DEVOLUCION', 'ENVIO DEVOLUCIÓN'
+            ]);
+            const costoDevolucion = normalize(parseMoney(rawDevolucion));
+            const totalPreciosProveedor = normalize(parseMoney(getField(row, [
+              'TOTAL PRECIOS PROVEEDOR', 'TOTAL_PROVEEDOR', 'Supplier Total', 'Costo Total Proveedor'
+            ])));
+
+            const rawStatus = String(getField(row, [
+              'Estado', 'Status', 'Estado Orden', 'Estado de la orden', 'Estado Actual', 
+              'Seguimiento', 'Situación', 'Situacion', 'ESTADO', 'ESTATUS', 'ESTADO_PEDIDO',
+              'ESTADO GUIA', 'ESTADO DE GUIA'
+            ]) || '').toUpperCase();
+
             let status: OrderStatus = 'Pendiente';
-            if (rawStatus.includes('ENTREGADO') || rawStatus.includes('EXITOSO') || rawStatus.includes('FINALIZADO')) status = 'Entregado';
-            else if (rawStatus.includes('DEVOLUCION') || rawStatus.includes('DEVUELTO') || rawStatus.includes('RETORNO')) status = 'Devuelto';
-            else if (rawStatus.includes('CANCELADO') || rawStatus.includes('ANULADO')) status = 'Cancelado';
-            else if (rawStatus.includes('TRANSITO') || rawStatus.includes('DESPACHADO') || rawStatus.includes('BODEGA')) status = 'En tránsito';
-            else if (rawStatus.includes('GUIA_GENERADA') || rawStatus.includes('GUIA GENERADA')) status = 'Guía Generada';
-            else if (rawStatus.includes('RECOLECTADO')) status = 'Recolectado';
-            else if (rawStatus.includes('INCIDENCIA') || rawStatus.includes('NOVEDAD')) status = 'Incidencia';
+            if (rawStatus.includes('ENTREGADO') || rawStatus.includes('EXITOSO') || rawStatus.includes('FINALIZADO') || rawStatus.includes('COBRADO') || rawStatus.includes('PAGADO')) {
+              status = 'Entregado';
+            } else if (rawStatus.includes('DEVOLUCION') || rawStatus.includes('DEVUELTO') || rawStatus.includes('RETORNO')) {
+              status = 'Devuelto';
+            } else if (rawStatus.includes('CANCELADO') || rawStatus.includes('ANULADO') || rawStatus.includes('RECHAZADO')) {
+              status = 'Cancelado';
+            } else if (rawStatus.includes('TRANSITO') || rawStatus.includes('DESPACHADO') || rawStatus.includes('BODEGA') || rawStatus.includes('EN RUTA') || rawStatus.includes('DISTRIBUCION')) {
+              status = 'En tránsito';
+            } else if (rawStatus.includes('GUIA_GENERADA') || rawStatus.includes('GUIA GENERADA') || rawStatus.includes('GENERADA') || rawStatus.includes('GENERADO')) {
+              status = 'Guía Generada';
+            } else if (rawStatus.includes('RECOLECTADO') || rawStatus.includes('RECOGIDO')) {
+              status = 'Recolectado';
+            } else if (rawStatus.includes('INCIDENCIA') || rawStatus.includes('NOVEDAD')) {
+              status = 'Incidencia';
+            }
 
-            const trackingId = String(getField(['Guía', 'Guia', 'Tracking', 'Seguimiento', 'NÚMERO GUIA']) || '');
-            const rawDropiDate = getField(['Fecha', 'Date', 'Creado', 'FECHA']);
-
-            const rawFechaSolicitud = getField([
-              'Fecha de Solicitud', 
-              'Fecha Solicitud', 
-              'FECHA_SOLICITUD', 
-              'FECHA SOLICITUD',
-              'Fecha de Creación',
-              'Fecha Creado',
-              'Creado',
-              'Fecha',
-              'FECHA'
+            const rawDropiDate = getField(row, [
+              'Fecha', 'FECHA', 'Fecha de Solicitud', 'Fecha Solicitud', 'FECHA_SOLICITUD', 'FECHA SOLICITUD',
+              'Fecha de Creación', 'Fecha Creación', 'Fecha Creacion', 'Fecha de Creacion', 'FECHA_CREACION',
+              'Fecha de Generación', 'Fecha Generacion', 'Fecha Generación', 'Fecha Orden', 'Fecha de Orden',
+              'Fecha Pedido', 'Fecha de Pedido', 'Date', 'DATE', 'Creado', 'Created At', 'FECHA DE REPORTE'
             ]);
 
-            const rawFechaEntregaDevolucion = getField([
-              'Fecha de Entrega o Devolución',
-              'Fecha de Entrega o Devolucion',
-              'Fecha Entrega / Devolucion',
-              'Fecha Entrega o Devolución',
-              'Fecha Entrega o Devolucion',
-              'Fecha de Entrega',
-              'Fecha de Devolución',
-              'Fecha de Devolucion',
-              'Fecha Entrega',
-              'Fecha Devolución',
-              'Fecha Devolucion',
-              'FECHA_ENTREGA',
-              'FECHA_DEVOLUCION',
-              'FECHA_ENTREGA_DEVOLUCION',
-              'FECHA ENTREGA',
-              'FECHA DEVOLUCION'
+            const rawFechaSolicitud = getField(row, [
+              'Fecha de Solicitud', 'Fecha Solicitud', 'FECHA_SOLICITUD', 'FECHA SOLICITUD',
+              'Fecha de Creación', 'Fecha Creación', 'Fecha Creacion', 'Fecha de Creacion', 'Fecha Creado',
+              'Creado', 'Fecha', 'FECHA'
+            ]);
+
+            const rawFechaEntregaDevolucion = getField(row, [
+              'Fecha de Entrega o Devolución', 'Fecha de Entrega o Devolucion', 'Fecha Entrega / Devolucion',
+              'Fecha Entrega o Devolución', 'Fecha Entrega o Devolucion', 'Fecha de Entrega', 'Fecha de Devolución',
+              'Fecha de Devolucion', 'Fecha Entrega', 'Fecha Devolución', 'Fecha Devolucion', 'FECHA_ENTREGA',
+              'FECHA_DEVOLUCION', 'FECHA_ENTREGA_DEVOLUCION', 'FECHA ENTREGA', 'FECHA DEVOLUCION'
             ]);
 
             const formatImportedDate = (val: any) => {
               if (!val) return '';
-              const parsed = parseFlexibleDate(String(val));
+              const parsed = parseFlexibleDate(val);
               if (parsed && !isNaN(parsed.getTime())) {
                 return format(parsed, 'yyyy-MM-dd');
               }
@@ -2291,150 +2436,140 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
             const fechaSolicitudValue = formatImportedDate(rawFechaSolicitud);
             const fechaEntregaDevolucionValue = formatImportedDate(rawFechaEntregaDevolucion);
 
-            return {
-              id: `temp-${Math.random().toString(36).substring(2, 11)}`,
-              date: (rawDropiDate ? parseFlexibleDate(String(rawDropiDate)) : null) || new Date(),
-              orderId: String(getField(['ID Pedido', 'ID', 'Referencia']) || '').replace('#', '') || `DRP-${Math.random().toString(36).substring(7).toUpperCase()}`,
-              product: (() => {
-                const rowKeys = Object.keys(row);
+            let finalDate = parseFlexibleDate(rawDropiDate);
+            if (!finalDate && rawFechaSolicitud) finalDate = parseFlexibleDate(rawFechaSolicitud);
+            if (!finalDate && rawFechaEntregaDevolucion) finalDate = parseFlexibleDate(rawFechaEntregaDevolucion);
+            if (!finalDate) finalDate = new Date();
 
-                // Priority 0: Scan all cells in the row for product keywords like 'collar'
-                for (const key of rowKeys) {
-                  const val = row[key];
-                  if (val !== undefined && val !== null) {
-                    const strVal = String(val).trim();
-                    const strLower = strVal.toLowerCase();
-                    if (strLower.startsWith('collar') || strLower.includes('collar')) {
-                      return strVal;
-                    }
-                  }
-                }
-
-                // Check for other typical product keywords if 'collar' wasn't found
-                const commonProductKeywords = [
-                  'pulsera', 'cadena', 'anillo', 'arete', 'joya', 'reloj', 'brazalete',
-                  'organizador', 'cepillo', 'kit', 'soporte', 'mini', 'set', 'combo', 'parche',
-                  'lente', 'faja', 'audifonos', 'audífonos', 'parlante', 'cargador'
-                ];
-                for (const key of rowKeys) {
-                  const val = row[key];
-                  if (val !== undefined && val !== null) {
-                    const strVal = String(val).trim();
-                    const strLower = strVal.toLowerCase();
-                    if (commonProductKeywords.some(kw => strLower.startsWith(kw) || strLower.includes(' ' + kw))) {
-                      if (isNaN(Number(strVal)) && strVal.length > 3) {
-                        return strVal;
-                      }
-                    }
-                  }
-                }
-
-                const financialOrIdWords = [
-                  'costo', 'coste', 'precio', 'flete', 'valor', 'total', 'venta', 'compra', 
-                  'id', 'sku', 'código', 'codigo', 'guia', 'guía', 'comision', 'comisión', 
-                  'fee', 'recaudo', 'devolucion', 'devolución', 'retorno', 'novedad', 'tracking'
-                ];
-                
-                const productColumnTerms = [
-                  'nombre producto', 'nombre del producto', 'nombre de producto', 
-                  'producto_nombre', 'nombre_producto', 'producto', 'product', 
-                  'product name', 'product_name', 'item', 'items', 'detalle', 
-                  'descripcion', 'descripción', 'nombre', 'articulo', 'artículo'
-                ];
-                
-                // 1. Try to find an exact match first, ignoring case and trimming
-                for (const term of productColumnTerms) {
-                  const foundKey = rowKeys.find(k => k.toLowerCase().trim() === term);
-                  if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
-                    const val = String(row[foundKey]).trim();
-                    if (val && isNaN(Number(val))) { // Ensure it's not a pure number/ID
-                      return val;
-                    }
-                  }
-                }
-                
-                // 2. Try to find a loose match (includes) but exclude any keys containing financial/ID words
-                for (const term of productColumnTerms) {
-                  const foundKey = rowKeys.find(k => {
-                    const kLower = k.toLowerCase().trim();
-                    if (!kLower.includes(term)) return false;
-                    const hasFinancialOrId = financialOrIdWords.some(w => kLower.includes(w));
-                    return !hasFinancialOrId;
-                  });
-                  if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
-                    const val = String(row[foundKey]).trim();
-                    if (val && isNaN(Number(val))) {
-                      return val;
-                    }
-                  }
-                }
-                
-                // 3. Fallback: check if any key includes 'producto', 'item', 'product', 'detalle', 'descripcion', 'nombre'
-                // even if it has numbers, as long as it's not purely a number and not in financialOrIdWords
-                const desperateKey = rowKeys.find(k => {
-                  const kLower = k.toLowerCase().trim();
-                  const isProdLike = ['producto', 'item', 'product', 'detalle', 'descripcion', 'nombre'].some(w => kLower.includes(w));
-                  const hasFinancialOrId = financialOrIdWords.some(w => kLower.includes(w));
-                  return isProdLike && !hasFinancialOrId;
-                });
-                if (desperateKey && row[desperateKey] !== undefined && row[desperateKey] !== null) {
-                  const val = String(row[desperateKey]).trim();
-                  if (val && isNaN(Number(val))) {
+            const productText = (() => {
+              if (rawProductoCol && typeof rawProductoCol === 'string' && rawProductoCol.trim().length > 1 && isNaN(Number(rawProductoCol))) {
+                return rawProductoCol.trim();
+              }
+              const rowKeys = Object.keys(row);
+              for (const k of rowKeys) {
+                const norm = normalizeKey(k);
+                if (norm.includes('producto') || norm.includes('item') || norm.includes('articulo') || norm.includes('descripcion') || norm.includes('detalle')) {
+                  const val = String(row[k] || '').trim();
+                  if (val && isNaN(Number(val)) && val.length > 2) {
                     return val;
                   }
                 }
-                
-                // 4. Ultimate fallback: if there's a column with a name that contains "producto" or "item" or "product"
-                // and its value is a non-numeric string of length > 2
-                for (const k of rowKeys) {
-                  const kLower = k.toLowerCase();
-                  if (['producto', 'item', 'product', 'nombre'].some(w => kLower.includes(w))) {
-                    const val = String(row[k]).trim();
-                    if (val && isNaN(Number(val)) && val.length > 2) {
-                      return val;
-                    }
-                  }
-                }
-                
-                return 'Producto Dropi';
-              })(),
-              price: valorFacturado,
-              cost: valorCompra,
-              shippingCharged: 0,
-              shippingReal: flete,
-              adsCost: 0,
-              platformFee: comision > 0 ? 0 : 0.05, 
-              status: status,
-              provider: 'Dropi',
-              country: 'Colombia',
-              trackingId: trackingId,
-              gananciaManual: ganancia,
-              comision: comision,
-              precioFlete: flete,
-              costoDevolucionFlete: costoDevolucion,
-              totalPreciosProveedor: totalPreciosProveedor,
-              fechaReporte: String(getField(['FECHA DE REPORTE']) || ''),
-              hora: String(getField(['HORA']) || ''),
-              nombreCliente: String(getField(['NOMBRE CLIENTE']) || ''),
-              telefono: String(getField(['TELÉFONO']) || ''),
-              emailCliente: String(getField(['EMAIL']) || ''),
-              departamentoDestino: String(getField(['DEPARTAMENTO DESTINO']) || ''),
-              ciudadDestino: String(getField(['CIUDAD DESTINO']) || ''),
-              direccion: String(getField(['DIRECCION']) || ''),
-              notas: String(getField(['NOTAS']) || '') || 'Dropi Import',
-              transportadora: String(getField(['TRANSPORTADORA']) || ''),
-              numeroFactura: String(getField(['NUMERO DE FACTURA']) || ''),
-              novedad: String(getField(['NOVEDAD']) || ''),
-              solucion: String(getField(['SOLUCIÓN']) || ''),
-              observacion: String(getField(['OBSERVACIÓN']) || ''),
-              ultimoMovimiento: String(getField(['ÚLTIMO MOVIMIENTO']) || ''),
-              vendedor: String(getField(['VENDEDOR']) || ''),
-              tienda: String(getField(['TIENDA']) || ''),
-              tags: String(getField(['TAGS']) || ''),
-              fechaSolicitud: fechaSolicitudValue,
-              fechaEntregaDevolucion: fechaEntregaDevolucionValue
-            };
+              }
+              return 'Producto Dropi';
+            })();
+
+            const nombreCliente = String(getField(row, [
+              'Nombre Cliente', 'Nombre del Cliente', 'Cliente', 'Nombre', 'Destinatario', 
+              'Nombre Destinatario', 'Nombre del Destinatario', 'Nombres y Apellidos', 'Comprador', 'Customer'
+            ]) || '').trim();
+
+            const telefono = String(getField(row, [
+              'Teléfono', 'Telefono', 'Celular', 'Móvil', 'Movil', 'WhatsApp', 
+              'Teléfono Destinatario', 'Telefono Destinatario', 'Teléfono Cliente', 'Telefono Cliente', 'Phone'
+            ]) || '').trim();
+
+            const departamentoDestino = String(getField(row, [
+              'Departamento Destino', 'Departamento de Destino', 'Departamento', 'Depto', 
+              'Provincia', 'Estado', 'Departamento_Destino', 'Region', 'Región'
+            ]) || '').trim();
+
+            const ciudadDestino = String(getField(row, [
+              'Ciudad Destino', 'Ciudad de Destino', 'Ciudad', 'Municipio', 'Mpio', 
+              'Ciudad_Destino', 'Ciudad / Municipio', 'Destino Ciudad'
+            ]) || '').trim();
+
+            const direccion = String(getField(row, [
+              'Dirección', 'Direccion', 'Dirección Destino', 'Direccion Destino', 
+              'Dirección de Entrega', 'Direccion de Entrega', 'Dirección Completa', 'Direccion Completa', 'Address', 'Calle'
+            ]) || '').trim();
+
+            const transportadora = String(getField(row, [
+              'Transportadora', 'Transportista', 'Empresa de Transporte', 'Empresa Transportadora', 
+              'Logística', 'Logistica', 'Carrier', 'Courier', 'Mensajeria'
+            ]) || '').trim();
+
+            const emailCliente = String(getField(row, ['Email', 'Correo', 'Correo Electrónico', 'Correo Electronico', 'Email Cliente']) || '').trim();
+            const fechaReporte = String(getField(row, ['Fecha de Reporte', 'Fecha Reporte', 'FECHA_REPORTE', 'FECHA REPORTE']) || '').trim();
+            const hora = String(getField(row, ['Hora', 'HORA', 'Hour', 'Hora de Solicitud']) || '').trim();
+            const notas = String(getField(row, ['Notas', 'Observaciones de la orden', 'Notas del Pedido', 'NOTAS']) || '').trim() || 'Dropi Import';
+            const numeroFactura = String(getField(row, ['Número de Factura', 'Numero de Factura', 'Factura', 'Numero Factura', 'N° Factura']) || '').trim();
+            const novedad = String(getField(row, ['Novedad', 'NOVEDAD', 'Incidencia']) || '').trim();
+            const solucion = String(getField(row, ['Solución', 'Solucion', 'SOLUCIÓN']) || '').trim();
+            const observacion = String(getField(row, ['Observación', 'Observacion', 'OBSERVACIÓN']) || '').trim();
+            const ultimoMovimiento = String(getField(row, ['Último Movimiento', 'Ultimo Movimiento', 'ÚLTIMO MOVIMIENTO']) || '').trim();
+            const vendedor = String(getField(row, ['Vendedor', 'VENDEDOR', 'Seller']) || '').trim();
+            const tienda = String(getField(row, ['Tienda', 'TIENDA', 'Store']) || '').trim();
+            const tags = String(getField(row, ['Tags', 'TAGS', 'Etiquetas', 'Etiqueta']) || '').trim();
+
+            // Grouping: Only combine multi-product rows if they share the exact order ID and tracking/customer; never merge distinct orders
+            const groupKey = isGeneratedId
+              ? `gen_${cleanOrderId}_${rowIndex}`
+              : (trackingId ? `${cleanOrderId}_${trackingId}` : cleanOrderId);
+
+            const existing = dropiGroupMap.get(groupKey);
+            if (existing && !isGeneratedId) {
+              if (productText && productText !== 'Producto Dropi' && !existing.product.includes(productText)) {
+                existing.product = `${existing.product} + ${productText}`;
+              }
+              if (!existing.nombreCliente && nombreCliente) existing.nombreCliente = nombreCliente;
+              if (!existing.telefono && telefono) existing.telefono = telefono;
+              if (!existing.departamentoDestino && departamentoDestino) existing.departamentoDestino = departamentoDestino;
+              if (!existing.ciudadDestino && ciudadDestino) existing.ciudadDestino = ciudadDestino;
+              if (!existing.direccion && direccion) existing.direccion = direccion;
+              if (!existing.transportadora && transportadora) existing.transportadora = transportadora;
+              if (!existing.trackingId && trackingId) existing.trackingId = trackingId;
+              if (!existing.emailCliente && emailCliente) existing.emailCliente = emailCliente;
+              if (existing.status === 'Pendiente' && status !== 'Pendiente') existing.status = status;
+              if (valorCompra > 0 && valorCompra !== existing.cost) {
+                existing.cost = (existing.cost || 0) + valorCompra;
+              }
+            } else {
+              dropiGroupMap.set(groupKey, {
+                date: finalDate,
+                orderId: cleanOrderId,
+                product: productText,
+                price: valorFacturado,
+                cost: valorCompra,
+                shippingCharged: 0,
+                shippingReal: flete,
+                adsCost: 0,
+                platformFee: comision > 0 ? 0 : 0.05,
+                status: status,
+                provider: 'Dropi',
+                country: 'Colombia',
+                trackingId: trackingId,
+                gananciaManual: ganancia,
+                comision: comision,
+                precioFlete: flete,
+                costoDevolucionFlete: costoDevolucion,
+                totalPreciosProveedor: totalPreciosProveedor,
+                fechaReporte: fechaReporte,
+                hora: hora,
+                nombreCliente: nombreCliente,
+                telefono: telefono,
+                emailCliente: emailCliente,
+                departamentoDestino: departamentoDestino,
+                ciudadDestino: ciudadDestino,
+                direccion: direccion,
+                notas: notas,
+                transportadora: transportadora,
+                numeroFactura: numeroFactura,
+                novedad: novedad,
+                solucion: solucion,
+                observacion: observacion,
+                ultimoMovimiento: ultimoMovimiento,
+                vendedor: vendedor,
+                tienda: tienda,
+                tags: tags,
+                fechaSolicitud: fechaSolicitudValue,
+                fechaEntregaDevolucion: fechaEntregaDevolucionValue,
+                uploadBatchId: currentBatchId,
+                uploadFileName: currentFileName
+              });
+            }
           });
+
+          newOrders = Array.from(dropiGroupMap.values());
         }
         
         function shopifyDate(raw: any) {
@@ -2442,21 +2577,28 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           return d && !isNaN(d.getTime()) ? d : new Date();
         }
 
-        onAddOrders(newOrders);
-        setNotification({ 
-          message: `ÉXITO: Se han importado ${newOrders.length} pedidos de ${platform} correctamente.`, 
-          type: 'success' 
-        });
+        if (newOrders.length === 0) {
+          setNotification({ 
+            message: `AVISO: No se encontraron pedidos válidos en el archivo de ${platform}.`, 
+            type: 'error' 
+          });
+        } else {
+          onAddOrders(newOrders);
+          setNotification({ 
+            message: `ÉXITO: Se han importado ${newOrders.length} pedidos de ${platform} correctamente.`, 
+            type: 'success' 
+          });
+        }
         setTimeout(() => setNotification(null), 5000);
       } catch (error) {
         console.error(`Error importing Excel:`, error);
-        setNotification({ message: `Error al procesar el archivo.`, type: 'error' });
+        setNotification({ message: `Error al procesar el archivo. Verifique el formato.`, type: 'error' });
         setTimeout(() => setNotification(null), 5000);
       } finally {
         setIsImporting(false);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const filteredOrders = useMemo(() => {
@@ -2544,9 +2686,12 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           ? isFav
           : !isFav;
 
-      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesTag && matchesProduct && matchesSource && matchesReqDate && matchesFavorite;
+      const matchesCarrier = !carrierFilter || (order.transportadora && order.transportadora.toLowerCase().trim() === carrierFilter.toLowerCase().trim());
+      const matchesBatch = !batchFilter || (order.uploadBatchId === batchFilter);
+
+      return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesCarrier && matchesTag && matchesProduct && matchesSource && matchesReqDate && matchesFavorite && matchesBatch;
     });
-  }, [orders, searchTerm, statusSlots, deptFilter, cityFilter, tagFilter, productFilter, sourceFilter, favoriteFilter, favoriteOrderIds, reqDate, viewMode]);
+  }, [orders, searchTerm, statusSlots, deptFilter, cityFilter, carrierFilter, tagFilter, productFilter, batchFilter, sourceFilter, favoriteFilter, favoriteOrderIds, reqDate, viewMode]);
 
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('order-column-widths');
@@ -2642,10 +2787,12 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           id: 'status', 
           label: 'ESTATUS DE LA ORDEN', 
           value: (o: Order) => o.status, 
-          render: (o: Order) => (
-            <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
-              {o.status === 'Incidencia' || o.status === 'Recolectado' ? (
-                <div onClick={(e) => e.stopPropagation()} className="relative z-10">
+          render: (o: Order) => {
+            const isLocked = o.status === 'Entregado' || o.status === 'Devuelto';
+
+            if (!isLocked) {
+              return (
+                <div onClick={(e) => e.stopPropagation()} className="relative z-10 flex justify-center">
                   <select
                     value={o.status}
                     onChange={async (e) => {
@@ -2654,33 +2801,41 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                         await handleUpdateOrderStatus(o.id, newStatus);
                       }
                     }}
-                    className={`border font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans ${
+                    className={`border font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[128px] truncate font-sans ${
                       o.status === 'Incidencia'
                         ? 'bg-red-950/25 border-red-500/40 hover:border-red-400 text-red-400'
-                        : 'bg-slate-900/40 border-slate-600/40 hover:border-slate-400 text-slate-300'
+                        : o.status === 'Cancelado'
+                          ? 'bg-red-900/20 border-red-500/40 hover:border-red-400 text-[#ff4b4b]'
+                          : o.status === 'En tránsito'
+                            ? 'bg-blue-950/25 border-blue-500/40 hover:border-blue-400 text-blue-400'
+                            : o.status === 'Pendiente'
+                              ? 'bg-amber-950/25 border-amber-500/40 hover:border-amber-400 text-amber-400'
+                              : 'bg-slate-900/40 border-slate-600/40 hover:border-slate-400 text-slate-300'
                     }`}
-                    title="Editar estado del pedido"
+                    title="Editar estado del pedido (Devuelto y Entregado bloqueados)"
                   >
                     <option value="Recolectado" className="bg-[#0f0f11] text-slate-300 font-bold">📦 RECOLECTADO</option>
                     <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
-                    <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
-                    <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                     <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
                     <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                     <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
                     <option value="Guía Generada" className="bg-[#0f0f11] text-slate-400 font-bold">📑 GUÍA GENERADA</option>
+                    <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                    <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                   </select>
                 </div>
-              ) : (
-                <>
-                  <StatusBadge status={o.status} />
-                  <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
-                    {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
-                  </span>
-                </>
-              )}
-            </div>
-          ) 
+              );
+            }
+
+            return (
+              <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
+                <StatusBadge status={o.status} />
+                <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
+                  {o.status === 'Entregado' ? 'COD PAGADO' : 'DEVUELTO'}
+                </span>
+              </div>
+            );
+          }
         },
         { 
           id: 'actions', 
@@ -2715,10 +2870,12 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         id: 'status', 
         label: 'ESTATUS DE LA ORDEN', 
         value: (o: Order) => o.status, 
-        render: (o: Order) => (
-          <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
-            {o.status === 'Incidencia' || o.status === 'Recolectado' ? (
-              <div onClick={(e) => e.stopPropagation()} className="relative z-10">
+        render: (o: Order) => {
+          const isLocked = o.status === 'Entregado' || o.status === 'Devuelto';
+
+          if (!isLocked) {
+            return (
+              <div onClick={(e) => e.stopPropagation()} className="relative z-10 flex justify-center">
                 <select
                   value={o.status}
                   onChange={async (e) => {
@@ -2727,33 +2884,41 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                       await handleUpdateOrderStatus(o.id, newStatus);
                     }
                   }}
-                  className={`border font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[125px] truncate font-sans ${
+                  className={`border font-black rounded-md px-2 py-1 text-[10px] uppercase tracking-wider cursor-pointer focus:outline-none transition-all text-center max-w-[128px] truncate font-sans ${
                     o.status === 'Incidencia'
                       ? 'bg-red-950/25 border-red-500/40 hover:border-red-400 text-red-400'
-                      : 'bg-slate-900/40 border-slate-600/40 hover:border-slate-400 text-slate-300'
+                      : o.status === 'Cancelado'
+                        ? 'bg-red-900/20 border-red-500/40 hover:border-red-400 text-[#ff4b4b]'
+                        : o.status === 'En tránsito'
+                          ? 'bg-blue-950/25 border-blue-500/40 hover:border-blue-400 text-blue-400'
+                          : o.status === 'Pendiente'
+                            ? 'bg-amber-950/25 border-amber-500/40 hover:border-amber-400 text-amber-400'
+                            : 'bg-slate-900/40 border-slate-600/40 hover:border-slate-400 text-slate-300'
                   }`}
-                  title="Editar estado del pedido"
+                  title="Editar estado del pedido (Devuelto y Entregado bloqueados)"
                 >
                   <option value="Recolectado" className="bg-[#0f0f11] text-slate-300 font-bold">📦 RECOLECTADO</option>
                   <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
-                  <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
-                  <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                   <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
                   <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                   <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
                   <option value="Guía Generada" className="bg-[#0f0f11] text-slate-400 font-bold">📑 GUÍA GENERADA</option>
+                  <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                  <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                 </select>
               </div>
-            ) : (
-              <>
-                <StatusBadge status={o.status} />
-                <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
-                  {o.status === 'Entregado' ? 'COD PAGADO' : o.status === 'Devuelto' ? 'DEVUELTO' : o.status === 'Cancelado' ? 'CANCELADO' : o.status.toUpperCase()}
-                </span>
-              </>
-            )}
-          </div>
-        ) 
+            );
+          }
+
+          return (
+            <div className="flex flex-col items-center justify-center gap-1 text-center font-display min-w-[120px]">
+              <StatusBadge status={o.status} />
+              <span className="text-[10px] font-black text-slate-500 uppercase block tracking-widest mt-0.5 status-subtext">
+                {o.status === 'Entregado' ? 'COD PAGADO' : 'DEVUELTO'}
+              </span>
+            </div>
+          );
+        } 
       },
       { 
         id: 'product', 
@@ -2986,7 +3151,14 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <>
                     <input 
                       type="file" 
-                      onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Shopify')}
+                      accept=".xlsx, .xls, .csv"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          processFile(file, 'Shopify');
+                          e.target.value = '';
+                        }
+                      }}
                       className="hidden" id="shopify-upload-clean"
                     />
                     <label 
@@ -3002,7 +3174,14 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                   <>
                     <input 
                       type="file" 
-                      onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], 'Dropi')}
+                      accept=".xlsx, .xls, .csv"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          processFile(file, 'Dropi');
+                          e.target.value = '';
+                        }
+                      }}
                       className="hidden" id="dropi-upload-clean"
                     />
                     <label 
@@ -3011,6 +3190,39 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     >
                       Importar Dropi
                     </label>
+
+                    {availableBatches.length > 0 && (
+                      <div className="flex items-center gap-2 ml-2 pl-3 border-l border-white/10">
+                        <span className="text-[10px] font-black text-[#ff9100] uppercase tracking-[0.15em] whitespace-nowrap">Archivo:</span>
+                        <select
+                          value={batchFilter}
+                          onChange={(e) => setBatchFilter(e.target.value)}
+                          className={`rounded-xl py-2 px-3 text-[11px] font-black transition-all cursor-pointer focus:outline-none border ${
+                            batchFilter
+                              ? 'bg-[#ff9100]/20 text-[#ff9100] border-[#ff9100]/60 shadow-lg shadow-orange-500/10'
+                              : 'bg-[#18181b] text-slate-300 border-white/10 hover:border-white/20'
+                          } max-w-[200px] truncate`}
+                          title="Filtrar por archivo subido (Lote de importación)"
+                        >
+                          <option value="" className="bg-[#0f0f11] text-slate-300 font-bold">📁 Todos los archivos</option>
+                          {availableBatches.map(b => (
+                            <option key={b.id} value={b.id} className="bg-[#0f0f11] text-[#ff9100] font-bold">
+                              📄 {b.name} ({b.count})
+                            </option>
+                          ))}
+                        </select>
+                        {batchFilter && (
+                          <button
+                            type="button"
+                            onClick={() => setBatchFilter('')}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                            title="Ver todos los archivos"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -4376,6 +4588,23 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 </select>
               </div>
 
+              {/* Filtro por Transportadora (Dropi / Envíos) */}
+              {(viewMode === 'DROPI' || availableCarriers.length > 0) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-amber-500/90 uppercase tracking-[0.2em] whitespace-nowrap">Transp.</span>
+                  <select 
+                    value={carrierFilter}
+                    onChange={(e) => setCarrierFilter(e.target.value)}
+                    className="bg-[#111] border border-amber-500/30 rounded-xl py-2.5 px-3 text-[13px] text-amber-300 focus:outline-none focus:border-amber-400 transition-all font-bold cursor-pointer hover:bg-[#222] max-w-[160px]"
+                  >
+                    <option value="">Todas</option>
+                    {availableCarriers.map(carrier => (
+                      <option key={carrier} value={carrier}>{carrier}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Botón y Mensaje Flotante de Porcentaje de Entrega con Gráfica */}
               <div className="relative" ref={deliveryRateFloatingRef}>
                 <button
@@ -4452,6 +4681,11 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                            {batchFilter && (
+                              <span className="text-[#ff9100] font-bold block mb-0.5">
+                                📄 Archivo: {availableBatches.find(b => b.id === batchFilter)?.name || 'Lote seleccionado'}
+                              </span>
+                            )}
                             {cityFilter && deptFilter ? (
                               <span>📍 {cityFilter} · 🗺️ {deptFilter}</span>
                             ) : cityFilter ? (
@@ -4852,12 +5086,14 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 </select>
               </div>
 
-              {(statusSlots.some(s => s !== 'All') || tagFilter || cityFilter || deptFilter || productFilter || sourceFilter !== 'All' || favoriteFilter !== 'All' || searchTerm) && (
+              {(statusSlots.some(s => s !== 'All') || tagFilter || cityFilter || deptFilter || carrierFilter || batchFilter || productFilter || sourceFilter !== 'All' || favoriteFilter !== 'All' || searchTerm) && (
                 <button 
                   type="button"
                   onClick={() => {
                     setDeptFilter('');
                     setCityFilter('');
+                    setCarrierFilter('');
+                    setBatchFilter('');
                     setProductFilter('');
                     setTagFilter('');
                     setReqDate('');
@@ -5123,7 +5359,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     <h4 className="text-[10px] font-black text-[#00df9a] uppercase tracking-[0.2em] mb-4 border-b border-[#00df9a]/20 pb-2">Logística y Envío</h4>
                     <div className="space-y-4">
                       <DetailRow label="Guía" value={showDetailModal.trackingId} />
-                      {showDetailModal.status === 'Incidencia' || showDetailModal.status === 'Recolectado' ? (
+                      {showDetailModal.status !== 'Entregado' && showDetailModal.status !== 'Devuelto' ? (
                         <div className="flex flex-col gap-1 border-b border-white/[0.03] pb-2 last:border-0">
                           <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.1em]">Estado (Editable)</span>
                           <select
@@ -5139,17 +5375,23 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                             className={`w-full font-bold rounded-xl py-2 px-3 text-[13px] focus:outline-none transition-all cursor-pointer border ${
                               showDetailModal.status === 'Incidencia'
                                 ? 'bg-red-950/20 border-red-500/40 text-red-400 hover:border-red-400'
-                                : 'bg-slate-900/40 border-slate-600/40 text-slate-200 hover:border-slate-400'
+                                : showDetailModal.status === 'Cancelado'
+                                  ? 'bg-red-900/20 border-red-500/40 text-[#ff4b4b] hover:border-red-400'
+                                  : showDetailModal.status === 'En tránsito'
+                                    ? 'bg-blue-950/20 border-blue-500/40 text-blue-400 hover:border-blue-400'
+                                    : showDetailModal.status === 'Pendiente'
+                                      ? 'bg-amber-950/20 border-amber-500/40 text-amber-400 hover:border-amber-400'
+                                      : 'bg-slate-900/40 border-slate-600/40 text-slate-200 hover:border-slate-400'
                             }`}
                           >
                             <option value="Recolectado" className="bg-[#0f0f11] text-slate-300 font-bold">📦 RECOLECTADO</option>
                             <option value="Incidencia" className="bg-[#0f0f11] text-red-400 font-bold">⚠️ INCIDENCIA</option>
-                            <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
-                            <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                             <option value="En tránsito" className="bg-[#0f0f11] text-blue-400 font-bold">🔵 TRÁNSITO</option>
                             <option value="Cancelado" className="bg-[#0f0f11] text-[#ff4b4b] font-bold">🔴 CANCELADO</option>
                             <option value="Pendiente" className="bg-[#0f0f11] text-amber-400 font-bold">🟡 PENDIENTE</option>
                             <option value="Guía Generada" className="bg-[#0f0f11] text-slate-400 font-bold">📑 GUÍA GENERADA</option>
+                            <option value="Entregado" className="bg-[#0f0f11] text-[#00df9a] font-bold">🟢 ENTREGADO</option>
+                            <option value="Devuelto" className="bg-[#0f0f11] text-[#ff9100] font-bold">🟠 DEVUELTO</option>
                           </select>
                         </div>
                       ) : (
