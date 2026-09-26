@@ -207,6 +207,26 @@ function AppContent() {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  // Active Executed File / Batch state (persists across all panels: Panel Control, Análisis Pro, Semáforos, etc.)
+  const [activeExecutedBatchId, setActiveExecutedBatchId] = useState<string>(() => {
+    return localStorage.getItem('ecommil_active_executed_batch_id') || 'all';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ecommil_active_executed_batch_id', activeExecutedBatchId);
+  }, [activeExecutedBatchId]);
+
+  const activeBatchInfo = useMemo(() => {
+    if (activeExecutedBatchId === 'all') return null;
+    const matchingOrder = orders.find(o => o.uploadBatchId === activeExecutedBatchId);
+    const count = orders.filter(o => o.uploadBatchId === activeExecutedBatchId).length;
+    return {
+      id: activeExecutedBatchId,
+      name: matchingOrder?.uploadFileName || 'Archivo Dropi Ejecutado',
+      count
+    };
+  }, [orders, activeExecutedBatchId]);
+
   // Shared Month/Year selection state across components (e.g. FinancialSummary, AdvertisingExpenses)
   const defaultYearMonth = useMemo(() => {
     if (orders.length > 0) {
@@ -401,6 +421,12 @@ function AppContent() {
 
   const filteredOrders = useMemo(() => {
     let result = orders;
+
+    // Filter by active executed Dropi file / batch across ALL panels
+    if (activeExecutedBatchId !== 'all') {
+      result = result.filter(o => o.uploadBatchId === activeExecutedBatchId);
+    }
+
     if (globalProductFilter !== 'all') {
       if (globalProductFilter === 'sin_producto') {
         result = result.filter(o => !o.product || o.product.trim() === '' || o.product.toLowerCase().trim() === 'sin producto');
@@ -452,7 +478,7 @@ function AppContent() {
       }
       return true;
     });
-  }, [orders, globalStartDate, globalEndDate, globalDateFilterType, globalProductFilter]);
+  }, [orders, activeExecutedBatchId, globalStartDate, globalEndDate, globalDateFilterType, globalProductFilter]);
 
   const activeTabContentRef = useRef<HTMLDivElement>(null);
 
@@ -707,6 +733,24 @@ function AppContent() {
       await batch.commit();
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, 'orders');
+    }
+  };
+
+  const handleSetActiveExecutedBatchId = (batchId: string) => {
+    setActiveExecutedBatchId(batchId);
+    if (batchId !== 'all') {
+      setGlobalStartDate('');
+      setGlobalEndDate('');
+    }
+  };
+
+  const deleteBatchOrders = async (batchId: string) => {
+    const idsToDelete = orders.filter(o => o.uploadBatchId === batchId).map(o => o.id);
+    if (idsToDelete.length > 0) {
+      await deleteOrders(idsToDelete);
+    }
+    if (activeExecutedBatchId === batchId) {
+      setActiveExecutedBatchId('all');
     }
   };
 
@@ -1535,6 +1579,23 @@ function AppContent() {
                 Todo el tiempo ({orders.length} Pedidos)
               </span>
             )}
+
+            {activeBatchInfo && (
+              <div className="flex items-center gap-1.5 bg-orange-500/15 border border-orange-500/40 text-[#ff9100] px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#ff9100] animate-pulse"></span>
+                <span className="truncate max-w-[140px] sm:max-w-[180px]" title={activeBatchInfo.name}>
+                  Ejecutado: {activeBatchInfo.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveExecutedBatchId('all')}
+                  className="hover:text-white transition-colors ml-1 underline cursor-pointer"
+                  title="Ver consolidado de todos los archivos"
+                >
+                  ✕ Todos
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1684,6 +1745,7 @@ function AppContent() {
       {activeTab === 'orders' && (
                 <OrderManagement 
                   orders={filteredOrders} 
+                  allOrders={orders}
                   setOrders={setOrders}
                   formatCurrency={formatCurrency} 
                   onDeleteOrders={deleteOrders} 
@@ -1691,7 +1753,11 @@ function AppContent() {
                   currentCurrency={currency}
                   exchangeRate={currencyInfo.rate}
                   isConversionActive={isConversionActive}
-                  viewMode="DROPI" theme={theme}
+                  viewMode="DROPI" 
+                  theme={theme}
+                  activeExecutedBatchId={activeExecutedBatchId}
+                  setActiveExecutedBatchId={handleSetActiveExecutedBatchId}
+                  onDeleteBatch={deleteBatchOrders}
                 />
               )}
               {activeTab === 'calculator' && (

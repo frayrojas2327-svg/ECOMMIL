@@ -316,5 +316,13 @@ service cloud.firestore {
       allow read: if isSignedIn() && userId == request.auth.uid;
       allow write: if isVerified() && userId == request.auth.uid && isValidPlatformExpensesConfig(incoming());
     }
+
+    // 14. Dropi File History Collection
+    match /dropi_file_history/{fileId} {
+      allow get: if isOwner(resource.data.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if isVerified() && incoming().uid == request.auth.uid;
+      allow delete: if isVerified() && isOwner(resource.data.uid);
+    }
   }
 }

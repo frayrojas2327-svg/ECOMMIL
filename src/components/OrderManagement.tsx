@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, Filter, Download, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Truck, RotateCcw, XCircle, Clock, Trash2, Square, CheckSquare, AlertTriangle, Upload, FileSpreadsheet, Package, Plus, X, Globe, Zap, MapPin, FileX, GitMerge, Play, Pause, Sliders, Layout, Users, DollarSign, Eye, ShieldCheck, Maximize2, Minimize2, Calendar, Coins, TrendingUp, Star, BarChart3, PieChart as PieChartIcon, FileText } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Cell, PieChart, Pie } from 'recharts';
-import { Order, calculateOrderProfit, OrderStatus, parseFlexibleDate } from '../mockData';
+import { Order, calculateOrderProfit, OrderStatus, parseFlexibleDate, DropiFileRecord } from '../mockData';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -12,6 +12,7 @@ import { ReturnNovelty } from './ReturnsAnalysis';
 
 interface OrderManagementProps {
   orders: Order[];
+  allOrders?: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   formatCurrency: (amount: number) => string;
   onDeleteOrders?: (ids: string[]) => void;
@@ -21,6 +22,9 @@ interface OrderManagementProps {
   isConversionActive?: boolean;
   viewMode?: 'SHOPIFY' | 'DROPI' | 'TIKTOK';
   theme?: string;
+  activeExecutedBatchId?: string;
+  setActiveExecutedBatchId?: (batchId: string) => void;
+  onDeleteBatch?: (batchId: string) => void;
 }
 
 export const STATUS_COLORS: Record<string, { text: string; border: string; bg: string; badge: string }> = {
@@ -259,6 +263,7 @@ const InlineProductEditor: React.FC<InlineProductEditorProps> = ({
 
 const OrderManagement: React.FC<OrderManagementProps> = ({ 
   orders, 
+  allOrders,
   setOrders,
   formatCurrency, 
   onDeleteOrders, 
@@ -267,11 +272,15 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   exchangeRate = 1,
   isConversionActive = false,
   viewMode = 'DROPI',
-  theme = 'theme-light-white'
+  theme = 'theme-light-white',
+  activeExecutedBatchId = 'all',
+  setActiveExecutedBatchId,
+  onDeleteBatch
 }) => {
   const isLightWhite = theme === 'theme-light-white';
   const isReconciliationMode = viewMode === 'TIKTOK';
   const tableScrollRef = useRef<HTMLDivElement>(null);
+  const ordersTableRef = useRef<HTMLDivElement>(null);
 
   const { user, isDemoMode } = useAuth();
 
@@ -1120,6 +1129,233 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const [isImporting, setIsImporting] = useState<false | 'Dropi' | 'Shopify'>(false);
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
+  // Dropi File History and Registry State
+  const [fileHistory, setFileHistory] = useState<DropiFileRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('ecommil_dropi_file_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Error loading file history:', e);
+    }
+    return [];
+  });
+
+  // Staging state for newly uploaded Dropi file waiting for explicit "Ejecutar Archivo"
+  const [stagedDropiFile, setStagedDropiFile] = useState<{
+    record: DropiFileRecord;
+    orders: Omit<Order, 'id' | 'uid'>[];
+  } | null>(null);
+
+  // File History Date Filter & Search
+  const [historyDateFilter, setHistoryDateFilter] = useState<string>('');
+  const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
+  const [showFileHistoryPanel, setShowFileHistoryPanel] = useState<boolean>(true);
+
+  // Sync and reconstruct file history from all available orders
+  useEffect(() => {
+    const sourceOrders = allOrders && allOrders.length > 0 ? allOrders : orders;
+    if (!sourceOrders || sourceOrders.length === 0) return;
+
+    setFileHistory(prevHistory => {
+      const historyMap = new Map<string, DropiFileRecord>();
+      prevHistory.forEach(f => historyMap.set(f.id, f));
+
+      // Scan all orders for uploadBatchIds
+      const batchOrdersMap = new Map<string, Order[]>();
+      sourceOrders.forEach(o => {
+        if (o.uploadBatchId) {
+          if (!batchOrdersMap.has(o.uploadBatchId)) {
+            batchOrdersMap.set(o.uploadBatchId, []);
+          }
+          batchOrdersMap.get(o.uploadBatchId)!.push(o);
+        }
+      });
+
+      batchOrdersMap.forEach((batchOrders, batchId) => {
+        const first = batchOrders[0];
+        const delivered = batchOrders.filter(o => o.status === 'Entregado').length;
+        const returned = batchOrders.filter(o => o.status === 'Devuelto').length;
+        const inTransit = batchOrders.filter(o => o.status === 'En tránsito' || o.status === 'Guía Generada' || o.status === 'Recolectado').length;
+        const cancelled = batchOrders.filter(o => o.status === 'Cancelado').length;
+        const totalRev = batchOrders.reduce((sum, o) => sum + (o.valorFacturado || o.price || 0), 0);
+        
+        const existing = historyMap.get(batchId);
+        const orderDateObj = first.date || new Date();
+        const uploadDate = existing?.uploadDate || (first.uploadTimestamp ? format(new Date(first.uploadTimestamp), 'yyyy-MM-dd HH:mm') : format(orderDateObj, 'yyyy-MM-dd HH:mm'));
+        const uploadDateOnly = existing?.uploadDateOnly || (first.uploadFileDate || uploadDate.split(' ')[0]);
+
+        historyMap.set(batchId, {
+          id: batchId,
+          fileName: existing?.fileName || first.uploadFileName || (batchId === 'batch_demo_dropi' ? 'Dropi_Reporte_Demostracion.xlsx' : 'Archivo_Dropi.xlsx'),
+          uploadDate,
+          uploadDateOnly,
+          uploadTimestamp: existing?.uploadTimestamp || first.uploadTimestamp || Date.now(),
+          orderCount: batchOrders.length,
+          totalRevenue: totalRev,
+          deliveredCount: delivered,
+          returnedCount: returned,
+          inTransitCount: inTransit,
+          cancelledCount: cancelled,
+          status: 'ejecutado',
+          platform: (first.provider as any) || 'Dropi'
+        });
+      });
+
+      const merged = Array.from(historyMap.values()).sort((a, b) => b.uploadTimestamp - a.uploadTimestamp);
+      try {
+        localStorage.setItem('ecommil_dropi_file_history', JSON.stringify(merged));
+      } catch (e) {}
+      return merged;
+    });
+  }, [orders, allOrders, activeExecutedBatchId]);
+
+  // Filtered file history list according to date and search term
+  const filteredFileHistory = useMemo(() => {
+    return fileHistory.filter(f => {
+      if (historyDateFilter) {
+        if (!f.uploadDateOnly || !f.uploadDateOnly.startsWith(historyDateFilter)) {
+          return false;
+        }
+      }
+      if (historySearchTerm) {
+        const term = historySearchTerm.toLowerCase().trim();
+        const matchesName = f.fileName.toLowerCase().includes(term);
+        const matchesId = f.id.toLowerCase().includes(term);
+        if (!matchesName && !matchesId) return false;
+      }
+      return true;
+    });
+  }, [fileHistory, historyDateFilter, historySearchTerm]);
+
+  // Execute staged file
+  const handleExecuteStagedFile = () => {
+    if (!stagedDropiFile || !onAddOrders) return;
+    
+    // Add orders to app via parent handler
+    onAddOrders(stagedDropiFile.orders);
+
+    // Optimistically update local orders immediately so the table shows them without delay
+    const stagedOrdersWithIds: Order[] = stagedDropiFile.orders.map((o, idx) => ({
+      ...o,
+      id: (o as any).id || `order_exec_${Date.now()}_${idx}`,
+      uid: user?.uid || 'local',
+      orderId: o.orderId || `ORD-${Date.now().toString().slice(-5)}`
+    } as Order));
+    setOrders(prev => [...stagedOrdersWithIds, ...prev]);
+
+    const batchId = stagedDropiFile.record.id;
+    if (setActiveExecutedBatchId) {
+      setActiveExecutedBatchId(batchId);
+    }
+    setBatchFilter(batchId);
+
+    setFileHistory(prev => {
+      const updated = prev.map(f => f.id === batchId ? { ...f, status: 'ejecutado' as const } : f);
+      try {
+        localStorage.setItem('ecommil_dropi_file_history', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    setNotification({
+      message: `⚡ ¡ARCHIVO EJECUTADO! Se procesaron ${stagedDropiFile.orders.length} pedidos. La tabla inferior y todos los paneles se han actualizado exclusivamente con este archivo.`,
+      type: 'success'
+    });
+    setTimeout(() => setNotification(null), 6000);
+
+    // Scroll smoothly to table so user sees the table and stats deployed
+    setTimeout(() => {
+      ordersTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+
+    setStagedDropiFile(null);
+  };
+
+  // Execute any file from history
+  const handleExecuteHistoryFile = (fileId: string) => {
+    if (setActiveExecutedBatchId) {
+      setActiveExecutedBatchId(fileId);
+    }
+    setBatchFilter(fileId);
+
+    const targetFile = fileHistory.find(f => f.id === fileId);
+    const fileName = targetFile?.fileName || 'Archivo Dropi';
+
+    setFileHistory(prev => {
+      const updated = prev.map(f => f.id === fileId ? { ...f, status: 'ejecutado' as const } : f);
+      try {
+        localStorage.setItem('ecommil_dropi_file_history', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    setNotification({
+      message: `⚡ ¡ARCHIVO EJECUTADO! Visualizando "${fileName}". La tabla inferior muestra únicamente este archivo.`,
+      type: 'success'
+    });
+    setTimeout(() => setNotification(null), 5000);
+
+    // Scroll smoothly down to the table
+    setTimeout(() => {
+      ordersTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+  };
+
+  // Execute all files (Consolidated view across all panels)
+  const handleExecuteAllFiles = () => {
+    if (setActiveExecutedBatchId) {
+      setActiveExecutedBatchId('all');
+    }
+    setBatchFilter('');
+
+    setNotification({
+      message: `🌐 Se activó la vista consolidada de TODOS los archivos en la tabla y todos los paneles.`,
+      type: 'success'
+    });
+    setTimeout(() => setNotification(null), 5000);
+
+    // Scroll down to table
+    setTimeout(() => {
+      ordersTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+  };
+
+  // Delete file from history and system
+  const handleDeleteHistoryFile = (fileId: string) => {
+    if (onDeleteBatch) {
+      onDeleteBatch(fileId);
+    } else if (onDeleteOrders) {
+      const sourceOrders = allOrders || orders;
+      const ids = sourceOrders.filter(o => o.uploadBatchId === fileId).map(o => o.id);
+      if (ids.length > 0) onDeleteOrders(ids);
+    }
+
+    setFileHistory(prev => {
+      const updated = prev.filter(f => f.id !== fileId);
+      try {
+        localStorage.setItem('ecommil_dropi_file_history', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    if (activeExecutedBatchId === fileId && setActiveExecutedBatchId) {
+      setActiveExecutedBatchId('all');
+    }
+
+    if (stagedDropiFile && stagedDropiFile.record.id === fileId) {
+      setStagedDropiFile(null);
+    }
+
+    setNotification({
+      message: `Archivo eliminado del registro y del sistema.`,
+      type: 'success'
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
   const handleToggleSingleFavorite = async (orderId: string) => {
     const isCurrentlyFav = favoriteOrderIds.includes(orderId) || orders.find(o => o.id === orderId)?.isFavorite;
     let updatedFavs: string[];
@@ -1455,13 +1691,14 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
   // Lista de archivos / lotes subidos para filtro individual
   const availableBatches = useMemo(() => {
+    const sourceOrders = allOrders && allOrders.length > 0 ? allOrders : orders;
     const batchMap = new Map<string, { id: string; name: string; count: number; date?: string; platform?: string }>();
-    orders.forEach(o => {
+    sourceOrders.forEach(o => {
       if (o.uploadBatchId) {
         if (!batchMap.has(o.uploadBatchId)) {
           batchMap.set(o.uploadBatchId, {
             id: o.uploadBatchId,
-            name: o.uploadFileName || 'Archivo importado',
+            name: o.uploadFileName || (o.uploadBatchId === 'batch_demo_dropi' ? 'Dropi_Reporte_Demostracion.xlsx' : 'Archivo importado'),
             count: 0,
             platform: o.provider,
           });
@@ -1471,7 +1708,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       }
     });
     return Array.from(batchMap.values());
-  }, [orders]);
+  }, [orders, allOrders]);
 
   // Si cambia el departamento y la ciudad seleccionada no pertenece al nuevo departamento, se limpia automáticamente
   useEffect(() => {
@@ -1923,8 +2160,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
   const processFile = (file: File, platform: 'Dropi' | 'Shopify') => {
     if (!onAddOrders) return;
 
-    const currentBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const currentFileName = file.name || `${platform}_import_${new Date().toISOString().split('T')[0]}`;
+    const currentTimestamp = Date.now();
+    const currentDateStr = format(new Date(), 'yyyy-MM-dd');
+    const currentBatchId = `batch_${currentTimestamp}_${Math.random().toString(36).substring(2, 7)}`;
+    const currentFileName = file.name || `${platform}_import_${currentDateStr}`;
 
     setIsImporting(platform);
     const reader = new FileReader();
@@ -2564,7 +2803,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                 fechaSolicitud: fechaSolicitudValue,
                 fechaEntregaDevolucion: fechaEntregaDevolucionValue,
                 uploadBatchId: currentBatchId,
-                uploadFileName: currentFileName
+                uploadFileName: currentFileName,
+                uploadTimestamp: currentTimestamp,
+                uploadFileDate: currentDateStr
               });
             }
           });
@@ -2581,6 +2822,48 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           setNotification({ 
             message: `AVISO: No se encontraron pedidos válidos en el archivo de ${platform}.`, 
             type: 'error' 
+          });
+        } else if (platform === 'Dropi') {
+          const totalRev = newOrders.reduce((sum, o) => sum + (o.valorFacturado || o.price || 0), 0);
+          const delivered = newOrders.filter(o => o.status === 'Entregado').length;
+          const returned = newOrders.filter(o => o.status === 'Devuelto').length;
+          const inTransit = newOrders.filter(o => o.status === 'En tránsito' || o.status === 'Guía Generada' || o.status === 'Recolectado').length;
+          const cancelled = newOrders.filter(o => o.status === 'Cancelado').length;
+
+          const newRecord: DropiFileRecord = {
+            id: currentBatchId,
+            fileName: currentFileName,
+            uploadDate: format(new Date(currentTimestamp), 'yyyy-MM-dd HH:mm'),
+            uploadDateOnly: currentDateStr,
+            uploadTimestamp: currentTimestamp,
+            orderCount: newOrders.length,
+            totalRevenue: totalRev,
+            deliveredCount: delivered,
+            returnedCount: returned,
+            inTransitCount: inTransit,
+            cancelledCount: cancelled,
+            status: 'pendiente',
+            platform: 'Dropi'
+          };
+
+          setStagedDropiFile({
+            record: newRecord,
+            orders: newOrders
+          });
+
+          setFileHistory(prev => {
+            const updated = [newRecord, ...prev.filter(f => f.id !== currentBatchId)];
+            try {
+              localStorage.setItem('ecommil_dropi_file_history', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+
+          setShowFileHistoryPanel(true);
+
+          setNotification({ 
+            message: `📄 Archivo "${currentFileName}" registrado en el historial (${newOrders.length} pedidos). Presiona "⚡ Ejecutar Archivo" para aplicarlo a Panel Control y Análisis Pro.`, 
+            type: 'success' 
           });
         } else {
           onAddOrders(newOrders);
@@ -2607,8 +2890,22 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       return String(num).replace(/\D/g, '').slice(-10);
     };
 
+    const effectiveBatch = (activeExecutedBatchId && activeExecutedBatchId !== 'all') 
+      ? activeExecutedBatchId 
+      : batchFilter;
+
+    // Use allOrders when available so global date filters in App.tsx don't hide the executed file's orders
+    const pool = (allOrders && allOrders.length > 0) ? allOrders : orders;
+    let baseOrders = pool;
+    if (effectiveBatch) {
+      const matched = pool.filter(o => o.uploadBatchId === effectiveBatch);
+      if (matched.length > 0) {
+        baseOrders = matched;
+      }
+    }
+
     const shopifyCustomers = new Set();
-    orders.forEach(o => {
+    baseOrders.forEach(o => {
       const isShopify = o.provider?.toLowerCase().includes('shopify') || (!o.provider && !o.transportadora);
       if (isShopify) {
         const name = (o.nombreCliente || '').toLowerCase().trim();
@@ -2617,7 +2914,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       }
     });
 
-    return orders.filter(order => {
+    return baseOrders.filter(order => {
       const isDropi = order.provider?.toLowerCase().includes('dropi') || !!order.transportadora;
       const isShopify = order.provider?.toLowerCase().includes('shopify') || (!order.provider && !order.transportadora);
 
@@ -2687,11 +2984,39 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           : !isFav;
 
       const matchesCarrier = !carrierFilter || (order.transportadora && order.transportadora.toLowerCase().trim() === carrierFilter.toLowerCase().trim());
-      const matchesBatch = !batchFilter || (order.uploadBatchId === batchFilter);
+      const matchesBatch = !effectiveBatch || (order.uploadBatchId === effectiveBatch);
 
       return matchesSearch && matchesStatus && matchesDept && matchesCity && matchesCarrier && matchesTag && matchesProduct && matchesSource && matchesReqDate && matchesFavorite && matchesBatch;
     });
-  }, [orders, searchTerm, statusSlots, deptFilter, cityFilter, carrierFilter, tagFilter, productFilter, batchFilter, sourceFilter, favoriteFilter, favoriteOrderIds, reqDate, viewMode]);
+  }, [orders, allOrders, activeExecutedBatchId, searchTerm, statusSlots, deptFilter, cityFilter, carrierFilter, tagFilter, productFilter, batchFilter, sourceFilter, favoriteFilter, favoriteOrderIds, reqDate, viewMode]);
+
+  const currentExecutedFile = useMemo(() => {
+    if (activeExecutedBatchId === 'all') return null;
+    return fileHistory.find(f => f.id === activeExecutedBatchId) || null;
+  }, [fileHistory, activeExecutedBatchId]);
+
+  const tableStats = useMemo(() => {
+    const total = filteredOrders.length;
+    const delivered = filteredOrders.filter(o => o.status === 'Entregado').length;
+    const returned = filteredOrders.filter(o => o.status === 'Devuelto').length;
+    const cancelled = filteredOrders.filter(o => o.status === 'Cancelado').length;
+    const inTransit = filteredOrders.filter(o => o.status === 'En tránsito' || o.status === 'Guía Generada' || o.status === 'Recolectado').length;
+
+    const deliveryRate = total > 0 ? ((delivered / total) * 100).toFixed(1) : '0.0';
+    const returnRate = total > 0 ? ((returned / total) * 100).toFixed(1) : '0.0';
+    const cancelRate = total > 0 ? ((cancelled / total) * 100).toFixed(1) : '0.0';
+
+    return {
+      total,
+      deliveredCount: delivered,
+      returnedCount: returned,
+      cancelledCount: cancelled,
+      inTransitCount: inTransit,
+      deliveryRate,
+      returnRate,
+      cancelRate
+    };
+  }, [filteredOrders]);
 
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const saved = localStorage.getItem('order-column-widths');
@@ -3186,37 +3511,71 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                     />
                     <label 
                       htmlFor="dropi-upload-clean"
-                      className="px-6 py-2.5 bg-[#ff9100]/5 border-2 border-[#ff9100]/60 rounded-xl font-black text-[11px] text-[#ff9100] cursor-pointer hover:bg-[#ff9100]/20 hover:border-[#ff9100] transition-all tracking-[0.15em] uppercase shadow-lg shadow-orange-500/10 active:scale-95"
+                      className="px-5 py-2.5 bg-[#ff9100]/5 border-2 border-[#ff9100]/60 rounded-xl font-black text-[11px] text-[#ff9100] cursor-pointer hover:bg-[#ff9100]/20 hover:border-[#ff9100] transition-all tracking-[0.15em] uppercase shadow-lg shadow-orange-500/10 active:scale-95 flex items-center gap-1.5"
                     >
+                      <Upload size={13} />
                       Importar Dropi
                     </label>
 
+                    {stagedDropiFile && (
+                      <button
+                        type="button"
+                        onClick={handleExecuteStagedFile}
+                        className="px-4 py-2.5 bg-[#00df9a] hover:bg-[#00c589] text-black font-black text-[11px] rounded-xl tracking-wider uppercase flex items-center gap-1.5 animate-pulse shadow-lg shadow-[#00df9a]/30 active:scale-95 transition-all cursor-pointer"
+                        title="Ejecutar archivo recién cargado e impactar todos los paneles"
+                      >
+                        <Zap size={14} fill="currentColor" />
+                        <span>⚡ Ejecutar Archivo</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowFileHistoryPanel(!showFileHistoryPanel)}
+                      className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border ${
+                        showFileHistoryPanel 
+                          ? 'bg-[#ff9100]/20 text-[#ff9100] border-[#ff9100]/60 shadow-md shadow-orange-500/10' 
+                          : 'bg-white/5 text-slate-300 border-white/10 hover:border-white/20'
+                      }`}
+                      title="Ver registro e historial de archivos subidos"
+                    >
+                      <Clock size={13} />
+                      <span>Historial ({fileHistory.length})</span>
+                    </button>
+
                     {availableBatches.length > 0 && (
-                      <div className="flex items-center gap-2 ml-2 pl-3 border-l border-white/10">
-                        <span className="text-[10px] font-black text-[#ff9100] uppercase tracking-[0.15em] whitespace-nowrap">Archivo:</span>
+                      <div className="flex items-center gap-2 ml-1 pl-3 border-l border-white/10">
+                        <span className="text-[10px] font-black text-[#ff9100] uppercase tracking-[0.15em] whitespace-nowrap">Activo:</span>
                         <select
-                          value={batchFilter}
-                          onChange={(e) => setBatchFilter(e.target.value)}
+                          value={activeExecutedBatchId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'all') {
+                              handleExecuteAllFiles();
+                            } else {
+                              handleExecuteHistoryFile(val);
+                            }
+                          }}
                           className={`rounded-xl py-2 px-3 text-[11px] font-black transition-all cursor-pointer focus:outline-none border ${
-                            batchFilter
+                            activeExecutedBatchId !== 'all'
                               ? 'bg-[#ff9100]/20 text-[#ff9100] border-[#ff9100]/60 shadow-lg shadow-orange-500/10'
                               : 'bg-[#18181b] text-slate-300 border-white/10 hover:border-white/20'
-                          } max-w-[200px] truncate`}
-                          title="Filtrar por archivo subido (Lote de importación)"
+                          } max-w-[190px] truncate`}
+                          title="Seleccionar archivo ejecutado en todos los paneles"
                         >
-                          <option value="" className="bg-[#0f0f11] text-slate-300 font-bold">📁 Todos los archivos</option>
+                          <option value="all" className="bg-[#0f0f11] text-slate-300 font-bold">📁 Todos los archivos</option>
                           {availableBatches.map(b => (
                             <option key={b.id} value={b.id} className="bg-[#0f0f11] text-[#ff9100] font-bold">
                               📄 {b.name} ({b.count})
                             </option>
                           ))}
                         </select>
-                        {batchFilter && (
+                        {activeExecutedBatchId !== 'all' && (
                           <button
                             type="button"
-                            onClick={() => setBatchFilter('')}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                            title="Ver todos los archivos"
+                            onClick={handleExecuteAllFiles}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                            title="Ver todos los archivos consolidados"
                           >
                             <X size={13} />
                           </button>
@@ -3252,6 +3611,360 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           </div>
         )}
       </div>
+
+      {/* HISTORIAL Y REGISTRO DE ARCHIVOS DROPI */}
+      {viewMode === 'DROPI' && showFileHistoryPanel && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`p-6 rounded-2xl border mb-6 transition-all relative overflow-hidden ${
+            isLightWhite
+              ? 'bg-white border-slate-200/90 shadow-lg shadow-orange-500/5'
+              : 'bg-[#0e0e11] border-orange-500/20 shadow-2xl'
+          }`}
+        >
+          {/* Accent lighting */}
+          <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 blur-3xl rounded-full pointer-events-none" />
+
+          <div className="relative z-10 space-y-5">
+            {/* Header info */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-white/5">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#ff9100]/10 border border-[#ff9100]/30 flex items-center justify-center text-[#ff9100] shrink-0 mt-0.5">
+                  <FileSpreadsheet size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className={`text-base font-display font-black uppercase tracking-wider ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>
+                      Registro e Historial de Archivos Dropi
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ff9100]/15 text-[#ff9100] border border-[#ff9100]/30">
+                      {fileHistory.length} {fileHistory.length === 1 ? 'archivo' : 'archivos'}
+                    </span>
+                  </div>
+                  <p className={`text-xs mt-1 ${isLightWhite ? 'text-slate-500' : 'text-slate-400'}`}>
+                    Historial cronológico de archivos subidos según la fecha. Al presionar <strong className="text-[#00df9a]">"Ejecutar Archivo"</strong>, solo los datos de ese archivo se ejecutan y reflejan en <strong className="text-white">Panel Control</strong>, <strong className="text-white">Análisis Pro</strong> y todos los paneles.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status pill & actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                {activeExecutedBatchId !== 'all' ? (
+                  <div className="flex items-center gap-2 bg-[#00df9a]/10 border border-[#00df9a]/40 px-3.5 py-1.5 rounded-xl">
+                    <span className="w-2 h-2 rounded-full bg-[#00df9a] animate-pulse shrink-0" />
+                    <span className="text-[11px] font-black uppercase text-[#00df9a] tracking-wider truncate max-w-[200px]" title={fileHistory.find(f => f.id === activeExecutedBatchId)?.fileName}>
+                      Ejecutado: {fileHistory.find(f => f.id === activeExecutedBatchId)?.fileName || 'Archivo Dropi'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleExecuteAllFiles}
+                      className="text-[10px] font-bold text-slate-400 hover:text-white underline ml-1 cursor-pointer"
+                      title="Ver todos los archivos consolidados"
+                    >
+                      (Ver Todos)
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-xl">
+                    <Globe size={13} className="text-slate-400" />
+                    <span className="text-[11px] font-black uppercase text-slate-300 tracking-wider">
+                      Mostrando Todos los Archivos ({allOrders?.length || orders.length} pedidos)
+                    </span>
+                  </div>
+                )}
+
+                <label
+                  htmlFor="dropi-upload-clean"
+                  className="px-4 py-2 bg-[#ff9100] hover:bg-[#e07d00] text-black font-black text-[11px] tracking-wider uppercase rounded-xl shadow-lg shadow-orange-500/20 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Upload size={13} />
+                  <span>Subir Nuevo Archivo</span>
+                </label>
+              </div>
+            </div>
+
+            {/* STAGED FILE ALERT BANNER (If newly uploaded and waiting for execution) */}
+            {stagedDropiFile && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-4 rounded-xl border-2 border-[#00df9a] bg-[#00df9a]/10 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl shadow-[#00df9a]/10"
+              >
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-[#00df9a] flex items-center justify-center text-black font-black shrink-0">
+                    <Zap size={22} fill="currentColor" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#00df9a] text-black">
+                        ¡Nuevo Archivo Cargado!
+                      </span>
+                      <span className="text-xs font-mono font-bold text-slate-300">
+                        {stagedDropiFile.record.uploadDate}
+                      </span>
+                    </div>
+                    <p className="text-sm font-black text-white mt-1">
+                      {stagedDropiFile.record.fileName}
+                    </p>
+                    <p className="text-xs text-slate-300">
+                      <strong>{stagedDropiFile.record.orderCount}</strong> pedidos procesados • Total facturado: <strong>{localFormatCurrency(stagedDropiFile.record.totalRevenue)}</strong>
+                    </p>
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      <span className="px-2.5 py-1 rounded-lg bg-[#00df9a]/20 border border-[#00df9a]/30 text-[#00df9a] text-[10px] font-black uppercase flex items-center gap-1">
+                        <CheckCircle2 size={11} />
+                        % Entrega: {stagedDropiFile.record.orderCount > 0 ? ((stagedDropiFile.record.deliveredCount / stagedDropiFile.record.orderCount) * 100).toFixed(1) : '0.0'}%
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-[#ff9100]/20 border border-[#ff9100]/30 text-[#ff9100] text-[10px] font-black uppercase flex items-center gap-1">
+                        <RotateCcw size={11} />
+                        % Devolución: {stagedDropiFile.record.orderCount > 0 ? ((stagedDropiFile.record.returnedCount / stagedDropiFile.record.orderCount) * 100).toFixed(1) : '0.0'}%
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] font-black uppercase flex items-center gap-1">
+                        <XCircle size={11} />
+                        % Cancelación: {stagedDropiFile.record.orderCount > 0 ? (((stagedDropiFile.record.cancelledCount || 0) / stagedDropiFile.record.orderCount) * 100).toFixed(1) : '0.0'}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleExecuteStagedFile}
+                    className="px-6 py-2.5 bg-[#00df9a] hover:bg-[#00c589] text-black font-black text-xs uppercase tracking-wider rounded-xl shadow-xl shadow-[#00df9a]/30 flex items-center gap-2 active:scale-95 transition-all cursor-pointer animate-bounce"
+                  >
+                    <Zap size={15} fill="currentColor" />
+                    <span>⚡ Ejecutar Archivo Ahora</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStagedDropiFile(null);
+                      setNotification({ message: 'El archivo permanece registrado en el historial para ser ejecutado cuando lo desees.', type: 'success' });
+                    }}
+                    className="px-3.5 py-2.5 bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white font-bold text-xs rounded-xl border border-white/15 transition-all cursor-pointer"
+                  >
+                    Guardar sin ejecutar
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* FILTERS ACCORDING TO DATE & SEARCH */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Calendar size={14} className="text-[#ff9100]" />
+                  <span className={`text-[11px] font-black uppercase tracking-wider ${isLightWhite ? 'text-slate-600' : 'text-slate-400'}`}>
+                    Filtrar historial por fecha:
+                  </span>
+                  <input
+                    type="date"
+                    value={historyDateFilter}
+                    onChange={(e) => setHistoryDateFilter(e.target.value)}
+                    className={`text-xs font-bold py-1.5 px-2.5 rounded-xl border focus:outline-none focus:border-[#ff9100] transition-colors cursor-pointer ${
+                      isLightWhite 
+                        ? 'bg-slate-50 border-slate-300 text-slate-800 [color-scheme:light]' 
+                        : 'bg-[#18181b] border-white/15 text-white [color-scheme:dark]'
+                    }`}
+                  />
+                  {historyDateFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setHistoryDateFilter('')}
+                      className="text-[10px] font-black uppercase text-red-400 hover:text-red-300 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 cursor-pointer"
+                    >
+                      ✕ Quitar Fecha
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 sm:ml-3">
+                  <Search size={14} className="text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre de archivo..."
+                    value={historySearchTerm}
+                    onChange={(e) => setHistorySearchTerm(e.target.value)}
+                    className={`text-xs font-bold py-1.5 px-3 rounded-xl border focus:outline-none focus:border-[#ff9100] transition-colors w-48 sm:w-64 ${
+                      isLightWhite 
+                        ? 'bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400' 
+                        : 'bg-[#18181b] border-white/15 text-white placeholder-slate-500'
+                    }`}
+                  />
+                  {historySearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setHistorySearchTerm('')}
+                      className="text-[10px] font-bold text-slate-400 hover:text-white px-1.5 py-1"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExecuteAllFiles}
+                  className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                    activeExecutedBatchId === 'all'
+                      ? 'bg-[#00df9a]/20 text-[#00df9a] border-[#00df9a]/50 shadow-sm'
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
+                  }`}
+                  title="Ejecutar y ver todos los archivos acumulados en todos los paneles"
+                >
+                  🌐 Ver Consolidado de Todos
+                </button>
+              </div>
+            </div>
+
+            {/* LIST OF HISTORICAL FILES */}
+            {filteredFileHistory.length === 0 ? (
+              <div className={`p-8 rounded-xl border text-center ${
+                isLightWhite ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-black/30 border-white/5 text-slate-400'
+              }`}>
+                <FileSpreadsheet size={32} className="mx-auto text-slate-600 mb-2 opacity-50" />
+                <p className="font-bold text-sm">
+                  {historyDateFilter 
+                    ? `No se encontraron archivos subidos el día ${historyDateFilter}.` 
+                    : historySearchTerm 
+                      ? 'No hay archivos que coincidan con la búsqueda.' 
+                      : 'Aún no has subido archivos de Dropi.'}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Usa el botón "Subir Nuevo Archivo" para registrar tu primer reporte de Dropi.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {filteredFileHistory.map((file) => {
+                  const isExecuted = activeExecutedBatchId === file.id;
+                  const deliveryRate = file.orderCount > 0 ? ((file.deliveredCount / file.orderCount) * 100).toFixed(1) : '0.0';
+                  const returnRate = file.orderCount > 0 ? ((file.returnedCount / file.orderCount) * 100).toFixed(1) : '0.0';
+                  const cancelRate = file.orderCount > 0 ? (((file.cancelledCount || 0) / file.orderCount) * 100).toFixed(1) : '0.0';
+
+                  return (
+                    <div
+                      key={file.id}
+                      className={`p-3.5 sm:p-4 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                        isExecuted
+                          ? (isLightWhite 
+                              ? 'bg-emerald-50/60 border-[#00df9a]/80 shadow-md ring-1 ring-[#00df9a]/30' 
+                              : 'bg-[#00df9a]/5 border-[#00df9a]/40 shadow-lg shadow-[#00df9a]/5 ring-1 ring-[#00df9a]/20')
+                          : (isLightWhite 
+                              ? 'bg-slate-50/80 border-slate-200/80 hover:bg-slate-100/60' 
+                              : 'bg-black/25 border-white/5 hover:bg-white/[0.03]')
+                      }`}
+                    >
+                      {/* Left: File details */}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                          isExecuted 
+                            ? 'bg-[#00df9a]/20 border-[#00df9a]/50 text-[#00df9a]' 
+                            : 'bg-orange-500/10 border-orange-500/20 text-[#ff9100]'
+                        }`}>
+                          <FileSpreadsheet size={18} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`font-black text-xs sm:text-sm truncate max-w-[240px] sm:max-w-[360px] ${
+                              isLightWhite ? 'text-slate-800' : 'text-white'
+                            }`} title={file.fileName}>
+                              {file.fileName}
+                            </span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10 shrink-0">
+                              📅 {file.uploadDate}
+                            </span>
+                            {isExecuted && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#00df9a]/20 text-[#00df9a] border border-[#00df9a]/40 flex items-center gap-1 shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#00df9a] animate-ping" />
+                                ACTIVO EN TODOS LOS PANELES
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400 flex-wrap">
+                            <span>📦 <strong>{file.orderCount}</strong> pedidos</span>
+                            <span>•</span>
+                            <span>💰 Total: <strong className={isLightWhite ? 'text-slate-800' : 'text-slate-200'}>{localFormatCurrency(file.totalRevenue)}</strong></span>
+                            <span>•</span>
+                            <span className="text-[#00df9a]">🟢 {file.deliveredCount} Entregados</span>
+                            <span>•</span>
+                            <span className="text-[#ff9100]">🟠 {file.returnedCount} Devueltos</span>
+                            <span>•</span>
+                            <span className="text-red-400">🔴 {file.cancelledCount || 0} Cancelados</span>
+                            <span>•</span>
+                            <span className="text-blue-400">🔵 {file.inTransitCount} En camino</span>
+                          </div>
+
+                          {/* Porcentajes abajo: Entrega, Devolución y Cancelación */}
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#00df9a]/10 border border-[#00df9a]/30 text-[#00df9a] text-[10px] font-black uppercase tracking-wider">
+                              <CheckCircle2 size={12} />
+                              <span>% Entrega: {deliveryRate}%</span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#ff9100]/10 border border-[#ff9100]/30 text-[#ff9100] text-[10px] font-black uppercase tracking-wider">
+                              <RotateCcw size={12} />
+                              <span>% Devolución: {returnRate}%</span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-black uppercase tracking-wider">
+                              <XCircle size={12} />
+                              <span>% Cancelación: {cancelRate}%</span>
+                            </div>
+
+                            <div className="hidden sm:flex items-center gap-0.5 w-24 h-2 rounded-full overflow-hidden bg-black/40 border border-white/10 ml-1.5" title={`Entrega: ${deliveryRate}% | Devolución: ${returnRate}% | Cancelación: ${cancelRate}%`}>
+                              <div style={{ width: `${deliveryRate}%` }} className="h-full bg-[#00df9a]" />
+                              <div style={{ width: `${returnRate}%` }} className="h-full bg-[#ff9100]" />
+                              <div style={{ width: `${cancelRate}%` }} className="h-full bg-red-500" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Actions */}
+                      <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                        {isExecuted ? (
+                          <div className="px-4 py-2 rounded-xl bg-[#00df9a]/20 border border-[#00df9a]/50 text-[#00df9a] font-black text-xs uppercase tracking-wider flex items-center gap-1.5">
+                            <CheckCircle2 size={14} />
+                            <span>Ejecutado (Activo)</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleExecuteHistoryFile(file.id)}
+                            className="px-4 py-2 rounded-xl bg-[#00df9a] hover:bg-[#00c589] text-black font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-[#00df9a]/20 active:scale-95 transition-all cursor-pointer"
+                            title="Ejecutar este archivo y actualizar Panel Control, Análisis Pro y todos los módulos"
+                          >
+                            <Zap size={14} fill="currentColor" />
+                            <span>⚡ Ejecutar Archivo</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`¿Estás seguro de eliminar el archivo "${file.fileName}" del historial y borrar sus pedidos?`)) {
+                              handleDeleteHistoryFile(file.id);
+                            }
+                          }}
+                          className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white transition-all cursor-pointer border border-red-500/20"
+                          title="Eliminar este archivo del historial"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
 
       <motion.div 
         initial={{ opacity: 0, y: -15 }}
@@ -5114,6 +5827,99 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
           </div>
         </div>
 
+        {/* Despliegue de Tabla de Archivo Ejecutado con Porcentajes */}
+        <div ref={ordersTableRef} className="pt-2 mb-3">
+          {activeExecutedBatchId !== 'all' ? (
+            <div className={`p-4 rounded-2xl border-2 transition-all shadow-xl ${
+              isLightWhite 
+                ? 'bg-emerald-50/70 border-[#00df9a] shadow-emerald-500/10' 
+                : 'bg-[#00df9a]/10 border-[#00df9a] shadow-[#00df9a]/10'
+            }`}>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-[#00df9a] flex items-center justify-center text-black font-black shrink-0 shadow-lg shadow-[#00df9a]/30">
+                    <Zap size={22} fill="currentColor" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#00df9a] text-black">
+                        ⚡ Tabla de Archivo Ejecutado
+                      </span>
+                      <span className={`text-sm sm:text-base font-black ${isLightWhite ? 'text-slate-900' : 'text-white'}`}>
+                        {currentExecutedFile?.fileName || 'Archivo Dropi'}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-[#00df9a] px-2 py-0.5 rounded-md bg-[#00df9a]/15">
+                        {filteredOrders.length} pedidos en esta tabla
+                      </span>
+                    </div>
+
+                    {/* Porcentajes: Entrega, Devolución y Cancelación */}
+                    <div className="flex items-center gap-2.5 mt-2.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00df9a]/20 border border-[#00df9a]/50 text-[#00df9a] text-xs font-black uppercase tracking-wider shadow-sm">
+                        <CheckCircle2 size={14} />
+                        <span>% Entrega: {tableStats.deliveryRate}% ({tableStats.deliveredCount})</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#ff9100]/20 border border-[#ff9100]/50 text-[#ff9100] text-xs font-black uppercase tracking-wider shadow-sm">
+                        <RotateCcw size={14} />
+                        <span>% Devolución: {tableStats.returnRate}% ({tableStats.returnedCount})</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 text-xs font-black uppercase tracking-wider shadow-sm">
+                        <XCircle size={14} />
+                        <span>% Cancelación: {tableStats.cancelRate}% ({tableStats.cancelledCount})</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-400 text-xs font-black uppercase tracking-wider">
+                        <Truck size={14} />
+                        <span>En camino: {tableStats.inTransitCount}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                  <button
+                    type="button"
+                    onClick={handleExecuteAllFiles}
+                    className={`px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer border shadow-sm active:scale-95 flex items-center gap-1.5 ${
+                      isLightWhite 
+                        ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300' 
+                        : 'bg-white/10 hover:bg-white/20 text-white border-white/15'
+                    }`}
+                    title="Ver pedidos de todos los archivos"
+                  >
+                    <X size={13} />
+                    <span>Ver Todos los Archivos</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className={`px-4 py-2.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 ${
+              isLightWhite ? 'bg-slate-100/70 border-slate-200' : 'bg-white/[0.02] border-white/5'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Globe size={13} className="text-slate-400" />
+                <span className={`text-xs font-black uppercase tracking-wider ${isLightWhite ? 'text-slate-700' : 'text-slate-300'}`}>
+                  Mostrando todos los pedidos ({filteredOrders.length})
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-[11px] font-black uppercase">
+                <span className="text-[#00df9a] bg-[#00df9a]/10 px-2 py-0.5 rounded-md border border-[#00df9a]/20">
+                  % Entrega: {tableStats.deliveryRate}%
+                </span>
+                <span className="text-[#ff9100] bg-[#ff9100]/10 px-2 py-0.5 rounded-md border border-[#ff9100]/20">
+                  % Devolución: {tableStats.returnRate}%
+                </span>
+                <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20">
+                  % Cancelación: {tableStats.cancelRate}%
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Controles de Desplazamiento (Scroll) */}
         <div className="flex items-center justify-between mb-4 mt-2 px-1">
           <div className="flex items-center gap-3">
@@ -5287,6 +6093,42 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
               </tfoot>
             )}
           </table>
+        </div>
+
+        {/* Resumen Abajo de la Tabla con Porcentajes */}
+        <div className={`mt-4 p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+          isLightWhite ? 'bg-white border-slate-200 shadow-md' : 'bg-[#111] border-white/10 shadow-xl'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#00df9a]/15 text-[#00df9a] flex items-center justify-center font-black">
+              📊
+            </div>
+            <div>
+              <span className={`text-xs font-black uppercase tracking-wider block ${isLightWhite ? 'text-slate-800' : 'text-white'}`}>
+                Resumen de la tabla {activeExecutedBatchId !== 'all' ? `(${currentExecutedFile?.fileName || 'Archivo Ejecutado'})` : '(Todos los Archivos)'}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Total de {filteredOrders.length} pedidos listados en la tabla
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00df9a]/15 border border-[#00df9a]/35 text-[#00df9a] text-xs font-black uppercase tracking-wider shadow-sm">
+              <CheckCircle2 size={13} />
+              <span>% Entrega: {tableStats.deliveryRate}%</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#ff9100]/15 border border-[#ff9100]/35 text-[#ff9100] text-xs font-black uppercase tracking-wider shadow-sm">
+              <RotateCcw size={13} />
+              <span>% Devolución: {tableStats.returnRate}%</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/15 border border-red-500/35 text-red-400 text-xs font-black uppercase tracking-wider shadow-sm">
+              <XCircle size={13} />
+              <span>% Cancelación: {tableStats.cancelRate}%</span>
+            </div>
+          </div>
         </div>
 
         {filteredOrders.length === 0 && (

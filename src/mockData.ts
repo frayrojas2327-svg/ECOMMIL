@@ -2,6 +2,25 @@ import { subDays, addDays, format, startOfDay, isSameDay } from 'date-fns';
 
 export type OrderStatus = 'Entregado' | 'En tránsito' | 'Devuelto' | 'Cancelado' | 'Pendiente' | 'Guía Generada' | 'Recolectado' | 'Incidencia';
 
+export interface DropiFileRecord {
+  id: string; // e.g. batch_1727364829384_a8f9
+  fileName: string;
+  uploadDate: string; // e.g. "2026-09-26 14:30"
+  uploadDateOnly: string; // "YYYY-MM-DD"
+  uploadTimestamp: number;
+  orderCount: number;
+  totalRevenue: number;
+  deliveredCount: number;
+  returnedCount: number;
+  inTransitCount: number;
+  cancelledCount?: number;
+  startDate?: string;
+  endDate?: string;
+  status: 'ejecutado' | 'pendiente';
+  platform?: 'Dropi' | 'Shopify';
+  uid?: string;
+}
+
 export interface Order {
   id: string; // Firestore ID
   orderId: string; // Document External ID
@@ -23,6 +42,8 @@ export interface Order {
   isFavorite?: boolean;
   uploadBatchId?: string;
   uploadFileName?: string;
+  uploadTimestamp?: number;
+  uploadFileDate?: string;
   
   // High detail logistics fields
   fechaReporte?: string;
@@ -275,7 +296,11 @@ export const generateMockData = (): Order[] => {
       fueSolucionadaNovedad: 'No',
       tags: Math.random() < 0.25 ? 'tik tok organico' : Math.random() < 0.15 ? 'facebook ads' : undefined,
       fechaSolicitud: format(date, 'yyyy-MM-dd'),
-      fechaEntregaDevolucion: (status === 'Entregado' || status === 'Devuelto') ? format(addDays(date, 3), 'yyyy-MM-dd') : '---'
+      fechaEntregaDevolucion: (status === 'Entregado' || status === 'Devuelto') ? format(addDays(date, 3), 'yyyy-MM-dd') : '---',
+      uploadBatchId: 'batch_demo_dropi',
+      uploadFileName: 'Dropi_Reporte_Demostracion.xlsx',
+      uploadTimestamp: Date.now() - 86400000,
+      uploadFileDate: format(subDays(new Date(), 1), 'yyyy-MM-dd')
     });
   }
 
