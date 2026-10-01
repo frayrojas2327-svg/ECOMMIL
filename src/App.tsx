@@ -209,7 +209,9 @@ function AppContent() {
 
   // Active Executed File / Batch state (persists across all panels: Panel Control, Análisis Pro, Semáforos, etc.)
   const [activeExecutedBatchId, setActiveExecutedBatchId] = useState<string>(() => {
-    return localStorage.getItem('ecommil_active_executed_batch_id') || 'all';
+    const saved = localStorage.getItem('ecommil_active_executed_batch_id');
+    if (saved && saved !== 'batch_demo_dropi') return saved;
+    return 'all';
   });
 
   useEffect(() => {
@@ -1768,6 +1770,8 @@ function AppContent() {
                   setCurrency={setCurrency}
                   isConversionActive={isConversionActive}
                   currencies={dynamicCurrencies}
+                  orders={orders}
+                  activeExecutedBatchId={activeExecutedBatchId}
                 />
               )}
               {activeTab === 'sales' && (

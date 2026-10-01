@@ -1135,7 +1135,10 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
       const saved = localStorage.getItem('ecommil_dropi_file_history');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter(f => f.id !== 'batch_demo_dropi' && !f.id?.startsWith('batch_demo'));
+          return valid;
+        }
       }
     } catch (e) {
       console.error('Error loading file history:', e);
@@ -1161,12 +1164,14 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
     setFileHistory(prevHistory => {
       const historyMap = new Map<string, DropiFileRecord>();
-      prevHistory.forEach(f => historyMap.set(f.id, f));
+      prevHistory
+        .filter(f => f.id !== 'batch_demo_dropi' && !f.id?.startsWith('batch_demo'))
+        .forEach(f => historyMap.set(f.id, f));
 
-      // Scan all orders for uploadBatchIds
+      // Scan all orders for uploadBatchIds (ignoring demo batch)
       const batchOrdersMap = new Map<string, Order[]>();
       sourceOrders.forEach(o => {
-        if (o.uploadBatchId) {
+        if (o.uploadBatchId && o.uploadBatchId !== 'batch_demo_dropi' && !o.uploadBatchId.startsWith('batch_demo')) {
           if (!batchOrdersMap.has(o.uploadBatchId)) {
             batchOrdersMap.set(o.uploadBatchId, []);
           }
@@ -1189,7 +1194,7 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
         historyMap.set(batchId, {
           id: batchId,
-          fileName: existing?.fileName || first.uploadFileName || (batchId === 'batch_demo_dropi' ? 'Dropi_Reporte_Demostracion.xlsx' : 'Archivo_Dropi.xlsx'),
+          fileName: existing?.fileName || first.uploadFileName || 'Archivo_Dropi.xlsx',
           uploadDate,
           uploadDateOnly,
           uploadTimestamp: existing?.uploadTimestamp || first.uploadTimestamp || Date.now(),
@@ -1204,7 +1209,9 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
         });
       });
 
-      const merged = Array.from(historyMap.values()).sort((a, b) => b.uploadTimestamp - a.uploadTimestamp);
+      const merged = Array.from(historyMap.values())
+        .filter(f => f.id !== 'batch_demo_dropi' && !f.id?.startsWith('batch_demo'))
+        .sort((a, b) => b.uploadTimestamp - a.uploadTimestamp);
       try {
         localStorage.setItem('ecommil_dropi_file_history', JSON.stringify(merged));
       } catch (e) {}
@@ -1351,6 +1358,37 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
 
     setNotification({
       message: `Archivo eliminado del registro y del sistema.`,
+      type: 'success'
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  // Clear all file history and leave at zero
+  const handleClearAllHistory = () => {
+    // Delete all batch orders if any
+    fileHistory.forEach(file => {
+      if (onDeleteBatch) {
+        onDeleteBatch(file.id);
+      } else if (onDeleteOrders) {
+        const sourceOrders = allOrders || orders;
+        const ids = sourceOrders.filter(o => o.uploadBatchId === file.id).map(o => o.id);
+        if (ids.length > 0) onDeleteOrders(ids);
+      }
+    });
+
+    setFileHistory([]);
+    try {
+      localStorage.removeItem('ecommil_dropi_file_history');
+    } catch (e) {}
+
+    if (activeExecutedBatchId !== 'all' && setActiveExecutedBatchId) {
+      setActiveExecutedBatchId('all');
+    }
+    setBatchFilter('');
+    setStagedDropiFile(null);
+
+    setNotification({
+      message: `🧹 Historial de archivos reiniciado a CERO con éxito.`,
       type: 'success'
     });
     setTimeout(() => setNotification(null), 4000);
@@ -3672,6 +3710,18 @@ const OrderManagement: React.FC<OrderManagementProps> = ({
                       Mostrando Todos los Archivos ({allOrders?.length || orders.length} pedidos)
                     </span>
                   </div>
+                )}
+
+                {fileHistory.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllHistory}
+                    className="px-3.5 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/30 font-black text-[11px] tracking-wider uppercase rounded-xl active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                    title="Vaciar todo el historial de archivos y dejarlo en cero"
+                  >
+                    <Trash2 size={13} />
+                    <span>Vaciar Historial</span>
+                  </button>
                 )}
 
                 <label

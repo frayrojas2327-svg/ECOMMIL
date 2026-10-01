@@ -296,11 +296,7 @@ export const generateMockData = (): Order[] => {
       fueSolucionadaNovedad: 'No',
       tags: Math.random() < 0.25 ? 'tik tok organico' : Math.random() < 0.15 ? 'facebook ads' : undefined,
       fechaSolicitud: format(date, 'yyyy-MM-dd'),
-      fechaEntregaDevolucion: (status === 'Entregado' || status === 'Devuelto') ? format(addDays(date, 3), 'yyyy-MM-dd') : '---',
-      uploadBatchId: 'batch_demo_dropi',
-      uploadFileName: 'Dropi_Reporte_Demostracion.xlsx',
-      uploadTimestamp: Date.now() - 86400000,
-      uploadFileDate: format(subDays(new Date(), 1), 'yyyy-MM-dd')
+      fechaEntregaDevolucion: (status === 'Entregado' || status === 'Devuelto') ? format(addDays(date, 3), 'yyyy-MM-dd') : '---'
     });
   }
 
