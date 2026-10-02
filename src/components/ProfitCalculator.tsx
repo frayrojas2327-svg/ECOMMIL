@@ -37,7 +37,8 @@ import {
   PackageX,
   Truck,
   Layers,
-  Filter
+  Filter,
+  History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -1226,33 +1227,78 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
     };
   }, [orders, selectedDropiBatchId, dropiFiles, computed, inputs]);
 
-  // Mode: Native Dropi Data vs Calculator Data ("Sacar con datos de calculadora")
-  const [dropiCalculationSource, setDropiCalculationSource] = useState<'dropi' | 'calculator'>('dropi');
+  // Mode: 3 Calculation Sources ('calculator' | 'dropi' | 'history')
+  const [dropiCalculationSource, setDropiCalculationSource] = useState<'calculator' | 'dropi' | 'history'>('dropi');
+  const [selectedHistoryProductId, setSelectedHistoryProductId] = useState<string>('');
+
+  const selectedHistoryProduct = useMemo(() => {
+    if (!savedProducts || savedProducts.length === 0) return null;
+    return savedProducts.find(p => p.id === selectedHistoryProductId) || savedProducts[0];
+  }, [savedProducts, selectedHistoryProductId]);
+
+  const historyComputed = useMemo(() => {
+    if (!selectedHistoryProduct) return null;
+    const p = selectedHistoryProduct;
+    const costPerUnit = parseFloat(p.costPerUnit || '0') || (p.inputs?.cost || 0);
+    const packUnits = parseFloat(p.packUnits || '1') || 1;
+    const proveedor = costPerUnit * packUnits;
+    const shippingBase = parseFloat(p.shippingBase || '0') || (p.inputs?.shippingReal || 0);
+    const dispatchPercent = (parseFloat(p.deliveryDispatchPercent || '100') || 100) / 100;
+    const fleteReal = dispatchPercent > 0 ? shippingBase / dispatchPercent : shippingBase;
+    const cpaAds = parseFloat(p.cpaAds || '0') || (p.inputs?.adsCost || 0);
+    const finalPercent = (parseFloat(p.finalDeliveryPercent || '100') || 100) / 100;
+    const cpaReal = finalPercent > 0 ? cpaAds / finalPercent : cpaAds;
+    const adminCosts = parseFloat(p.adminCosts || '0') || (p.inputs?.platformFee || 0);
+    const fulfillment = parseFloat(p.fulfillment || '0') || 0;
+    const desiredProfitPercent = (parseFloat(p.desiredProfitPercent || '20') || 20) / 100;
+
+    const baseCostosSinMargen = proveedor + fleteReal + adminCosts + fulfillment + cpaReal;
+    const factorMargen = 1 - desiredProfitPercent;
+    const precioVenta = factorMargen > 0 ? baseCostosSinMargen / factorMargen : baseCostosSinMargen;
+    const utilidadValor = precioVenta * desiredProfitPercent;
+    const costosTotales = baseCostosSinMargen;
+
+    return {
+      name: p.name || 'Producto del Historial',
+      currency: p.currency || currency,
+      precioVenta: p.inputs?.price || precioVenta,
+      costoProducto: proveedor,
+      fleteReal,
+      cpaReal,
+      adminCosts,
+      fulfillment,
+      utilidadValor: p.results?.netProfit || utilidadValor,
+      costosTotales,
+      margenPercent: p.results?.margin !== undefined ? p.results.margin : (desiredProfitPercent * 100)
+    };
+  }, [selectedHistoryProduct, currency]);
 
   const activeDropiMetrics = useMemo(() => {
     const deliveredCount = selectedDropiStats.deliveredCount;
     const returnedCount = selectedDropiStats.returnedCount;
-    const pv = computed.precioVenta > 0 ? computed.precioVenta : (selectedDropiStats.avgPrice || 115);
-    const unitProfit = computed.utilidadValor;
-    const calculatorRevenue = deliveredCount * pv;
-    const calculatorNetProfit = deliveredCount * unitProfit;
-    const calculatorProductCost = deliveredCount * computed.costoProducto;
-    const calculatorShippingCost = deliveredCount * computed.fleteReal;
-    const calculatorAdsCost = deliveredCount * computed.cpaReal;
-    const calculatorTotalCost = deliveredCount * computed.costosTotales;
-
-    const revenueDifference = calculatorRevenue - selectedDropiStats.totalRevenue;
-    const profitDifference = calculatorNetProfit - selectedDropiStats.realNetProfit;
-
     const daysCount = selectedDropiStats.daysCount || 30;
 
     if (dropiCalculationSource === 'calculator') {
+      const pv = computed.precioVenta > 0 ? computed.precioVenta : (selectedDropiStats.avgPrice || 115);
+      const unitProfit = computed.utilidadValor;
+      const calculatorRevenue = deliveredCount * pv;
+      const calculatorNetProfit = deliveredCount * unitProfit;
+      const calculatorProductCost = deliveredCount * computed.costoProducto;
+      const calculatorShippingCost = deliveredCount * computed.fleteReal;
+      const calculatorAdsCost = deliveredCount * computed.cpaReal;
+      const calculatorTotalCost = deliveredCount * computed.costosTotales;
+
+      const revenueDifference = calculatorRevenue - selectedDropiStats.totalRevenue;
+      const profitDifference = calculatorNetProfit - selectedDropiStats.realNetProfit;
+
       const marginOnDelivered = calculatorRevenue > 0 ? (calculatorNetProfit / calculatorRevenue) * 100 : (parseFloat(inputs.desiredProfitPercent) || 0);
       const dailyDeliveredRevenue = calculatorRevenue / daysCount;
       const dailyNetProfit = calculatorNetProfit / daysCount;
 
       return {
-        isCalculatorData: true,
+        source: 'calculator' as const,
+        sourceLabel: 'Calculadora Actual',
+        productName: inputs.name || 'Producto Actual',
         totalRevenue: calculatorRevenue,
         realNetProfit: calculatorNetProfit,
         avgProfitPerDelivered: unitProfit,
@@ -1274,8 +1320,53 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       };
     }
 
+    if (dropiCalculationSource === 'history' && historyComputed) {
+      const pv = historyComputed.precioVenta > 0 ? historyComputed.precioVenta : (selectedDropiStats.avgPrice || 115);
+      const unitProfit = historyComputed.utilidadValor;
+      const historyRevenue = deliveredCount * pv;
+      const historyNetProfit = deliveredCount * unitProfit;
+      const historyProductCost = deliveredCount * historyComputed.costoProducto;
+      const historyShippingCost = deliveredCount * historyComputed.fleteReal;
+      const historyAdsCost = deliveredCount * historyComputed.cpaReal;
+      const historyTotalCost = deliveredCount * historyComputed.costosTotales;
+
+      const revenueDifference = historyRevenue - selectedDropiStats.totalRevenue;
+      const profitDifference = historyNetProfit - selectedDropiStats.realNetProfit;
+
+      const marginOnDelivered = historyRevenue > 0 ? (historyNetProfit / historyRevenue) * 100 : historyComputed.margenPercent;
+      const dailyDeliveredRevenue = historyRevenue / daysCount;
+      const dailyNetProfit = historyNetProfit / daysCount;
+
+      return {
+        source: 'history' as const,
+        sourceLabel: `Historial: ${historyComputed.name}`,
+        productName: historyComputed.name,
+        totalRevenue: historyRevenue,
+        realNetProfit: historyNetProfit,
+        avgProfitPerDelivered: unitProfit,
+        marginOnDelivered,
+        dailyDeliveredRevenue,
+        dailyNetProfit,
+        dailyReturnLoss: selectedDropiStats.dailyReturnLoss,
+        unitPrice: pv,
+        unitCost: historyComputed.costosTotales,
+        unitProfit,
+        calculatorRevenue: historyRevenue,
+        calculatorNetProfit: historyNetProfit,
+        calculatorProductCost: historyProductCost,
+        calculatorShippingCost: historyShippingCost,
+        calculatorAdsCost: historyAdsCost,
+        calculatorTotalCost: historyTotalCost,
+        revenueDifference,
+        profitDifference
+      };
+    }
+
+    // Default: 'dropi' (Del archivo subido del documento)
     return {
-      isCalculatorData: false,
+      source: 'dropi' as const,
+      sourceLabel: 'Archivo Subido (Dropi)',
+      productName: selectedDropiStats.topProduct,
       totalRevenue: selectedDropiStats.totalRevenue,
       realNetProfit: selectedDropiStats.realNetProfit,
       avgProfitPerDelivered: selectedDropiStats.avgProfitPerDelivered,
@@ -1286,16 +1377,43 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       unitPrice: selectedDropiStats.avgPrice,
       unitCost: selectedDropiStats.avgCost,
       unitProfit: selectedDropiStats.avgProfitPerDelivered,
-      calculatorRevenue,
-      calculatorNetProfit,
-      calculatorProductCost,
-      calculatorShippingCost,
-      calculatorAdsCost,
-      calculatorTotalCost,
-      revenueDifference,
-      profitDifference
+      calculatorRevenue: selectedDropiStats.totalRevenue,
+      calculatorNetProfit: selectedDropiStats.realNetProfit,
+      calculatorProductCost: 0,
+      calculatorShippingCost: 0,
+      calculatorAdsCost: 0,
+      calculatorTotalCost: 0,
+      revenueDifference: 0,
+      profitDifference: 0
     };
-  }, [dropiCalculationSource, selectedDropiStats, computed, inputs]);
+  }, [dropiCalculationSource, selectedDropiStats, computed, inputs, historyComputed]);
+
+  // Helper: Convert any amount into Soles without decimal digits (e.g. "S 15,200")
+  const getAmountInPEN = (amount: number) => {
+    if (!amount || isNaN(amount)) return 0;
+    if (currency === 'PEN') return amount;
+    if (currency === 'GTQ') return amount * rateGTQtoPEN;
+    const fromRate = liveCurrencies?.[currency]?.rate || CURRENCIES[currency]?.rate || 1;
+    return (amount / fromRate) * penRate;
+  };
+
+  const getAmountInGTQ = (amount: number) => {
+    if (!amount || isNaN(amount)) return 0;
+    if (currency === 'GTQ') return amount;
+    if (currency === 'PEN') return amount * ratePENtoGTQ;
+    const fromRate = liveCurrencies?.[currency]?.rate || CURRENCIES[currency]?.rate || 1;
+    return (amount / fromRate) * gtqRate;
+  };
+
+  const formatSolesNoDecimals = (amount: number) => {
+    const penVal = Math.round(getAmountInPEN(amount));
+    return `S ${penVal.toLocaleString('es-PE')}`;
+  };
+
+  const formatQuetzalesNoDecimals = (amount: number) => {
+    const gtqVal = Math.round(getAmountInGTQ(amount));
+    return `Q ${gtqVal.toLocaleString('es-GT')}`;
+  };
 
   const dropiFileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingDropiFile, setIsUploadingDropiFile] = useState<boolean>(false);
@@ -1562,181 +1680,6 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             </button>
           )}
         </div>
-      </div>
-
-      {/* MODULO DE CONVERSIÓN EN VIVO: SOLES (PEN) ⇄ QUETZALES (GTQ) */}
-      <div className="bg-gradient-to-r from-amber-500/10 via-[#111] to-emerald-500/10 border-2 border-amber-500/30 hover:border-amber-500/50 rounded-2xl p-5 shadow-2xl relative overflow-hidden transition-all">
-        {/* Glow Effects */}
-        <div className="absolute top-0 right-10 w-48 h-20 bg-emerald-500/10 blur-2xl pointer-events-none" />
-        <div className="absolute bottom-0 left-10 w-48 h-20 bg-amber-500/10 blur-2xl pointer-events-none" />
-
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/5 pb-4 relative z-10">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 text-black flex items-center justify-center font-black shrink-0 shadow-lg shadow-amber-500/20">
-              <ArrowLeftRight size={22} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Conversión en Vivo
-                </span>
-                <span className="text-xs font-mono font-bold text-slate-400">
-                  🇵🇪 Soles (PEN) ⇄ 🇬🇹 Quetzales (GTQ)
-                </span>
-                <span className="text-[10px] font-mono text-slate-500">
-                  Actualizado: {lastRatesUpdate}
-                </span>
-              </div>
-              <h3 className="text-base sm:text-lg font-display font-black text-white mt-0.5">
-                TIPO DE CAMBIO EN VIVO: PERÚ & GUATEMALA
-              </h3>
-            </div>
-          </div>
-
-          {/* Quick Rates Info & Refresh Button & One-Click Full Calculator Converter */}
-          <div className="flex items-center gap-2.5 flex-wrap self-end lg:self-center">
-            <div className="flex items-center gap-2 bg-black/60 border border-white/10 px-3 py-1.5 rounded-xl font-mono text-xs">
-              <span className="text-slate-400">1 PEN =</span>
-              <span className="text-[#00df9a] font-bold">Q {ratePENtoGTQ.toFixed(4)}</span>
-              <span className="text-slate-600">|</span>
-              <span className="text-slate-400">1 GTQ =</span>
-              <span className="text-amber-400 font-bold">S/ {rateGTQtoPEN.toFixed(4)}</span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => convertEntireCalculator('PEN')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer border shadow-sm active:scale-95 ${
-                  inputs.currency === 'PEN'
-                    ? 'bg-amber-500 text-black border-amber-500 shadow-amber-500/20 ring-2 ring-amber-400/50'
-                    : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
-                }`}
-                title="Convierte todos los costos y precios de la calculadora a Soles peruanos"
-              >
-                <span>🇵🇪 A Soles</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => convertEntireCalculator('GTQ')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer border shadow-sm active:scale-95 ${
-                  inputs.currency === 'GTQ'
-                    ? 'bg-[#00df9a] text-black border-[#00df9a] shadow-[#00df9a]/20 ring-2 ring-[#00df9a]/50'
-                    : 'bg-[#00df9a]/10 hover:bg-[#00df9a]/20 text-[#00df9a] border-[#00df9a]/30'
-                }`}
-                title="Convierte todos los costos y precios de la calculadora a Quetzales guatemaltecos"
-              >
-                <span>🇬🇹 A Quetzales</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleManualRefreshRates}
-              disabled={isRefreshingRates}
-              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-slate-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
-              title="Refrescar tasas de cambio en vivo desde el servidor financiero"
-            >
-              <RefreshCw size={13} className={isRefreshingRates ? "animate-spin text-amber-400" : "text-slate-400"} />
-              <span>{isRefreshingRates ? '...' : 'Tasa en vivo'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Live Interactive Converter Box */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center pt-4 relative z-10">
-          
-          {/* Source Input */}
-          <div className="md:col-span-5 bg-black/50 border border-white/10 rounded-xl p-3.5 space-y-1.5 focus-within:border-amber-500/50 transition-all">
-            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              <span>{converterDirection === 'PEN_TO_GTQ' ? '🇵🇪 Soles (PEN)' : '🇬🇹 Quetzales (GTQ)'}</span>
-              <span className="text-[10px] font-mono text-amber-400">Monto a Convertir</span>
-            </div>
-            <div className="relative flex items-center">
-              <span className="text-lg font-black text-amber-400 font-mono mr-2">
-                {converterDirection === 'PEN_TO_GTQ' ? 'S/' : 'Q'}
-              </span>
-              <input
-                type="number"
-                value={converterAmount}
-                onChange={(e) => setConverterAmount(e.target.value)}
-                placeholder="100"
-                className="w-full bg-transparent text-2xl font-mono font-black text-white focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Switch Direction Button */}
-          <div className="md:col-span-2 flex flex-col items-center justify-center gap-1">
-            <button
-              type="button"
-              onClick={() => setConverterDirection(prev => prev === 'PEN_TO_GTQ' ? 'GTQ_TO_PEN' : 'PEN_TO_GTQ')}
-              className="w-12 h-12 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center justify-center transition-all cursor-pointer shadow-lg shadow-amber-500/10 active:scale-90 group"
-              title="Cambiar dirección de conversión (PEN ⇄ GTQ)"
-            >
-              <ArrowLeftRight size={20} className="group-hover:rotate-180 transition-transform duration-300" />
-            </button>
-            <span className="text-[9px] font-mono font-bold text-slate-500 uppercase">Invertir</span>
-          </div>
-
-          {/* Target Converted Output */}
-          <div className="md:col-span-5 bg-black/50 border border-[#00df9a]/30 rounded-xl p-3.5 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              <span>{converterDirection === 'PEN_TO_GTQ' ? '🇬🇹 Quetzales (GTQ)' : '🇵🇪 Soles (PEN)'}</span>
-              <span className="text-[10px] font-mono text-[#00df9a]">Resultado en Vivo</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-lg font-black text-[#00df9a] font-mono">
-                {converterDirection === 'PEN_TO_GTQ' ? 'Q' : 'S/'}
-              </span>
-              <span className="text-2xl sm:text-3xl font-mono font-black text-[#00df9a] tracking-tight">
-                {convertedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-
-            {/* Instant Apply Button */}
-            <button
-              type="button"
-              onClick={() => convertEntireCalculator(converterDirection === 'PEN_TO_GTQ' ? 'GTQ' : 'PEN')}
-              className="w-full py-1.5 px-3 rounded-lg bg-[#00df9a]/15 hover:bg-[#00df9a]/25 border border-[#00df9a]/35 text-[#00df9a] text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shadow-sm"
-              title="Convertir todos los costos, precios y márgenes de la calculadora a esta moneda"
-            >
-              <Zap size={13} fill="currentColor" />
-              <span>Convertir toda la calculadora a {converterDirection === 'PEN_TO_GTQ' ? 'Quetzales (GTQ)' : 'Soles (PEN)'}</span>
-            </button>
-          </div>
-
-        </div>
-
-        {/* Quick Conversions Pocket Table */}
-        <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2 flex-wrap relative z-10">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-            <span>⚡ Conversiones rápidas:</span>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {[10, 20, 50, 100, 200, 500].map((val) => {
-              const inGTQ = val * ratePENtoGTQ;
-              return (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => {
-                    setConverterDirection('PEN_TO_GTQ');
-                    setConverterAmount(String(val));
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-black/40 hover:bg-amber-500/10 border border-white/5 hover:border-amber-500/30 text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1 group"
-                >
-                  <span className="text-slate-300 font-bold group-hover:text-amber-300">S/ {val}</span>
-                  <span className="text-slate-500">→</span>
-                  <span className="text-[#00df9a] font-bold">Q {inGTQ.toFixed(1)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
       </div>
 
       {/* TWO COLUMN GRID: INPUTS & OUTPUTS */}
@@ -2337,37 +2280,14 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       </div>
 
       {/* MÓDULO DE INTEGRACIÓN DE ARCHIVOS DROPI: EJECUTAR Y ANALIZAR ENTREGADOS */}
-      <div className="bg-[#090909] border-2 border-emerald-500/30 hover:border-emerald-500/50 transition-all rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden">
-        {/* Glow Ambient Effects */}
-        <div className="absolute top-0 right-10 w-96 h-28 bg-emerald-500/10 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-10 w-96 h-28 bg-amber-500/10 blur-3xl pointer-events-none" />
-
-        {/* Header Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/5 pb-5 relative z-10">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-[#00df9a] text-black flex items-center justify-center font-black shrink-0 shadow-lg shadow-emerald-500/20">
-              <FileSpreadsheet size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <PackageCheck size={11} />
-                  Archivos Dropi Ejecutados
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                  🇵🇪 Soles ⇄ 🇬🇹 Quetzales en Vivo
-                </span>
-                <span className="text-[10px] font-mono text-slate-500">
-                  {selectedDropiStats.totalOrders} pedidos analizados
-                </span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-display font-black tracking-tight text-white flex items-center gap-2">
-                LIQUIDACIÓN DROPI: <span className="text-[#00df9a]">¿CUÁNTO SALIÓ CON LOS ENTREGADOS?</span>
-              </h3>
-              <p className="text-[12px] text-slate-400 mt-1 max-w-3xl leading-relaxed">
-                Jala tus reportes de pedidos ejecutados en Dropi para ver con precisión matemática la facturación cobrada, la ganancia neta real conseguida y la dinámica de entregas vs devoluciones por día.
-              </p>
-            </div>
+      <div className="bg-[#0b0b0b] border border-white/15 rounded-2xl p-6 space-y-6 shadow-xl relative">
+        {/* Header Bar: Solo el título con un color agradable y selector de moneda */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4 relative z-10">
+          <div>
+            <h3 className="text-xl sm:text-2xl font-display font-black tracking-tight flex items-center gap-2 flex-wrap">
+              <span className="text-white">LIQUIDACIÓN DROPI:</span>
+              <span className="text-emerald-400">¿CUÁNTO SALIÓ CON LOS ENTREGADOS?</span>
+            </h3>
           </div>
 
           {/* Quick Currency Toggles */}
@@ -2375,10 +2295,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             <button
               type="button"
               onClick={() => convertEntireCalculator('PEN')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
                 currency === 'PEN'
-                  ? 'bg-amber-500 text-black border-amber-500 shadow-amber-500/20'
-                  : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-2 border-emerald-400 font-extrabold shadow-[0_0_12px_rgba(52,211,153,0.2)]'
+                  : 'bg-transparent hover:bg-white/5 text-slate-400 border border-white/10'
               }`}
               title="Ver liquidación en Soles"
             >
@@ -2387,10 +2307,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             <button
               type="button"
               onClick={() => convertEntireCalculator('GTQ')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
                 currency === 'GTQ'
-                  ? 'bg-[#00df9a] text-black border-[#00df9a] shadow-[#00df9a]/20'
-                  : 'bg-[#00df9a]/10 hover:bg-[#00df9a]/20 text-[#00df9a] border-[#00df9a]/30'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-2 border-emerald-400 font-extrabold shadow-[0_0_12px_rgba(52,211,153,0.2)]'
+                  : 'bg-transparent hover:bg-white/5 text-slate-400 border border-white/10'
               }`}
               title="Ver liquidación en Quetzales"
             >
@@ -2399,20 +2319,20 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
           </div>
         </div>
 
-        {/* File Selector & Upload Controls & SACAR CON DATOS DE CALCULADORA */}
-        <div className="bg-[#111] border-2 border-white/10 hover:border-emerald-500/30 rounded-2xl p-5 flex flex-col gap-4 relative z-10 transition-all shadow-xl">
+        {/* File Selector & Upload Controls */}
+        <div className="bg-[#111] border border-white/10 rounded-2xl p-5 flex flex-col gap-4 relative z-10">
           {/* Top Row: File Selector & Upload & Refresh */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
               <label className="text-xs font-black text-slate-300 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
-                <Layers size={15} className="text-[#00df9a]" />
+                <Layers size={15} className="text-white" />
                 Seleccionar Archivo Dropi:
               </label>
               <div className="relative flex-1">
                 <select
                   value={selectedDropiBatchId}
                   onChange={(e) => setSelectedDropiBatchId(e.target.value)}
-                  className="w-full bg-[#181818] border-2 border-emerald-500/40 focus:border-emerald-500 rounded-xl py-2 px-3 text-xs sm:text-sm font-mono font-bold text-white focus:outline-none transition-all cursor-pointer shadow-inner"
+                  className="w-full bg-[#161616] border border-white/20 focus:border-white rounded-xl py-2 px-3 text-xs sm:text-sm font-mono font-bold text-white focus:outline-none transition-all cursor-pointer"
                 >
                   <option value="all">📦 Todos los Pedidos Dropi ({orders?.length || 0} pedidos acumulados)</option>
                   {dropiFiles.map((file) => (
@@ -2437,126 +2357,114 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 type="button"
                 onClick={() => dropiFileInputRef.current?.click()}
                 disabled={isUploadingDropiFile}
-                className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-white/5 hover:bg-white/10 text-white border border-white/15 hover:border-emerald-500/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-transparent hover:bg-white/10 text-white border border-white/20 hover:border-white transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
               >
-                <Upload size={14} className="text-emerald-400" />
+                <Upload size={14} className="text-white" />
                 <span>{isUploadingDropiFile ? 'Procesando...' : 'Subir Archivo Dropi'}</span>
               </button>
             </div>
           </div>
 
-          {/* DEDICATED SECTION: SACAR CON LOS DATOS DE CALCULADORA */}
-          <div className="pt-4 border-t border-white/10 flex flex-col gap-3.5">
+          {/* ========================================================= */}
+          {/* 3 FILTROS:                                                */}
+          {/* 1. Ejecutar desde la calculadora                          */}
+          {/* 2. Del archivo subido del documento                       */}
+          {/* 3. De historial de calculadora                            */}
+          {/* ========================================================= */}
+          <div className="pt-3 border-t border-white/10 flex flex-col gap-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div>
-                <span className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <CalcIcon size={15} />
-                  Modo de Liquidación: ¿Cómo quieres calcular este lote?
+                <span className="text-xs font-black text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                  <Filter size={14} className="text-white" />
+                  Fuente de Cálculo (3 Filtros):
                 </span>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Alterna entre los valores históricos del Excel o calcula automáticamente la liquidación usando tus precios y costos de la calculadora.
-                </p>
               </div>
 
-              {/* Segmented Switcher */}
-              <div className="flex items-center gap-2 bg-[#161616] p-1.5 rounded-xl border border-white/10 shrink-0">
+              {/* 3 Filters Buttons (Botón con color temático según cada tipo) */}
+              <div className="flex items-center gap-2 bg-[#141414] p-1.5 rounded-xl border border-white/10 shrink-0 flex-wrap">
+                {/* FILTRO 1: Ejecutar desde la calculadora (Tipo Ámbar/Dorado) */}
+                <button
+                  type="button"
+                  onClick={() => setDropiCalculationSource('calculator')}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                    dropiCalculationSource === 'calculator'
+                      ? 'border-2 border-amber-400 text-amber-300 bg-amber-500/15 shadow-[0_0_15px_rgba(251,191,36,0.25)] font-extrabold ring-1 ring-amber-400/50'
+                      : 'border border-amber-500/30 text-amber-400/80 hover:text-amber-300 hover:border-amber-400/70 hover:bg-amber-500/10'
+                  }`}
+                  title="Ejecutar con el precio de venta, costos y margen configurados arriba en la calculadora"
+                >
+                  <Zap size={13} className={dropiCalculationSource === 'calculator' ? 'fill-amber-400 text-amber-400' : 'text-amber-400/80'} />
+                  <span>1. Ejecutar desde la calculadora</span>
+                </button>
+
+                {/* FILTRO 2: Del archivo subido del documento (Tipo Esmeralda/Verde) */}
                 <button
                   type="button"
                   onClick={() => setDropiCalculationSource('dropi')}
                   className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
                     dropiCalculationSource === 'dropi'
-                      ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20 font-extrabold'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'border-2 border-emerald-400 text-emerald-300 bg-emerald-500/15 shadow-[0_0_15px_rgba(52,211,153,0.25)] font-extrabold ring-1 ring-emerald-400/50'
+                      : 'border border-emerald-500/30 text-emerald-400/80 hover:text-emerald-300 hover:border-emerald-400/70 hover:bg-emerald-500/10'
                   }`}
+                  title="Ver los datos exactos del archivo Excel subido"
                 >
-                  <FileSpreadsheet size={13} />
-                  <span>1. Datos Reales Dropi</span>
+                  <FileSpreadsheet size={13} className={dropiCalculationSource === 'dropi' ? 'text-emerald-400' : 'text-emerald-400/80'} />
+                  <span>2. Del archivo subido del documento</span>
                 </button>
+
+                {/* FILTRO 3: De historial de calculadora (Tipo Celeste/Sky) */}
                 <button
                   type="button"
-                  onClick={() => setDropiCalculationSource('calculator')}
-                  className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
-                    dropiCalculationSource === 'calculator'
-                      ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-black shadow-lg shadow-amber-500/25 font-extrabold ring-2 ring-amber-400/50'
-                      : 'text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30'
+                  onClick={() => setDropiCalculationSource('history')}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                    dropiCalculationSource === 'history'
+                      ? 'border-2 border-sky-400 text-sky-300 bg-sky-500/15 shadow-[0_0_15px_rgba(56,189,248,0.25)] font-extrabold ring-1 ring-sky-400/50'
+                      : 'border border-sky-500/30 text-sky-400/80 hover:text-sky-300 hover:border-sky-400/70 hover:bg-sky-500/10'
                   }`}
-                  title="Calcular este archivo Dropi con el precio de venta, costos y utilidad configurados arriba en la calculadora"
+                  title="Calcular este archivo con uno de tus productos guardados en el historial"
                 >
-                  <Zap size={13} className={dropiCalculationSource === 'calculator' ? 'fill-black' : 'fill-amber-400 text-amber-400'} />
-                  <span>2. Sacar con Datos de Calculadora</span>
+                  <History size={13} className={dropiCalculationSource === 'history' ? 'text-sky-400' : 'text-sky-400/80'} />
+                  <span>3. De historial de calculadora</span>
                 </button>
               </div>
             </div>
 
-            {/* CONDITIONAL BANNER & COMPARISON: SACAR CON DATOS DE CALCULADORA ACTIVE */}
-            {dropiCalculationSource === 'calculator' ? (
-              <div className="bg-gradient-to-r from-amber-500/10 via-[#181818] to-emerald-500/10 border-2 border-amber-500/40 rounded-xl p-4 space-y-3.5 animate-in fade-in duration-200">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-2.5">
+            {/* PANEL CONDICIONAL 1: EJECUTAR DESDE LA CALCULADORA */}
+            {dropiCalculationSource === 'calculator' && (
+              <div className="bg-[#121212] border border-amber-500/40 rounded-xl p-4.5 space-y-3.5 animate-in fade-in duration-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
                     <span className="text-xs font-black text-amber-300 uppercase tracking-wider">
-                      ⚡ Liquidación Calculada con Parámetros de Tu Calculadora COD
+                      Liquidación con Parámetros de Tu Calculadora
                     </span>
                   </div>
-                  <span className="text-[11px] font-mono font-bold text-slate-300 bg-black/50 px-2.5 py-0.5 rounded-lg border border-white/10">
+                  <span className="text-[11px] font-mono font-bold text-slate-300 bg-black/60 px-2.5 py-0.5 rounded-lg border border-white/10">
                     Producto: <span className="text-white underline">{inputs.name || 'Producto Actual'}</span>
                   </span>
                 </div>
 
                 {/* Values Taken from Calculator */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs font-mono">
-                  <div className="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
                     <span className="text-[10px] uppercase text-slate-400 font-sans block">Precio Venta (PV)</span>
-                    <span className="text-sm font-bold text-[#00df9a]">{formatValue(computed.precioVenta)}</span>
+                    <span className="text-sm font-bold text-white">{formatValue(computed.precioVenta)}</span>
                   </div>
-                  <div className="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
                     <span className="text-[10px] uppercase text-slate-400 font-sans block">Costo Proveedor</span>
                     <span className="text-sm font-bold text-slate-200">{formatValue(computed.costoProducto)}</span>
                   </div>
-                  <div className="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
                     <span className="text-[10px] uppercase text-slate-400 font-sans block">Flete Real COD</span>
                     <span className="text-sm font-bold text-slate-200">{formatValue(computed.fleteReal)}</span>
                   </div>
-                  <div className="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-0.5">
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
                     <span className="text-[10px] uppercase text-slate-400 font-sans block">CPA Publicidad</span>
                     <span className="text-sm font-bold text-slate-200">{formatValue(computed.cpaReal)}</span>
                   </div>
-                  <div className="bg-amber-500/15 p-2.5 rounded-lg border border-amber-500/30 space-y-0.5">
+                  <div className="bg-[#161616] p-2.5 rounded-lg border border-amber-500/50 space-y-0.5">
                     <span className="text-[10px] uppercase text-amber-300 font-sans font-bold block">Utilidad / Entrega</span>
                     <span className="text-sm font-bold text-amber-300">{formatValue(computed.utilidadValor)}</span>
-                  </div>
-                </div>
-
-                {/* Comparative Box: Dropi vs Calculadora */}
-                <div className="bg-black/70 border border-white/10 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
-                      📊 Comparación para {selectedDropiStats.deliveredCount} pedidos entregados:
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-mono">
-                      <div>
-                        <span className="text-slate-500">Facturación Dropi: </span>
-                        <span className="text-slate-300 line-through">{formatValue(selectedDropiStats.totalRevenue)}</span>
-                        <span className="text-slate-500"> ➔ Con Calculadora: </span>
-                        <strong className="text-[#00df9a]">{formatValue(activeDropiMetrics.calculatorRevenue)}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Ganancia Dropi: </span>
-                        <span className="text-slate-300 line-through">{formatValue(selectedDropiStats.realNetProfit)}</span>
-                        <span className="text-slate-500"> ➔ Con Calculadora: </span>
-                        <strong className="text-amber-300">{formatValue(activeDropiMetrics.calculatorNetProfit)}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`px-3 py-1.5 rounded-xl font-mono text-xs font-black border ${
-                      activeDropiMetrics.profitDifference >= 0
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                        : 'bg-red-500/20 text-red-300 border-red-500/40'
-                    }`}>
-                      Diferencia: {activeDropiMetrics.profitDifference >= 0 ? '+' : ''}{formatValue(activeDropiMetrics.profitDifference)}
-                    </span>
                   </div>
                 </div>
 
@@ -2565,49 +2473,169 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   <button
                     type="button"
                     onClick={handleLoadDropiStatsIntoCalculator}
-                    className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                    className="px-3.5 py-1.5 rounded-xl bg-transparent hover:bg-white/5 border border-white/20 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
                     title="Carga el costo, flete y CPA de este lote a los campos de la calculadora"
                   >
-                    <Download size={13} className="text-emerald-400" />
+                    <Download size={13} className="text-amber-400" />
                     <span>Jalar costos de este archivo a los campos de la calculadora</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleExecuteDropiInSimulator}
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                    className="px-3.5 py-1.5 rounded-xl bg-transparent hover:bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
                     title="Llevar estos pedidos a proyectar en el Simulador de Metas (Modo B)"
                   >
-                    <Play size={13} className="text-emerald-400" />
+                    <Play size={13} className="text-amber-400" />
                     <span>Simular en Proyección de Ventas (Modo B)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* PANEL CONDICIONAL 2: DEL ARCHIVO SUBIDO DEL DOCUMENTO */}
+            {dropiCalculationSource === 'dropi' && (
+              <div className="bg-[#121212] border border-emerald-500/40 rounded-xl p-4.5 space-y-3.5 animate-in fade-in duration-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <span className="text-xs font-black text-emerald-300 uppercase tracking-wider">
+                      Liquidación Real del Archivo Subido
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-emerald-300 bg-black/60 px-2.5 py-0.5 rounded-lg border border-emerald-500/30">
+                    Archivo: <span className="text-white underline">{selectedDropiStats.fileName}</span>
+                  </span>
+                </div>
+
+                {/* Values Taken from Dropi File */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs font-mono">
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                    <span className="text-[10px] uppercase text-slate-400 font-sans block">Precio Promedio Cobrado</span>
+                    <span className="text-sm font-bold text-white">{formatValue(selectedDropiStats.avgPrice)}</span>
+                  </div>
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                    <span className="text-[10px] uppercase text-slate-400 font-sans block">Costo Proveedor Prom.</span>
+                    <span className="text-sm font-bold text-slate-200">{formatValue(selectedDropiStats.avgCost)}</span>
+                  </div>
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                    <span className="text-[10px] uppercase text-slate-400 font-sans block">Flete Promedio</span>
+                    <span className="text-sm font-bold text-slate-200">{formatValue(selectedDropiStats.avgShipping)}</span>
+                  </div>
+                  <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                    <span className="text-[10px] uppercase text-slate-400 font-sans block">Pedidos Entregados</span>
+                    <span className="text-sm font-bold text-white">{selectedDropiStats.deliveredCount} ({selectedDropiStats.deliveryRate}%)</span>
+                  </div>
+                  <div className="bg-[#161616] p-2.5 rounded-lg border border-emerald-500/50 space-y-0.5">
+                    <span className="text-[10px] uppercase text-emerald-300 font-sans font-bold block">Utilidad / Entrega</span>
+                    <span className="text-sm font-bold text-emerald-300">{formatValue(selectedDropiStats.avgProfitPerDelivered)}</span>
+                  </div>
+                </div>
+
+                {/* Quick Actions Bar */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleLoadDropiStatsIntoCalculator}
+                    className="px-3.5 py-1.5 rounded-xl bg-transparent hover:bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                    title="Cargar costos del archivo a la calculadora"
+                  >
+                    <Download size={13} className="text-emerald-400" />
+                    <span>Cargar costos de este archivo a la calculadora</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setDropiCalculationSource('dropi')}
-                    className="px-3 py-1.5 rounded-xl text-slate-400 hover:text-slate-300 text-xs transition-colors ml-auto underline cursor-pointer"
+                    onClick={handleExecuteDropiInSimulator}
+                    className="px-3.5 py-1.5 rounded-xl bg-transparent hover:bg-white/5 border border-white/20 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                    title="Simular en el planificador de metas"
                   >
-                    Volver a datos históricos de Dropi
+                    <Play size={13} className="text-white" />
+                    <span>Simular en Proyección de Ventas (Modo B)</span>
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="bg-black/40 border border-white/5 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <span className="text-slate-500">ℹ️</span>
-                  <span>
-                    Estás viendo la liquidación histórica según los precios registrados en el archivo Dropi. 
-                    ¿Deseas saber cuánto saldría con tu Precio de Venta y Margen de la calculadora?
-                  </span>
+            )}
+
+            {/* PANEL CONDICIONAL 3: DE HISTORIAL DE CALCULADORA */}
+            {dropiCalculationSource === 'history' && (
+              <div className="bg-[#121212] border border-sky-500/40 rounded-xl p-4.5 space-y-3.5 animate-in fade-in duration-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shrink-0" />
+                    <span className="text-xs font-black text-sky-300 uppercase tracking-wider">
+                      Liquidación con Producto del Historial
+                    </span>
+                  </div>
+
+                  {/* Selector of saved products */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-slate-400">Seleccionar Producto:</span>
+                    {savedProducts.length > 0 ? (
+                      <select
+                        value={selectedHistoryProduct?.id || ''}
+                        onChange={(e) => setSelectedHistoryProductId(e.target.value)}
+                        className="bg-[#181818] border border-sky-500/40 text-white font-mono text-xs rounded-xl py-1.5 px-3 focus:outline-none cursor-pointer"
+                      >
+                        {savedProducts.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name || 'Producto Sin Nombre'} ({p.currency || 'USD'} — Margen {p.results?.margin !== undefined ? p.results.margin.toFixed(0) : (p.desiredProfitPercent || '20')}%)
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">No hay productos guardados en el historial aún</span>
+                    )}
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDropiCalculationSource('calculator')}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-500/10 hover:from-amber-500/30 hover:to-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm active:scale-95"
-                >
-                  <Zap size={13} className="fill-amber-400 text-amber-400" />
-                  <span>Sacar con Datos de Calculadora</span>
-                </button>
+
+                {historyComputed ? (
+                  <>
+                    {/* Values Taken from Saved Product */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs font-mono">
+                      <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                        <span className="text-[10px] uppercase text-slate-400 font-sans block">Precio Guardado (PV)</span>
+                        <span className="text-sm font-bold text-white">{formatValue(historyComputed.precioVenta)}</span>
+                      </div>
+                      <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                        <span className="text-[10px] uppercase text-slate-400 font-sans block">Costo Proveedor</span>
+                        <span className="text-sm font-bold text-slate-200">{formatValue(historyComputed.costoProducto)}</span>
+                      </div>
+                      <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                        <span className="text-[10px] uppercase text-slate-400 font-sans block">Flete Real COD</span>
+                        <span className="text-sm font-bold text-slate-200">{formatValue(historyComputed.fleteReal)}</span>
+                      </div>
+                      <div className="bg-black/60 p-2.5 rounded-lg border border-white/10 space-y-0.5">
+                        <span className="text-[10px] uppercase text-slate-400 font-sans block">CPA Publicidad</span>
+                        <span className="text-sm font-bold text-slate-200">{formatValue(historyComputed.cpaReal)}</span>
+                      </div>
+                      <div className="bg-[#161616] p-2.5 rounded-lg border border-sky-500/40 space-y-0.5">
+                        <span className="text-[10px] uppercase text-sky-300 font-sans font-bold block">Utilidad / Entrega</span>
+                        <span className="text-sm font-bold text-sky-300">{formatValue(historyComputed.utilidadValor)}</span>
+                      </div>
+                    </div>
+
+                    {/* Quick Action */}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {selectedHistoryProduct && (
+                        <button
+                          type="button"
+                          onClick={() => handleEditProduct(selectedHistoryProduct)}
+                          className="px-3.5 py-1.5 rounded-xl bg-transparent hover:bg-sky-500/10 border border-sky-500/40 text-sky-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                        >
+                          <Edit2 size={13} />
+                          <span>Cargar "{selectedHistoryProduct.name}" en la calculadora principal</span>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-4 rounded-xl border border-white/10 text-center space-y-2">
+                    <p className="text-xs text-slate-400">
+                      No tienes productos guardados en tu historial aún. Realiza un cálculo en la parte superior y haz clic en "Guardar en historial" para poder seleccionarlo aquí.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2617,13 +2645,27 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
           
           {/* KPI 1: Pedidos Entregados & Efectividad */}
-          <div className="p-4 rounded-xl bg-gradient-to-b from-emerald-500/10 to-[#111] border-2 border-emerald-500/30 space-y-2 relative overflow-hidden shadow-lg">
+          <div className={`p-4 rounded-xl bg-[#0e0e0e] border transition-all space-y-2 relative overflow-hidden shadow-lg ${
+            selectedDropiStats.deliveryRate >= 70
+              ? 'border-emerald-500/40 hover:border-emerald-500/60 shadow-[0_0_15px_rgba(16,185,129,0.06)]'
+              : selectedDropiStats.deliveryRate >= 50
+              ? 'border-amber-500/40 hover:border-amber-500/60 shadow-[0_0_15px_rgba(245,158,11,0.06)]'
+              : 'border-red-500/40 hover:border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.06)]'
+          }`}>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1">
-                <PackageCheck size={13} />
+              <span className="text-xs font-black uppercase text-slate-300 tracking-wider flex items-center gap-1.5">
+                <PackageCheck size={14} className={
+                  selectedDropiStats.deliveryRate >= 70 ? 'text-emerald-400' : selectedDropiStats.deliveryRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                } />
                 PEDIDOS ENTREGADOS
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-black">
+              <span className={`px-2.5 py-0.5 rounded-full bg-transparent border font-mono text-[11px] font-black ${
+                selectedDropiStats.deliveryRate >= 70
+                  ? 'border-emerald-500/40 text-emerald-400'
+                  : selectedDropiStats.deliveryRate >= 50
+                  ? 'border-amber-500/40 text-amber-400'
+                  : 'border-red-500/40 text-red-400'
+              }`}>
                 {selectedDropiStats.deliveryRate}% ÉXITO
               </span>
             </div>
@@ -2638,8 +2680,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             </div>
 
             {/* Visual Delivery / Return Bar */}
-            <div className="space-y-1 pt-1">
-              <div className="h-2 w-full rounded-full bg-black/60 border border-white/10 overflow-hidden flex">
+            <div className="pt-1 space-y-2">
+              <div className="h-2 w-full rounded-full bg-black border border-white/10 overflow-hidden flex">
                 <div 
                   className="h-full bg-emerald-500 transition-all duration-300"
                   style={{ width: `${selectedDropiStats.deliveryRate}%` }}
@@ -2651,178 +2693,162 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   title={`Devueltos: ${selectedDropiStats.returnRate}%`}
                 />
               </div>
-              <div className="flex justify-between text-[10px] font-mono text-slate-400 pt-0.5">
-                <span className="text-emerald-400 font-bold">🟢 {selectedDropiStats.deliveredCount} entregados</span>
-                <span className="text-red-400 font-bold">🔴 {selectedDropiStats.returnedCount} devueltos</span>
+
+              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-400">Tasa efectiva:</span>
+                <strong className={`font-bold ${
+                  selectedDropiStats.deliveryRate >= 70 ? 'text-emerald-400' : selectedDropiStats.deliveryRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                }`}>
+                  {selectedDropiStats.deliveryRate}% entregados
+                </strong>
               </div>
             </div>
           </div>
 
           {/* KPI 2: Facturación Total Cobrada (GMV Real) */}
-          <div className="p-4 rounded-xl bg-gradient-to-b from-blue-500/10 to-[#111] border-2 border-blue-500/30 space-y-2 relative overflow-hidden shadow-lg">
+          <div className="p-4 rounded-xl bg-[#0e0e0e] border border-sky-500/40 hover:border-sky-500/60 shadow-[0_0_15px_rgba(14,165,233,0.06)] transition-all space-y-2 relative overflow-hidden shadow-lg">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider flex items-center gap-1">
-                <DollarSign size={13} />
+              <span className="text-xs font-black uppercase text-slate-300 tracking-wider flex items-center gap-1.5">
+                <DollarSign size={14} className="text-sky-400" />
                 FACTURACIÓN COBRADA
               </span>
-              <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-black ${
-                dropiCalculationSource === 'calculator' 
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
-                  : 'bg-blue-500/20 text-blue-300'
-              }`}>
-                {dropiCalculationSource === 'calculator' ? 'CALCULADORA' : 'TOTAL ENTREGADOS'}
+              <span className="px-2.5 py-0.5 rounded-full font-mono text-[10px] font-black bg-transparent border border-sky-500/30 text-sky-300">
+                {dropiCalculationSource === 'calculator' ? 'CALCULADORA' : dropiCalculationSource === 'history' ? 'HISTORIAL' : 'ARCHIVO DROPI'}
               </span>
             </div>
 
-            <div className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
-              {formatValue(activeDropiMetrics.totalRevenue)}
+            <div className="pt-1">
+              <div className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
+                {currency === 'GTQ' ? formatQuetzalesNoDecimals(activeDropiMetrics.totalRevenue) : formatSolesNoDecimals(activeDropiMetrics.totalRevenue)}
+              </div>
             </div>
 
-            {/* Live Soles ⇄ Quetzales conversion */}
-            <div className="pt-2 border-t border-blue-500/20 text-[11px] font-mono">
-              {currency === 'PEN' ? (
-                <div className="text-amber-300 font-bold flex justify-between items-center">
-                  <span>🇬🇹 En Quetzales:</span>
-                  <span>Q {(activeDropiMetrics.totalRevenue * ratePENtoGTQ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              ) : currency === 'GTQ' ? (
-                <div className="text-amber-300 font-bold flex justify-between items-center">
-                  <span>🇵🇪 En Soles:</span>
-                  <span>S/ {(activeDropiMetrics.totalRevenue * rateGTQtoPEN).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
+            {/* Conversión debajo del monto en Soles o Quetzales */}
+            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+              {currency === 'GTQ' ? (
+                <>
+                  <span className="text-slate-400">🇵🇪 En Soles:</span>
+                  <strong className="text-white font-bold">{formatSolesNoDecimals(activeDropiMetrics.totalRevenue)}</strong>
+                </>
               ) : (
-                <div className="text-slate-300 text-[10px] space-y-0.5">
-                  <div>🇵🇪 {formatSolesAndQuetzales(activeDropiMetrics.totalRevenue).soles}</div>
-                  <div>🇬🇹 {formatSolesAndQuetzales(activeDropiMetrics.totalRevenue).quetzales}</div>
-                </div>
+                <>
+                  <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                  <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(activeDropiMetrics.totalRevenue)}</strong>
+                </>
               )}
             </div>
-
-            <p className="text-[10px] text-slate-400">
-              {dropiCalculationSource === 'calculator' 
-                ? `Cobro estimado con tu Precio de Venta recomendado (${formatValue(computed.precioVenta)})`
-                : 'Monto total recaudado en efectivo contra entrega por transportadora.'}
-            </p>
           </div>
 
           {/* KPI 3: Ganancia Neta Limpia Real (Profit) */}
-          <div className="p-4 rounded-xl bg-gradient-to-b from-[#00df9a]/20 via-[#111] to-[#111] border-2 border-[#00df9a]/50 space-y-2 relative overflow-hidden shadow-xl shadow-[#00df9a]/5">
+          <div className={`p-4 rounded-xl bg-[#0e0e0e] border transition-all space-y-2 relative overflow-hidden shadow-lg ${
+            activeDropiMetrics.realNetProfit > 0
+              ? 'border-emerald-500/40 hover:border-emerald-500/60 shadow-[0_0_15px_rgba(16,185,129,0.06)]'
+              : 'border-red-500/40 hover:border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.06)]'
+          }`}>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-[#00df9a] tracking-wider flex items-center gap-1">
-                <TrendingUp size={13} />
+              <span className="text-xs font-black uppercase text-slate-300 tracking-wider flex items-center gap-1.5">
+                <TrendingUp size={14} className={activeDropiMetrics.realNetProfit > 0 ? 'text-emerald-400' : 'text-red-400'} />
                 GANANCIA NETA REAL
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-[#00df9a]/20 text-[#00df9a] font-mono text-[10px] font-black">
+              <span className={`px-2.5 py-0.5 rounded-full bg-transparent border font-mono text-[10px] font-black ${
+                activeDropiMetrics.realNetProfit > 0 ? 'border-emerald-500/40 text-emerald-400' : 'border-red-500/40 text-red-400'
+              }`}>
                 {activeDropiMetrics.marginOnDelivered.toFixed(1)}% MARGEN
               </span>
             </div>
 
-            <div className="text-2xl sm:text-3xl font-display font-black text-[#00df9a] tracking-tight">
-              {formatValue(activeDropiMetrics.realNetProfit)}
+            <div className="pt-1">
+              <div className={`text-2xl sm:text-3xl font-display font-black tracking-tight ${
+                activeDropiMetrics.realNetProfit > 0 ? 'text-white' : 'text-red-400'
+              }`}>
+                {currency === 'GTQ' ? formatQuetzalesNoDecimals(activeDropiMetrics.realNetProfit) : formatSolesNoDecimals(activeDropiMetrics.realNetProfit)}
+              </div>
             </div>
 
-            {/* Live Soles ⇄ Quetzales conversion */}
-            <div className="pt-2 border-t border-[#00df9a]/20 text-[11px] font-mono">
-              {currency === 'PEN' ? (
-                <div className="text-amber-300 font-bold flex justify-between items-center bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
-                  <span>🇬🇹 En Quetzales:</span>
-                  <span>Q {(activeDropiMetrics.realNetProfit * ratePENtoGTQ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              ) : currency === 'GTQ' ? (
-                <div className="text-amber-300 font-bold flex justify-between items-center bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
-                  <span>🇵🇪 En Soles:</span>
-                  <span>S/ {(activeDropiMetrics.realNetProfit * rateGTQtoPEN).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
+            {/* Conversión debajo del monto en Soles o Quetzales */}
+            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+              {currency === 'GTQ' ? (
+                <>
+                  <span className="text-slate-400">🇵🇪 En Soles:</span>
+                  <strong className={`font-bold ${activeDropiMetrics.realNetProfit > 0 ? 'text-white' : 'text-red-400'}`}>
+                    {formatSolesNoDecimals(activeDropiMetrics.realNetProfit)}
+                  </strong>
+                </>
               ) : (
-                <div className="text-slate-300 text-[10px] space-y-0.5">
-                  <div>🇵🇪 {formatSolesAndQuetzales(activeDropiMetrics.realNetProfit).soles}</div>
-                  <div>🇬🇹 {formatSolesAndQuetzales(activeDropiMetrics.realNetProfit).quetzales}</div>
-                </div>
+                <>
+                  <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                  <strong className={`font-bold ${activeDropiMetrics.realNetProfit > 0 ? 'text-amber-300' : 'text-red-400'}`}>
+                    {formatQuetzalesNoDecimals(activeDropiMetrics.realNetProfit)}
+                  </strong>
+                </>
               )}
             </div>
-
-            <p className="text-[10px] text-slate-400">
-              {dropiCalculationSource === 'calculator'
-                ? `Ganancia neta libre basada en tu utilidad unitaria de calculadora (${formatValue(computed.utilidadValor)})`
-                : 'Ganancia líquida libre descontando costo producto, fletes, devoluciones y CPA.'}
-            </p>
           </div>
 
           {/* KPI 4: Ganancia Neta por Cada Entrega */}
-          <div className="p-4 rounded-xl bg-gradient-to-b from-purple-500/10 to-[#111] border-2 border-purple-500/30 space-y-2 relative overflow-hidden shadow-lg">
+          <div className={`p-4 rounded-xl bg-[#0e0e0e] border transition-all space-y-2 relative overflow-hidden shadow-lg ${
+            activeDropiMetrics.avgProfitPerDelivered > 0
+              ? 'border-purple-500/40 hover:border-purple-500/60 shadow-[0_0_15px_rgba(168,85,247,0.06)]'
+              : 'border-red-500/40 hover:border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.06)]'
+          }`}>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-purple-400 tracking-wider flex items-center gap-1">
-                <Coins size={13} />
+              <span className="text-xs font-black uppercase text-slate-300 tracking-wider flex items-center gap-1.5">
+                <Coins size={14} className={activeDropiMetrics.avgProfitPerDelivered > 0 ? 'text-purple-400' : 'text-red-400'} />
                 UTILIDAD POR ENTREGA
               </span>
-              <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-black ${
-                dropiCalculationSource === 'calculator'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  : 'bg-purple-500/20 text-purple-300'
-              }`}>
-                {dropiCalculationSource === 'calculator' ? 'CALCULADORA' : 'UNITARIO LIBRE'}
+              <span className="px-2 py-0.5 rounded-full font-mono text-[10px] font-bold text-slate-400 border border-white/10">
+                UNITARIO
               </span>
             </div>
 
-            <div className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
-              {formatValue(activeDropiMetrics.avgProfitPerDelivered)}
+            <div className="pt-1">
+              <div className={`text-2xl sm:text-3xl font-display font-black tracking-tight ${
+                activeDropiMetrics.avgProfitPerDelivered > 0 ? 'text-white' : 'text-red-400'
+              }`}>
+                {currency === 'GTQ' ? formatQuetzalesNoDecimals(activeDropiMetrics.avgProfitPerDelivered) : formatSolesNoDecimals(activeDropiMetrics.avgProfitPerDelivered)}
+              </div>
             </div>
 
-            {/* Live Soles ⇄ Quetzales conversion */}
-            <div className="pt-2 border-t border-purple-500/20 text-[11px] font-mono">
-              {currency === 'PEN' ? (
-                <div className="text-amber-300 font-bold flex justify-between items-center">
-                  <span>🇬🇹 En Quetzales:</span>
-                  <span>Q {(activeDropiMetrics.avgProfitPerDelivered * ratePENtoGTQ).toFixed(2)} / ent.</span>
-                </div>
-              ) : currency === 'GTQ' ? (
-                <div className="text-amber-300 font-bold flex justify-between items-center">
-                  <span>🇵🇪 En Soles:</span>
-                  <span>S/ {(activeDropiMetrics.avgProfitPerDelivered * rateGTQtoPEN).toFixed(2)} / ent.</span>
-                </div>
+            {/* Conversión debajo del monto en Soles o Quetzales */}
+            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+              {currency === 'GTQ' ? (
+                <>
+                  <span className="text-slate-400">🇵🇪 En Soles:</span>
+                  <strong className={`font-bold ${activeDropiMetrics.avgProfitPerDelivered > 0 ? 'text-white' : 'text-red-400'}`}>
+                    {formatSolesNoDecimals(activeDropiMetrics.avgProfitPerDelivered)} / ent.
+                  </strong>
+                </>
               ) : (
-                <div className="text-slate-300 text-[10px] space-y-0.5">
-                  <div>🇵🇪 {formatSolesAndQuetzales(activeDropiMetrics.avgProfitPerDelivered).soles} / ent.</div>
-                  <div>🇬🇹 {formatSolesAndQuetzales(activeDropiMetrics.avgProfitPerDelivered).quetzales} / ent.</div>
-                </div>
+                <>
+                  <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                  <strong className={`font-bold ${activeDropiMetrics.avgProfitPerDelivered > 0 ? 'text-amber-300' : 'text-red-400'}`}>
+                    {formatQuetzalesNoDecimals(activeDropiMetrics.avgProfitPerDelivered)} / ent.
+                  </strong>
+                </>
               )}
             </div>
-
-            <p className="text-[10px] text-slate-400">
-              {dropiCalculationSource === 'calculator'
-                ? `Utilidad fijada en la calculadora con tu margen del ${computed.margenPercent.toFixed(1)}%`
-                : 'Dinero que ingresó a tu bolsillo por cada paquete entregado exitosamente.'}
-            </p>
           </div>
 
         </div>
 
-        {/* SUBPANEL: DINÁMICA DIARIA DEL ARCHIVO DROPI (CUÁNTO SE ENTREGA Y SE DEVUELVE POR DÍA) */}
-        <div className="bg-black/50 border border-white/10 rounded-xl p-5 space-y-4 relative z-10">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+        {/* SUBPANEL: DINÁMICA DIARIA DEL ARCHIVO DROPI */}
+        <div className="bg-[#0e0e0e] border border-white/10 rounded-xl p-5 space-y-4 relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
             <div>
               <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
                 <span>RITMO DIARIO DEL ARCHIVO: ¿CUÁNTO SE ENTREGA Y SE DEVUELVE POR DÍA?</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
-                  {selectedDropiStats.daysCount} días analizados
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-transparent border border-white/20 text-white font-bold">
+                  {selectedDropiStats.daysCount} días
                 </span>
-                {dropiCalculationSource === 'calculator' && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
-                    ⚡ Con Datos Calculadora
-                  </span>
-                )}
               </h4>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Desglose operativo promedio por día con conversiones en vivo en Soles peruanos y Quetzales guatemaltecos.
-              </p>
             </div>
 
             <div className="flex items-center gap-2 text-xs font-mono">
-              <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">
-                🟢 ~{selectedDropiStats.dailyDelivered} entregas / día
+              <span className="text-emerald-400 font-bold bg-transparent px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                ~{selectedDropiStats.dailyDelivered} entregas / día
               </span>
-              <span className="text-red-400 font-bold bg-red-500/10 px-2 py-1 rounded-lg border border-red-500/20">
-                🔴 ~{selectedDropiStats.dailyReturned} devueltos / día
+              <span className="text-red-400 font-bold bg-transparent px-2.5 py-1 rounded-lg border border-red-500/30">
+                ~{selectedDropiStats.dailyReturned} devueltos / día
               </span>
             </div>
           </div>
@@ -2830,13 +2856,13 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             {/* 1. SE ENTREGA POR DÍA EN ESTE ARCHIVO */}
-            <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/30 space-y-3">
+            <div className="p-4 rounded-xl bg-[#111] border border-emerald-500/30 hover:border-emerald-500/50 transition-all space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1.5">
-                  <CheckCircle2 size={14} />
+                  <CheckCircle2 size={14} className="text-emerald-400" />
                   SE ENTREGA POR DÍA EN ESTE LOTE
                 </span>
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-black">
+                <span className="px-2 py-0.5 rounded-md bg-transparent border border-emerald-500/30 text-emerald-400 font-mono text-[10px] font-black">
                   EFECTIVIDAD {selectedDropiStats.deliveryRate}%
                 </span>
               </div>
@@ -2845,41 +2871,52 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 <span className="text-3xl font-display font-black text-white">
                   ~{selectedDropiStats.dailyDelivered}
                 </span>
-                <span className="text-xs font-bold text-emerald-400 uppercase">pedidos entregados / día</span>
+                <span className="text-xs font-bold text-slate-400 uppercase">pedidos entregados / día</span>
               </div>
 
               <div className="space-y-1.5 text-xs font-mono pt-1">
                 <div className="flex justify-between items-center text-slate-300">
                   <span>Facturación cobrada diaria:</span>
-                  <strong className="text-emerald-400 font-bold">{formatValue(activeDropiMetrics.dailyDeliveredRevenue)} / día</strong>
+                  <strong className="text-white font-bold">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(activeDropiMetrics.dailyDeliveredRevenue) : formatSolesNoDecimals(activeDropiMetrics.dailyDeliveredRevenue)} / día
+                  </strong>
                 </div>
                 <div className="flex justify-between items-center text-slate-300">
                   <span>Ganancia neta diaria real:</span>
-                  <strong className="text-[#00df9a] font-bold">{formatValue(activeDropiMetrics.dailyNetProfit)} / día</strong>
+                  <strong className="text-emerald-400 font-bold">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(activeDropiMetrics.dailyNetProfit) : formatSolesNoDecimals(activeDropiMetrics.dailyNetProfit)} / día
+                  </strong>
                 </div>
 
-                {/* Live currency conversion for daily delivered metrics */}
-                <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-[11px] text-amber-300">
-                  <span>Equivalente en vivo:</span>
-                  {currency === 'PEN' ? (
-                    <span className="font-bold">🇬🇹 Q {(activeDropiMetrics.dailyDeliveredRevenue * ratePENtoGTQ).toFixed(2)} fact. | Q {(activeDropiMetrics.dailyNetProfit * ratePENtoGTQ).toFixed(2)} ganancia / día</span>
-                  ) : currency === 'GTQ' ? (
-                    <span className="font-bold">🇵🇪 S/ {(activeDropiMetrics.dailyDeliveredRevenue * rateGTQtoPEN).toFixed(2)} fact. | S/ {(activeDropiMetrics.dailyNetProfit * rateGTQtoPEN).toFixed(2)} ganancia / día</span>
+                {/* Conversión en Soles / Quetzales */}
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                  {currency === 'GTQ' ? (
+                    <>
+                      <span className="text-slate-400">🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">
+                        {formatSolesNoDecimals(activeDropiMetrics.dailyDeliveredRevenue)} fact. | {formatSolesNoDecimals(activeDropiMetrics.dailyNetProfit)} gan.
+                      </strong>
+                    </>
                   ) : (
-                    <span>🇵🇪 {formatSolesAndQuetzales(activeDropiMetrics.dailyDeliveredRevenue).soles} | 🇬🇹 {formatSolesAndQuetzales(activeDropiMetrics.dailyDeliveredRevenue).quetzales}</span>
+                    <>
+                      <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">
+                        {formatQuetzalesNoDecimals(activeDropiMetrics.dailyDeliveredRevenue)} fact. | {formatQuetzalesNoDecimals(activeDropiMetrics.dailyNetProfit)} gan.
+                      </strong>
+                    </>
                   )}
                 </div>
               </div>
             </div>
 
             {/* 2. SE DEVUELVE POR DÍA EN ESTE ARCHIVO */}
-            <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/30 space-y-3">
+            <div className="p-4 rounded-xl bg-[#111] border border-red-500/30 hover:border-red-500/50 transition-all space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-red-400 tracking-wider flex items-center gap-1.5">
-                  <RotateCcw size={14} />
+                  <RotateCcw size={14} className="text-red-400" />
                   SE DEVUELVE POR DÍA EN ESTE LOTE
                 </span>
-                <span className="px-2 py-0.5 rounded-md bg-red-500/20 text-red-300 font-mono text-[10px] font-black">
+                <span className="px-2 py-0.5 rounded-md bg-transparent border border-red-500/30 text-red-400 font-mono text-[10px] font-black">
                   TASA {selectedDropiStats.returnRate}%
                 </span>
               </div>
@@ -2888,28 +2925,35 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 <span className="text-3xl font-display font-black text-white">
                   ~{selectedDropiStats.dailyReturned}
                 </span>
-                <span className="text-xs font-bold text-red-400 uppercase">pedidos devueltos / día</span>
+                <span className="text-xs font-bold text-slate-400 uppercase">pedidos devueltos / día</span>
               </div>
 
               <div className="space-y-1.5 text-xs font-mono pt-1">
                 <div className="flex justify-between items-center text-slate-300">
                   <span>Costo flete perdido por día:</span>
-                  <strong className="text-red-400 font-bold">{formatValue(selectedDropiStats.dailyReturnLoss)} / día</strong>
+                  <strong className="text-red-400 font-bold">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(selectedDropiStats.dailyReturnLoss) : formatSolesNoDecimals(selectedDropiStats.dailyReturnLoss)} / día
+                  </strong>
                 </div>
                 <div className="flex justify-between items-center text-slate-300">
-                  <span>Pérdida acumulada en fletes devueltos:</span>
-                  <strong className="text-red-400 font-bold">{formatValue(selectedDropiStats.returnedShippingLoss)}</strong>
+                  <span>Pérdida acumulada en fletes:</span>
+                  <strong className="text-red-400 font-bold">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(selectedDropiStats.returnedShippingLoss) : formatSolesNoDecimals(selectedDropiStats.returnedShippingLoss)}
+                  </strong>
                 </div>
 
-                {/* Live currency conversion for daily return metrics */}
-                <div className="pt-2 border-t border-red-500/20 flex items-center justify-between text-[11px] text-amber-300">
-                  <span>Equivalente en vivo:</span>
-                  {currency === 'PEN' ? (
-                    <span className="font-bold">🇬🇹 Q {(selectedDropiStats.dailyReturnLoss * ratePENtoGTQ).toFixed(2)} flete devuelto / día</span>
-                  ) : currency === 'GTQ' ? (
-                    <span className="font-bold">🇵🇪 S/ {(selectedDropiStats.dailyReturnLoss * rateGTQtoPEN).toFixed(2)} flete devuelto / día</span>
+                {/* Conversión en Soles / Quetzales */}
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                  {currency === 'GTQ' ? (
+                    <>
+                      <span className="text-slate-400">🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">{formatSolesNoDecimals(selectedDropiStats.dailyReturnLoss)} / día</strong>
+                    </>
                   ) : (
-                    <span>🇵🇪 {formatSolesAndQuetzales(selectedDropiStats.dailyReturnLoss).soles} | 🇬🇹 {formatSolesAndQuetzales(selectedDropiStats.dailyReturnLoss).quetzales}</span>
+                    <>
+                      <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(selectedDropiStats.dailyReturnLoss)} / día</strong>
+                    </>
                   )}
                 </div>
               </div>
@@ -2921,25 +2965,25 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
         {/* ACTION BUTTONS: CARGAR A LA CALCULADORA & EJECUTAR EN SIMULADOR */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 relative z-10">
           <div className="text-xs text-slate-400">
-            Producto detectado: <strong className="text-white">{selectedDropiStats.topProduct}</strong> | Costo prom: <strong className="text-white">{formatValue(selectedDropiStats.avgCost)}</strong> | Flete prom: <strong className="text-white">{formatValue(selectedDropiStats.avgShipping)}</strong>
+            Producto detectado: <strong className="text-white">{selectedDropiStats.topProduct}</strong> | Costo prom: <strong className="text-white">{formatSolesNoDecimals(selectedDropiStats.avgCost)}</strong> | Flete prom: <strong className="text-white">{formatSolesNoDecimals(selectedDropiStats.avgShipping)}</strong>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
             <button
               type="button"
               onClick={handleLoadDropiStatsIntoCalculator}
-              className="px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-white/10 hover:bg-white/15 text-white border border-white/20 transition-all flex items-center gap-2 cursor-pointer shadow-md active:scale-95"
+              className="px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-transparent hover:bg-white/10 text-white border border-white/20 hover:border-white transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
             >
-              <Zap size={14} className="text-amber-400" />
+              <Zap size={14} className="text-white" />
               <span>Cargar Costos a la Calculadora</span>
             </button>
 
             <button
               type="button"
               onClick={handleExecuteDropiInSimulator}
-              className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-emerald-500 to-[#00df9a] hover:from-emerald-400 hover:to-[#00df9a] text-black font-black transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 active:scale-95"
+              className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-transparent hover:bg-white/10 text-white border border-white/30 hover:border-white transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
             >
-              <Play size={14} className="fill-black" />
+              <Play size={14} className="fill-white text-white" />
               <span>Ejecutar Simulación con estos Entregados</span>
             </button>
           </div>
@@ -2948,55 +2992,40 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
       </div>
 
       {/* SECCIÓN MEJORADA: SIMULADOR DE META DE GANANCIAS (¿Cuántas ventas necesitas para ganar tanto?) */}
-      <div id="seccion-ventas-por-pedidos" className="bg-[#090909] border border-white/5 hover:border-white/10 transition-all rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden">
-        {/* Ambient Top Glow */}
-        <div className="absolute top-0 right-1/4 w-96 h-28 bg-gradient-to-b from-[#ff5500]/10 to-transparent blur-3xl pointer-events-none" />
-        <div className="absolute top-0 left-1/4 w-96 h-28 bg-gradient-to-b from-[#00df9a]/10 to-transparent blur-3xl pointer-events-none" />
-
-        {/* Section Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/5 pb-5 relative z-10">
+      <div id="seccion-ventas-por-pedidos" className="bg-[#0b0b0b] border border-white/15 rounded-2xl p-6 space-y-6 shadow-xl relative">
+        {/* Header Bar: Solo el título con color agradable y tabs de modo */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4 relative z-10">
           <div>
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-[#ff5500] to-[#ff7700] text-white shadow-md shadow-[#ff5500]/20 flex items-center gap-1">
-                <Target size={11} />
-                Planificador de Metas
-              </span>
-              <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">
-                INVERSE REVENUE CALCULATOR
-              </span>
-            </div>
-            <h3 className="text-xl sm:text-2xl font-display font-black tracking-tight text-white flex items-center gap-2">
-              ¿CUÁNTAS VENTAS NECESITAS PARA <span className="text-[#00df9a]">GANAR TU META</span>?
+            <h3 className="text-xl sm:text-2xl font-display font-black tracking-tight flex items-center gap-2 flex-wrap">
+              <span className="text-white">PLANIFICADOR DE METAS:</span>
+              <span className="text-amber-400">¿CUÁNTAS VENTAS NECESITAS PARA TU OBJETIVO?</span>
             </h3>
-            <p className="text-[12px] text-slate-400 mt-1 max-w-2xl leading-relaxed">
-              Ingresa la ganancia neta libre que deseas alcanzar y el sistema calculará exactamente cuántos pedidos debes despachar y entregar considerando tu efectividad real de entrega y costos operativos.
-            </p>
           </div>
 
           {/* Mode Switcher Tabs */}
-          <div className="flex items-center bg-[#111] p-1 rounded-xl border border-white/5 shrink-0 self-start lg:self-center">
+          <div className="flex items-center bg-[#141414] p-1.5 rounded-xl border border-white/10 shrink-0 self-start sm:self-center">
             <button
               type="button"
               onClick={() => setSimulationMode('targetToSales')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer border ${
                 simulationMode === 'targetToSales'
-                  ? 'bg-gradient-to-r from-[#ff5500] to-[#ff7700] text-white shadow-md shadow-[#ff5500]/30'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'border-amber-400 text-amber-300 bg-amber-500/15 ring-2 ring-amber-400/50 shadow-sm'
+                  : 'border-transparent text-slate-400 hover:text-white bg-transparent'
               }`}
             >
-              <Target size={13} />
+              <Target size={13} className={simulationMode === 'targetToSales' ? 'text-amber-300' : 'text-slate-400'} />
               <span>Quiero ganar $X</span>
             </button>
             <button
               type="button"
               onClick={() => setSimulationMode('salesToProfit')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer border ${
                 simulationMode === 'salesToProfit'
-                  ? 'bg-gradient-to-r from-[#00df9a] to-[#00c589] text-black shadow-md shadow-[#00df9a]/30'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'border-emerald-400 text-emerald-300 bg-emerald-500/15 ring-2 ring-emerald-400/50 shadow-sm'
+                  : 'border-transparent text-slate-400 hover:text-white bg-transparent'
               }`}
             >
-              <ShoppingBag size={13} />
+              <ShoppingBag size={13} className={simulationMode === 'salesToProfit' ? 'text-emerald-300' : 'text-slate-400'} />
               <span>Si vendo N pedidos</span>
             </button>
           </div>
@@ -3023,17 +3052,17 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
               {/* Target Profit Input */}
               <div className="lg:col-span-7 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Coins size={14} className="text-[#00df9a]" />
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Coins size={14} className="text-amber-400" />
                     ¿Cuánto dinero quieres ganar limpio? (Meta Neta)
                   </label>
-                  <span className="text-[10px] font-mono font-bold text-[#00df9a]">
+                  <span className="text-xs font-mono font-bold text-amber-300">
                     Moneda activa: {currency}
                   </span>
                 </div>
 
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00df9a] font-mono text-lg font-black">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-400 font-mono text-lg font-black">
                     {CURRENCIES[currency]?.symbol || '$'}
                   </span>
                   <input
@@ -3041,34 +3070,33 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     value={targetProfitInput}
                     onChange={(e) => setTargetProfitInput(e.target.value)}
                     placeholder="5000000"
-                    className="w-full bg-[#111] border-2 border-[#00df9a]/40 focus:border-[#00df9a] rounded-xl py-3 pl-10 pr-4 text-xl sm:text-2xl font-mono font-black text-white focus:outline-none transition-all shadow-inner"
+                    className="w-full bg-[#111] border border-white/15 focus:border-amber-400 rounded-xl py-3 pl-10 pr-4 text-xl sm:text-2xl font-mono font-black text-white focus:outline-none transition-all shadow-inner"
                   />
                 </div>
 
                 {/* Live currency conversion tag under input */}
-                <div className="flex items-center justify-between text-[11px] font-mono pt-0.5">
-                  <div className="flex items-center gap-1.5 text-slate-400 flex-wrap">
-                    <ArrowLeftRight size={12} className="text-amber-400 shrink-0" />
-                    <span>Equivalente en vivo:</span>
-                    {currency === 'PEN' ? (
-                      <span className="text-amber-300 font-bold bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
-                        🇬🇹 Q {((parseFloat(targetProfitInput) || 0) * ratePENtoGTQ).toLocaleString(undefined, { maximumFractionDigits: 0 })} Quetzales
-                      </span>
-                    ) : currency === 'GTQ' ? (
-                      <span className="text-amber-300 font-bold bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
-                        🇵🇪 S/ {((parseFloat(targetProfitInput) || 0) * rateGTQtoPEN).toLocaleString(undefined, { maximumFractionDigits: 0 })} Soles
-                      </span>
-                    ) : (
-                      <span className="text-slate-300 bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
-                        🇵🇪 {formatSolesAndQuetzales(parseFloat(targetProfitInput) || 0).soles} | 🇬🇹 {formatSolesAndQuetzales(parseFloat(targetProfitInput) || 0).quetzales}
-                      </span>
-                    )}
-                  </div>
+                <div className="pt-1">
+                  {currency === 'PEN' ? (
+                    <div className="text-xs font-mono text-slate-400 flex items-center justify-between">
+                      <span>🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals((parseFloat(targetProfitInput) || 0) * ratePENtoGTQ)}</strong>
+                    </div>
+                  ) : currency === 'GTQ' ? (
+                    <div className="text-xs font-mono text-slate-400 flex items-center justify-between">
+                      <span>🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">{formatSolesNoDecimals((parseFloat(targetProfitInput) || 0) * rateGTQtoPEN)}</strong>
+                    </div>
+                  ) : (
+                    <div className="text-xs font-mono text-slate-400 flex items-center justify-between">
+                      <span>🇵🇪 {formatSolesNoDecimals(parseFloat(targetProfitInput) || 0)}</span>
+                      <span>🇬🇹 {formatQuetzalesNoDecimals(parseFloat(targetProfitInput) || 0)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Quick Presets Buttons */}
                 <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1">
                     Metas rápidas:
                   </span>
                   {getPresetsForCurrency(currency).map((preset) => {
@@ -3078,10 +3106,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                         key={preset.value}
                         type="button"
                         onClick={() => setTargetProfitInput(preset.value)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer border ${
+                        className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer border ${
                           isActive
-                            ? 'bg-[#00df9a] text-black border-[#00df9a] shadow-sm shadow-[#00df9a]/30'
-                            : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10 hover:border-white/20'
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-400 ring-1 ring-amber-400/50 shadow-sm'
+                            : 'bg-[#111] hover:bg-white/5 text-slate-400 hover:text-white border-white/10'
                         }`}
                       >
                         {preset.label}
@@ -3093,8 +3121,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
 
               {/* Time Period Selector */}
               <div className="lg:col-span-5 space-y-2">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Clock size={14} className="text-[#ff5500]" />
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock size={14} className="text-amber-400" />
                   Plazo para lograr esta meta
                 </label>
                 <div className="grid grid-cols-4 gap-2">
@@ -3112,8 +3140,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                         onClick={() => setTargetPeriod(p.id as any)}
                         className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
                           isSelected
-                            ? 'bg-[#ff5500]/15 border-[#ff5500] text-white shadow-md shadow-[#ff5500]/10'
-                            : 'bg-[#111] border-white/5 hover:border-white/15 text-slate-400 hover:text-white'
+                            ? 'bg-amber-500/15 border-amber-400 text-amber-300 ring-1 ring-amber-400/50 shadow-sm'
+                            : 'bg-[#111] border-white/10 hover:border-white/20 text-slate-400 hover:text-white'
                         }`}
                       >
                         <span className="text-xs font-black uppercase tracking-wider">{p.label}</span>
@@ -3129,74 +3157,62 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               
               {/* KPI 1: Pedidos a Despachar Totales */}
-              <div className="bg-gradient-to-b from-[#ff5500]/15 via-[#111] to-[#111] border-2 border-[#ff5500]/40 rounded-2xl p-5 relative overflow-hidden shadow-xl">
+              <div className="bg-[#111] border border-amber-500/30 rounded-2xl p-5 shadow-lg space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#ff5500] flex items-center gap-1">
-                    <Flame size={12} fill="currentColor" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <Flame size={14} />
                     DESPACHOS TOTALES
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-[#ff5500]/20 text-[#ff5500] text-[10px] font-black font-mono">
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-bold">
                     {targetPeriod === 'monthly' ? '30 días' : targetPeriod === 'biweekly' ? '15 días' : targetPeriod === 'weekly' ? '7 días' : '1 día'}
                   </span>
                 </div>
 
-                <div className="mt-3">
+                <div className="pt-2">
                   <div className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight flex items-baseline gap-1.5">
                     <span>{targetSimulation.dispatchedNeeded.toLocaleString()}</span>
                     <span className="text-sm font-bold text-slate-400">pedidos</span>
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="px-2.5 py-1 rounded-lg bg-[#ff5500] text-black text-xs font-black tracking-wider uppercase flex items-center gap-1 shadow-sm">
-                      <Zap size={12} fill="currentColor" />
-                      {targetSimulation.dispatchedPerDay} al día
-                    </span>
-                  </div>
                 </div>
 
-                <p className="text-[11px] text-slate-400 mt-3 pt-3 border-t border-white/5 leading-relaxed">
-                  Volumen total a generar en campañas para compensar cancelaciones y devoluciones.
-                </p>
+                <div className="pt-2 border-t border-white/10 text-xs font-mono text-slate-400 flex items-center justify-between">
+                  <span>Ritmo diario:</span>
+                  <strong className="text-amber-300 font-bold">{targetSimulation.dispatchedPerDay} despachos / día</strong>
+                </div>
               </div>
 
               {/* KPI 2: Pedidos Entregados Reales */}
-              <div className="bg-gradient-to-b from-[#00df9a]/15 via-[#111] to-[#111] border-2 border-[#00df9a]/40 rounded-2xl p-5 relative overflow-hidden shadow-xl">
+              <div className="bg-[#111] border border-emerald-500/30 rounded-2xl p-5 shadow-lg space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#00df9a] flex items-center gap-1">
-                    <CheckCircle2 size={12} />
+                  <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 size={14} />
                     ENTREGAS EFECTIVAS
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-[#00df9a]/20 text-[#00df9a] text-[10px] font-black font-mono">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-bold">
                     Tasa: {inputs.finalDeliveryPercent}%
                   </span>
                 </div>
 
-                <div className="mt-3">
-                  <div className="text-3xl sm:text-4xl font-display font-black text-[#00df9a] tracking-tight flex items-baseline gap-1.5">
+                <div className="pt-2">
+                  <div className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight flex items-baseline gap-1.5">
                     <span>{targetSimulation.deliveredNeeded.toLocaleString()}</span>
                     <span className="text-sm font-bold text-slate-400">entregados</span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                    <span className="px-2 py-0.5 rounded-lg bg-[#00df9a]/20 border border-[#00df9a]/40 text-[#00df9a] text-[11px] font-black tracking-wider uppercase flex items-center gap-1">
-                      <Check size={11} />
-                      {targetSimulation.deliveredPerDay} entregados / día
-                    </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 text-[11px] font-black tracking-wider uppercase flex items-center gap-1">
-                      <RotateCcw size={11} />
-                      {targetSimulation.returnedPerDay} devueltos / día
-                    </span>
-                  </div>
                 </div>
 
-                <p className="text-[11px] text-slate-400 mt-3 pt-3 border-t border-white/5 leading-relaxed">
-                  Pedidos pagados que generan los <strong className="text-white">{formatValue(targetSimulation.profitPerUnit)}</strong> de ganancia unitaria neta.
-                </p>
+                <div className="pt-2 border-t border-white/10 text-xs font-mono text-slate-400 flex items-center justify-between">
+                  <span>Dinámica diaria:</span>
+                  <span className="font-bold">
+                    <span className="text-emerald-400">~{targetSimulation.deliveredPerDay} ent.</span> | <span className="text-red-400">~{targetSimulation.returnedPerDay} dev.</span>
+                  </span>
+                </div>
               </div>
 
               {/* KPI 3: Ganancia Neta Asegurada */}
-              <div className="bg-[#111] border border-white/10 rounded-2xl p-5 relative overflow-hidden shadow-lg">
+              <div className="bg-[#111] border border-emerald-500/30 rounded-2xl p-5 shadow-lg space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
-                    <DollarSign size={12} />
+                  <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <DollarSign size={14} />
                     GANANCIA NETA LIBRE
                   </span>
                   <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
@@ -3204,129 +3220,189 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   </span>
                 </div>
 
-                <div className="mt-3">
-                  <div className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
-                    {formatValue(targetSimulation.targetAmount)}
+                <div className="pt-2">
+                  <div className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(targetSimulation.targetAmount) : formatSolesNoDecimals(targetSimulation.targetAmount)}
                   </div>
-                  <p className="text-[11px] text-[#00df9a] font-bold mt-1.5 flex items-center gap-1">
-                    <span>Utilidad por pedido:</span>
-                    <span className="font-mono font-black">{formatValue(targetSimulation.profitPerUnit)}</span>
-                  </p>
                 </div>
 
-                <p className="text-[11px] text-slate-400 mt-3 pt-3 border-t border-white/5 leading-relaxed">
-                  Dinero limpio directo a tu cuenta bancaria después de pagar proveedor, fletes, devoluciones y publicidad.
-                </p>
+                {/* Conversión debajo del monto */}
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                  {currency === 'GTQ' ? (
+                    <>
+                      <span className="text-slate-400">🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">{formatSolesNoDecimals(targetSimulation.targetAmount)}</strong>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(targetSimulation.targetAmount)}</strong>
+                    </>
+                  )}
+                </div>
               </div>
 
               {/* KPI 4: Facturación Bruta Requerida (GMV) */}
-              <div className="bg-[#111] border border-white/10 rounded-2xl p-5 relative overflow-hidden shadow-lg">
+              <div className="bg-[#111] border border-sky-500/30 rounded-2xl p-5 shadow-lg space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
-                    <BarChart3 size={12} />
+                  <span className="text-xs font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                    <BarChart3 size={14} />
                     FACTURACIÓN BRUTA
                   </span>
                   <span className="text-[10px] font-mono font-bold text-slate-400">
-                    PV: {formatValue(computed.precioVenta)}
+                    PV: {currency === 'GTQ' ? formatQuetzalesNoDecimals(computed.precioVenta) : formatSolesNoDecimals(computed.precioVenta)}
                   </span>
                 </div>
 
-                <div className="mt-3">
-                  <div className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
-                    {formatValue(targetSimulation.totalRevenue)}
+                <div className="pt-2">
+                  <div className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(targetSimulation.totalRevenue) : formatSolesNoDecimals(targetSimulation.totalRevenue)}
                   </div>
-                  <p className="text-[11px] text-slate-400 font-bold mt-1.5">
-                    Volumen bruto transaccionado en la tienda
-                  </p>
                 </div>
 
-                <p className="text-[11px] text-slate-400 mt-3 pt-3 border-t border-white/5 leading-relaxed">
-                  Total de ventas que pasarán por tu pasarela / transportadora durante el período.
-                </p>
+                {/* Conversión debajo del monto */}
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                  {currency === 'GTQ' ? (
+                    <>
+                      <span className="text-slate-400">🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">{formatSolesNoDecimals(targetSimulation.totalRevenue)}</strong>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(targetSimulation.totalRevenue)}</strong>
+                    </>
+                  )}
+                </div>
               </div>
 
             </div>
 
             {/* PLAN DE ACCIÓN FINANCIERO: Presupuestos e Inversión Requerida */}
-            <div className="bg-[#111] border border-white/5 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-[#ff5500]/15 text-[#ff5500] flex items-center justify-center font-black">
-                    💼
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-white uppercase tracking-wider">
-                      Presupuesto de Operación e Inversión Requerida
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      Capital de trabajo necesario para ejecutar los {targetSimulation.dispatchedNeeded} pedidos y cumplir la meta
-                    </p>
-                  </div>
+            <div className="bg-[#0b0b0b] border border-white/15 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                    Presupuesto de Operación e Inversión Requerida
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Capital de trabajo necesario para ejecutar los {targetSimulation.dispatchedNeeded} pedidos y cumplir la meta
+                  </p>
                 </div>
 
-                <div className="text-right">
+                <div className="text-left sm:text-right">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">COSTO OPERATIVO TOTAL</span>
-                  <span className="text-base font-mono font-black text-slate-200">
-                    {formatValue(targetSimulation.adsBudgetTotal + targetSimulation.supplierCostTotal + targetSimulation.shippingCostTotal + targetSimulation.adminCostTotal)}
+                  <span className="text-base font-mono font-black text-white">
+                    {currency === 'GTQ' 
+                      ? formatQuetzalesNoDecimals(targetSimulation.adsBudgetTotal + targetSimulation.supplierCostTotal + targetSimulation.shippingCostTotal + targetSimulation.adminCostTotal) 
+                      : formatSolesNoDecimals(targetSimulation.adsBudgetTotal + targetSimulation.supplierCostTotal + targetSimulation.shippingCostTotal + targetSimulation.adminCostTotal)}
                   </span>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
                 {/* 1. Presupuesto Publicidad */}
-                <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                  <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider flex items-center gap-1">
-                    📢 Inversión en Ads (Meta/TikTok)
+                <div className="p-4 rounded-xl bg-[#111] border border-blue-500/30 space-y-2">
+                  <span className="text-xs font-black uppercase text-blue-400 tracking-wider flex items-center gap-1">
+                    📢 Ads (Meta/TikTok)
                   </span>
-                  <div className="text-lg font-mono font-black text-white">
-                    {formatValue(targetSimulation.adsBudgetTotal)}
+                  <div className="text-2xl font-mono font-black text-white">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(targetSimulation.adsBudgetTotal) : formatSolesNoDecimals(targetSimulation.adsBudgetTotal)}
                   </div>
-                  <div className="text-[11px] text-blue-300 font-bold bg-blue-500/10 px-2 py-0.5 rounded-md inline-block">
-                    {formatValue(targetSimulation.adsBudgetDaily)} / día
+                  <div className="text-xs text-blue-300 font-bold bg-blue-500/10 px-2 py-0.5 rounded-md inline-block">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(targetSimulation.adsBudgetDaily) : formatSolesNoDecimals(targetSimulation.adsBudgetDaily)} / día
                   </div>
-                  <p className="text-[10px] text-slate-500">CPA base: {formatValue(parseFloat(inputs.cpaAds) || 0)}</p>
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                    {currency === 'GTQ' ? (
+                      <>
+                        <span className="text-slate-400">🇵🇪 En Soles:</span>
+                        <strong className="text-white font-bold">{formatSolesNoDecimals(targetSimulation.adsBudgetTotal)}</strong>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                        <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(targetSimulation.adsBudgetTotal)}</strong>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* 2. Inversión en Mercancía / Proveedor */}
-                <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                  <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider flex items-center gap-1">
+                <div className="p-4 rounded-xl bg-[#111] border border-amber-500/30 space-y-2">
+                  <span className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center gap-1">
                     📦 Proveedor (Mercancía)
                   </span>
-                  <div className="text-lg font-mono font-black text-white">
-                    {formatValue(targetSimulation.supplierCostTotal)}
+                  <div className="text-2xl font-mono font-black text-white">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(targetSimulation.supplierCostTotal) : formatSolesNoDecimals(targetSimulation.supplierCostTotal)}
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    Costo x pack: {formatValue(computed.proveedor)}
+                  <div className="text-xs text-slate-400">
+                    Costo x pack: {currency === 'GTQ' ? formatQuetzalesNoDecimals(computed.proveedor) : formatSolesNoDecimals(computed.proveedor)}
                   </div>
-                  <p className="text-[10px] text-slate-500">Stock: {targetSimulation.dispatchedNeeded * (parseFloat(inputs.packUnits) || 1)} unidades</p>
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                    {currency === 'GTQ' ? (
+                      <>
+                        <span className="text-slate-400">🇵🇪 En Soles:</span>
+                        <strong className="text-white font-bold">{formatSolesNoDecimals(targetSimulation.supplierCostTotal)}</strong>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                        <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(targetSimulation.supplierCostTotal)}</strong>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* 3. Costo Fletes y Envíos */}
-                <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                  <span className="text-[10px] font-black uppercase text-purple-400 tracking-wider flex items-center gap-1">
+                <div className="p-4 rounded-xl bg-[#111] border border-purple-500/30 space-y-2">
+                  <span className="text-xs font-black uppercase text-purple-400 tracking-wider flex items-center gap-1">
                     🚚 Fletes y Devoluciones
                   </span>
-                  <div className="text-lg font-mono font-black text-white">
-                    {formatValue(targetSimulation.shippingCostTotal)}
+                  <div className="text-2xl font-mono font-black text-white">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(targetSimulation.shippingCostTotal) : formatSolesNoDecimals(targetSimulation.shippingCostTotal)}
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    Flete base: {formatValue(parseFloat(inputs.shippingBase) || 0)}
+                  <div className="text-xs text-slate-400">
+                    Flete base: {currency === 'GTQ' ? formatQuetzalesNoDecimals(parseFloat(inputs.shippingBase) || 0) : formatSolesNoDecimals(parseFloat(inputs.shippingBase) || 0)}
                   </div>
-                  <p className="text-[10px] text-slate-500">~{targetSimulation.estimatedReturns} devoluciones amortizadas</p>
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                    {currency === 'GTQ' ? (
+                      <>
+                        <span className="text-slate-400">🇵🇪 En Soles:</span>
+                        <strong className="text-white font-bold">{formatSolesNoDecimals(targetSimulation.shippingCostTotal)}</strong>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                        <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(targetSimulation.shippingCostTotal)}</strong>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* 4. Costos Administrativos y Fulfillment */}
-                <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                  <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1">
+                <div className="p-4 rounded-xl bg-[#111] border border-emerald-500/30 space-y-2">
+                  <span className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1">
                     🏢 Admin & Fulfillment
                   </span>
-                  <div className="text-lg font-mono font-black text-white">
-                    {formatValue(targetSimulation.adminCostTotal)}
+                  <div className="text-2xl font-mono font-black text-white">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(targetSimulation.adminCostTotal) : formatSolesNoDecimals(targetSimulation.adminCostTotal)}
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    {formatValue(parseFloat(inputs.adminCosts) || 0)} por despacho
+                  <div className="text-xs text-slate-400">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(parseFloat(inputs.adminCosts) || 0) : formatSolesNoDecimals(parseFloat(inputs.adminCosts) || 0)} por despacho
                   </div>
-                  <p className="text-[10px] text-slate-500">Plataformas, equipo y logística</p>
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                    {currency === 'GTQ' ? (
+                      <>
+                        <span className="text-slate-400">🇵🇪 En Soles:</span>
+                        <strong className="text-white font-bold">{formatSolesNoDecimals(targetSimulation.adminCostTotal)}</strong>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                        <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(targetSimulation.adminCostTotal)}</strong>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -3335,13 +3411,13 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             {(() => {
               const tier = getScaleTier(targetSimulation.dispatchedPerDay);
               return (
-                <div className="bg-[#111] border border-white/5 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="bg-[#111] border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                         Nivel de Escala Requerido:
                       </span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase border ${tier.badgeColor}`}>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase border ${tier.badgeColor}`}>
                         {tier.name}
                       </span>
                     </div>
@@ -3351,7 +3427,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   </div>
 
                   <div className="w-full sm:w-64 space-y-1.5 shrink-0">
-                    <div className="flex justify-between text-[10px] font-black uppercase text-slate-400">
+                    <div className="flex justify-between text-xs font-black uppercase text-slate-400">
                       <span>Ritmo diario</span>
                       <span className="text-white font-mono">{targetSimulation.dispatchedPerDay} despachos/día</span>
                     </div>
@@ -3373,10 +3449,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
         {simulationMode === 'salesToProfit' && (
           <div className="space-y-6 relative z-10">
             {/* Mode B Header Bar with One-Click Currency Converter & Dropi Selector */}
-            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-white/5 pb-3">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-white/10 pb-3">
               <div>
-                <span className="text-[10px] font-black uppercase text-[#00df9a] tracking-widest flex items-center gap-1">
-                  <TrendingUp size={12} />
+                <span className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1.5">
+                  <TrendingUp size={14} />
                   PROYECCIÓN POR VOLUMEN DE VENTAS
                 </span>
                 <p className="text-xs text-slate-400">
@@ -3387,9 +3463,9 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
               {/* Controls: Dropi Batch Selector + Currency Toggles */}
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Quick Dropi Batch Selector */}
-                <div className="flex items-center gap-1.5 bg-[#111] border border-white/10 px-2.5 py-1 rounded-xl">
-                  <FileSpreadsheet size={13} className="text-[#00df9a]" />
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Lote Dropi:</span>
+                <div className="flex items-center gap-1.5 bg-[#141414] border border-white/10 px-2.5 py-1 rounded-xl">
+                  <FileSpreadsheet size={13} className="text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Lote Dropi:</span>
                   <select
                     value={selectedDropiBatchId}
                     onChange={(e) => {
@@ -3412,7 +3488,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                   <button
                     type="button"
                     onClick={handleLoadDropiStatsIntoCalculator}
-                    className="text-[10px] font-black uppercase text-[#00df9a] hover:text-emerald-300 transition-colors flex items-center gap-0.5 cursor-pointer bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/30"
+                    className="text-xs font-black uppercase text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-0.5 cursor-pointer bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/30"
                     title="Cargar costos de este archivo a la simulación"
                   >
                     <Zap size={10} />
@@ -3424,10 +3500,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 <button
                   type="button"
                   onClick={() => convertEntireCalculator('PEN')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
                     currency === 'PEN'
-                      ? 'bg-amber-500 text-black border-amber-500 shadow-amber-500/20 ring-2 ring-amber-400/50'
-                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                      ? 'border-amber-400 text-amber-300 bg-amber-500/15 ring-2 ring-amber-400/50'
+                      : 'border-white/10 text-slate-400 hover:text-white bg-transparent'
                   }`}
                   title="Ver y calcular en Soles peruanos"
                 >
@@ -3436,10 +3512,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 <button
                   type="button"
                   onClick={() => convertEntireCalculator('GTQ')}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer border shadow-sm active:scale-95 ${
                     currency === 'GTQ'
-                      ? 'bg-[#00df9a] text-black border-[#00df9a] shadow-[#00df9a]/20 ring-2 ring-[#00df9a]/50'
-                      : 'bg-[#00df9a]/10 hover:bg-[#00df9a]/20 text-[#00df9a] border-[#00df9a]/30'
+                      ? 'border-emerald-400 text-emerald-300 bg-emerald-500/15 ring-2 ring-emerald-400/50'
+                      : 'border-white/10 text-slate-400 hover:text-white bg-transparent'
                   }`}
                   title="Ver y calcular en Quetzales guatemaltecos"
                 >
@@ -3451,8 +3527,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             {/* Sales Volume Input */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-end">
               <div className="md:col-span-7 space-y-2">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShoppingBag size={14} className="text-[#00df9a]" />
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShoppingBag size={14} className="text-emerald-400" />
                   ¿Cuántos pedidos planeas despachar?
                 </label>
                 <div className="flex gap-2">
@@ -3461,12 +3537,12 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     value={plannedSalesInput}
                     onChange={(e) => setPlannedSalesInput(e.target.value)}
                     placeholder="15"
-                    className="w-full bg-[#111] border-2 border-[#00df9a]/40 focus:border-[#00df9a] rounded-xl py-3 px-4 text-xl sm:text-2xl font-mono font-black text-white focus:outline-none transition-all shadow-inner"
+                    className="w-full bg-[#111] border border-white/15 focus:border-emerald-400 rounded-xl py-3 px-4 text-xl sm:text-2xl font-mono font-black text-white focus:outline-none transition-all shadow-inner"
                   />
                   <select
                     value={plannedSalesUnit}
                     onChange={(e) => setPlannedSalesUnit(e.target.value as any)}
-                    className="bg-[#111] border-2 border-white/10 focus:border-[#00df9a] rounded-xl px-4 text-sm font-black text-white uppercase tracking-wider focus:outline-none cursor-pointer"
+                    className="bg-[#111] border border-white/15 focus:border-emerald-400 rounded-xl px-4 text-xs font-black text-white uppercase tracking-wider focus:outline-none cursor-pointer"
                   >
                     <option value="day">Pedidos / Día</option>
                     <option value="month">Pedidos / Mes</option>
@@ -3475,7 +3551,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
 
                 {/* Preset suggestions */}
                 <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1">
                     Volúmenes comunes:
                   </span>
                   {[
@@ -3494,7 +3570,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                         setPlannedSalesInput(preset.val);
                         setPlannedSalesUnit(preset.unit as any);
                       }}
-                      className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                      className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-[#111] hover:bg-white/5 text-slate-300 border border-white/10 hover:border-emerald-400/30 transition-all cursor-pointer"
                     >
                       {preset.label}
                     </button>
@@ -3502,14 +3578,14 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 </div>
               </div>
 
-              <div className="md:col-span-5 p-4 rounded-xl bg-black/40 border border-white/5 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              <div className="md:col-span-5 p-4 rounded-xl bg-[#111] border border-white/10 space-y-1">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
                   Efectividad de Entrega
                 </span>
                 <p className="text-sm font-black text-white">
                   {inputs.finalDeliveryPercent}% entrega final estimada
                 </p>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-xs text-slate-500">
                   De {salesSimulation.monthlyDispatched} despachos al mes, se cobrarán ~{salesSimulation.monthlyDelivered} pedidos entregados.
                 </p>
               </div>
@@ -3519,140 +3595,116 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               
               {/* Ganancia Mensual Proyectada */}
-              <div className="bg-gradient-to-b from-[#00df9a]/15 via-[#111] to-[#111] border-2 border-[#00df9a]/40 rounded-2xl p-5 shadow-xl space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#00df9a] flex items-center gap-1">
-                  <DollarSign size={13} />
+              <div className="bg-[#111] border border-emerald-500/30 rounded-2xl p-5 shadow-lg space-y-2">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                  <DollarSign size={14} />
                   GANANCIA NETA MENSUAL (30 DÍAS)
                 </span>
-                <div className="text-3xl sm:text-4xl font-display font-black text-[#00df9a] tracking-tight">
-                  {formatValue(salesSimulation.monthlyProfit)}
+                <div className="pt-2">
+                  <div className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.monthlyProfit) : formatSolesNoDecimals(salesSimulation.monthlyProfit)}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-lg bg-[#00df9a]/20 border border-[#00df9a]/40 text-[#00df9a] text-xs font-black uppercase">
-                    {formatValue(salesSimulation.dailyProfit)} / día
+                  <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-bold">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyProfit) : formatSolesNoDecimals(salesSimulation.dailyProfit)} / día
                   </span>
                 </div>
 
                 {/* Live currency conversion tag */}
-                <div className="pt-2 border-t border-white/5 text-[11px] font-mono">
-                  {currency === 'PEN' ? (
-                    <div className="text-amber-300 font-bold bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg flex items-center justify-between">
-                      <span>🇬🇹 En Quetzales:</span>
-                      <span>Q {(salesSimulation.monthlyProfit * ratePENtoGTQ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
-                  ) : currency === 'GTQ' ? (
-                    <div className="text-amber-300 font-bold bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg flex items-center justify-between">
-                      <span>🇵🇪 En Soles:</span>
-                      <span>S/ {(salesSimulation.monthlyProfit * rateGTQtoPEN).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                  {currency === 'GTQ' ? (
+                    <>
+                      <span className="text-slate-400">🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">{formatSolesNoDecimals(salesSimulation.monthlyProfit)}</strong>
+                    </>
                   ) : (
-                    <div className="text-slate-300 text-[10px] space-y-0.5">
-                      <div>🇵🇪 {formatSolesAndQuetzales(salesSimulation.monthlyProfit).soles} / mes</div>
-                      <div>🇬🇹 {formatSolesAndQuetzales(salesSimulation.monthlyProfit).quetzales} / mes</div>
-                    </div>
+                    <>
+                      <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(salesSimulation.monthlyProfit)}</strong>
+                    </>
                   )}
                 </div>
-
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Utilidad neta calculada sobre los {salesSimulation.monthlyDelivered} pedidos efectivamente entregados.
-                </p>
               </div>
 
               {/* Facturación Bruta (GMV) */}
-              <div className="bg-[#111] border border-white/10 rounded-2xl p-5 shadow-lg space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
-                  <BarChart3 size={13} />
+              <div className="bg-[#111] border border-sky-500/30 rounded-2xl p-5 shadow-lg space-y-2">
+                <span className="text-xs font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                  <BarChart3 size={14} />
                   FACTURACIÓN MENSUAL BRUTA
                 </span>
-                <div className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
-                  {formatValue(salesSimulation.monthlyRevenue)}
+                <div className="pt-2">
+                  <div className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.monthlyRevenue) : formatSolesNoDecimals(salesSimulation.monthlyRevenue)}
+                  </div>
                 </div>
                 <p className="text-xs text-slate-400 font-mono">
-                  {salesSimulation.monthlyDispatched} pedidos despachados @ {formatValue(computed.precioVenta)}
+                  {salesSimulation.monthlyDispatched} pedidos despachados @ {currency === 'GTQ' ? formatQuetzalesNoDecimals(computed.precioVenta) : formatSolesNoDecimals(computed.precioVenta)}
                 </p>
 
                 {/* Live currency conversion tag */}
-                <div className="pt-2 border-t border-white/5 text-[11px] font-mono">
-                  {currency === 'PEN' ? (
-                    <div className="text-slate-300 bg-white/5 border border-white/10 px-2 py-1 rounded-lg flex items-center justify-between">
-                      <span>🇬🇹 En Quetzales:</span>
-                      <span className="text-[#00df9a] font-bold">Q {(salesSimulation.monthlyRevenue * ratePENtoGTQ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
-                  ) : currency === 'GTQ' ? (
-                    <div className="text-slate-300 bg-white/5 border border-white/10 px-2 py-1 rounded-lg flex items-center justify-between">
-                      <span>🇵🇪 En Soles:</span>
-                      <span className="text-amber-300 font-bold">S/ {(salesSimulation.monthlyRevenue * rateGTQtoPEN).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                  {currency === 'GTQ' ? (
+                    <>
+                      <span className="text-slate-400">🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">{formatSolesNoDecimals(salesSimulation.monthlyRevenue)}</strong>
+                    </>
                   ) : (
-                    <div className="text-slate-400 text-[10px]">
-                      🇵🇪 {formatSolesAndQuetzales(salesSimulation.monthlyRevenue).soles} | 🇬🇹 {formatSolesAndQuetzales(salesSimulation.monthlyRevenue).quetzales}
-                    </div>
+                    <>
+                      <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(salesSimulation.monthlyRevenue)}</strong>
+                    </>
                   )}
                 </div>
-
-                <p className="text-[10px] text-slate-500">
-                  Ingreso total bruto que circulará por tu operación comercial en 30 días.
-                </p>
               </div>
 
               {/* Presupuesto Publicitario Requerido */}
-              <div className="bg-[#111] border border-white/10 rounded-2xl p-5 shadow-lg space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-blue-400 flex items-center gap-1">
+              <div className="bg-[#111] border border-blue-500/30 rounded-2xl p-5 shadow-lg space-y-2">
+                <span className="text-xs font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
                   📢 PRESUPUESTO PUBLICIDAD (ADS)
                 </span>
-                <div className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
-                  {formatValue(salesSimulation.monthlyAdsBudget)}
+                <div className="pt-2">
+                  <div className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight">
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.monthlyAdsBudget) : formatSolesNoDecimals(salesSimulation.monthlyAdsBudget)}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-mono font-bold">
-                    {formatValue(salesSimulation.dailyAdsBudget)} / día en Ads
+                    {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyAdsBudget) : formatSolesNoDecimals(salesSimulation.dailyAdsBudget)} / día
                   </span>
                 </div>
 
                 {/* Live currency conversion tag */}
-                <div className="pt-2 border-t border-white/5 text-[11px] font-mono">
-                  {currency === 'PEN' ? (
-                    <div className="text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg flex items-center justify-between">
-                      <span>🇬🇹 En Quetzales:</span>
-                      <span className="font-bold">Q {(salesSimulation.monthlyAdsBudget * ratePENtoGTQ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Q {(salesSimulation.dailyAdsBudget * ratePENtoGTQ).toFixed(1)}/d)</span>
-                    </div>
-                  ) : currency === 'GTQ' ? (
-                    <div className="text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg flex items-center justify-between">
-                      <span>🇵🇪 En Soles:</span>
-                      <span className="font-bold">S/ {(salesSimulation.monthlyAdsBudget * rateGTQtoPEN).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (S/ {(salesSimulation.dailyAdsBudget * rateGTQtoPEN).toFixed(1)}/d)</span>
-                    </div>
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                  {currency === 'GTQ' ? (
+                    <>
+                      <span className="text-slate-400">🇵🇪 En Soles:</span>
+                      <strong className="text-white font-bold">{formatSolesNoDecimals(salesSimulation.monthlyAdsBudget)}</strong>
+                    </>
                   ) : (
-                    <div className="text-slate-400 text-[10px]">
-                      🇵🇪 {formatSolesAndQuetzales(salesSimulation.monthlyAdsBudget).soles} | 🇬🇹 {formatSolesAndQuetzales(salesSimulation.monthlyAdsBudget).quetzales}
-                    </div>
+                    <>
+                      <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                      <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(salesSimulation.monthlyAdsBudget)}</strong>
+                    </>
                   )}
                 </div>
-
-                <p className="text-[10px] text-slate-500">
-                  Presupuesto diario indispensable en Facebook o TikTok Ads para generar tu ritmo de ventas.
-                </p>
               </div>
 
             </div>
 
             {/* SECCIÓN SOLICITADA: CUÁNTO SE ENTREGA Y SE DEVUELVE POR DÍA */}
-            <div className="bg-gradient-to-r from-emerald-500/5 via-[#111] to-red-500/5 border-2 border-white/10 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/20 to-red-500/20 border border-white/10 flex items-center justify-center text-white font-black">
-                    📊
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                      <span>DINÁMICA DIARIA: ¿CUÁNTO SE ENTREGA Y SE DEVUELVE POR DÍA?</span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-slate-300 font-bold">
-                        {salesSimulation.dailyDispatched} despachos / día
-                      </span>
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      Desglose operativo entre paquetes cobrados con éxito vs devoluciones que generan costo de flete.
-                    </p>
-                  </div>
+            <div className="bg-[#0b0b0b] border border-white/15 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>DINÁMICA DIARIA: ¿CUÁNTO SE ENTREGA Y SE DEVUELVE POR DÍA?</span>
+                    <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-white/10 text-slate-300 font-bold">
+                      {salesSimulation.dailyDispatched} despachos / día
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Desglose operativo entre paquetes cobrados con éxito vs devoluciones que generan costo de flete.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 text-xs font-mono">
@@ -3669,13 +3721,13 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
                 {/* 1. SE ENTREGA POR DÍA */}
-                <div className="p-4 rounded-xl bg-emerald-500/5 border-2 border-emerald-500/30 space-y-3 relative overflow-hidden shadow-lg shadow-emerald-500/5">
+                <div className="p-5 rounded-2xl bg-[#111] border border-emerald-500/30 space-y-3 shadow-lg">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1.5">
                       <CheckCircle2 size={15} />
                       SE ENTREGA POR DÍA
                     </span>
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-black">
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-black">
                       COBRADO AL CLIENTE
                     </span>
                   </div>
@@ -3684,45 +3736,48 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <span className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight">
                       ~{salesSimulation.dailyDelivered}
                     </span>
-                    <span className="text-sm font-bold text-emerald-400 uppercase">pedidos entregados / día</span>
+                    <span className="text-xs font-bold text-emerald-400 uppercase">pedidos entregados / día</span>
                   </div>
 
                   <div className="space-y-1.5 text-xs font-mono pt-1">
                     <div className="flex justify-between items-center text-slate-300">
-                      <span>Volumen en 30 días:</span>
-                      <strong className="text-white font-bold">~{salesSimulation.monthlyDelivered} entregas</strong>
-                    </div>
-                    <div className="flex justify-between items-center text-slate-300">
                       <span>Facturación diaria cobrada:</span>
-                      <strong className="text-emerald-400 font-bold">{formatValue(salesSimulation.dailyDeliveredRevenue)} / día</strong>
+                      <strong className="text-white font-bold">
+                        {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyDeliveredRevenue) : formatSolesNoDecimals(salesSimulation.dailyDeliveredRevenue)} / día
+                      </strong>
                     </div>
                     <div className="flex justify-between items-center text-slate-300">
                       <span>Ganancia neta limpia por día:</span>
-                      <strong className="text-[#00df9a] font-bold">{formatValue(salesSimulation.dailyProfit)} / día</strong>
+                      <strong className="text-emerald-400 font-bold">
+                        {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyProfit) : formatSolesNoDecimals(salesSimulation.dailyProfit)} / día
+                      </strong>
                     </div>
 
                     {/* Live conversion for daily delivered amount */}
-                    <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-[11px] text-amber-300">
-                      <span>Equivalente en vivo:</span>
-                      {currency === 'PEN' ? (
-                        <span className="font-bold">🇬🇹 Q {(salesSimulation.dailyDeliveredRevenue * ratePENtoGTQ).toFixed(2)} facturado / día</span>
-                      ) : currency === 'GTQ' ? (
-                        <span className="font-bold">🇵🇪 S/ {(salesSimulation.dailyDeliveredRevenue * rateGTQtoPEN).toFixed(2)} facturado / día</span>
+                    <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs font-mono">
+                      {currency === 'GTQ' ? (
+                        <>
+                          <span className="text-slate-400">🇵🇪 En Soles:</span>
+                          <strong className="text-white font-bold">{formatSolesNoDecimals(salesSimulation.dailyDeliveredRevenue)} fact. / día</strong>
+                        </>
                       ) : (
-                        <span>🇵🇪 {formatSolesAndQuetzales(salesSimulation.dailyDeliveredRevenue).soles} | 🇬🇹 {formatSolesAndQuetzales(salesSimulation.dailyDeliveredRevenue).quetzales}</span>
+                        <>
+                          <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                          <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(salesSimulation.dailyDeliveredRevenue)} fact. / día</strong>
+                        </>
                       )}
                     </div>
                   </div>
                 </div>
 
                 {/* 2. SE DEVUELVE POR DÍA */}
-                <div className="p-4 rounded-xl bg-red-500/5 border-2 border-red-500/30 space-y-3 relative overflow-hidden shadow-lg shadow-red-500/5">
+                <div className="p-5 rounded-2xl bg-[#111] border border-red-500/30 space-y-3 shadow-lg">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black uppercase text-red-400 tracking-wider flex items-center gap-1.5">
                       <RotateCcw size={15} />
                       SE DEVUELVE POR DÍA
                     </span>
-                    <span className="px-2 py-0.5 rounded-md bg-red-500/20 text-red-300 font-mono text-[10px] font-black">
+                    <span className="px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/30 text-red-300 font-mono text-xs font-black">
                       LOGÍSTICA INVERSA
                     </span>
                   </div>
@@ -3731,32 +3786,35 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <span className="text-3xl sm:text-4xl font-display font-black text-white tracking-tight">
                       ~{salesSimulation.dailyReturned}
                     </span>
-                    <span className="text-sm font-bold text-red-400 uppercase">pedidos devueltos / día</span>
+                    <span className="text-xs font-bold text-red-400 uppercase">pedidos devueltos / día</span>
                   </div>
 
                   <div className="space-y-1.5 text-xs font-mono pt-1">
                     <div className="flex justify-between items-center text-slate-300">
-                      <span>Devoluciones en 30 días:</span>
-                      <strong className="text-red-400 font-bold">~{salesSimulation.monthlyReturned} paquetes</strong>
-                    </div>
-                    <div className="flex justify-between items-center text-slate-300">
                       <span>Costo flete perdido por día:</span>
-                      <strong className="text-red-400 font-bold">{formatValue(salesSimulation.dailyReturnLoss)} / día</strong>
+                      <strong className="text-red-400 font-bold">
+                        {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyReturnLoss) : formatSolesNoDecimals(salesSimulation.dailyReturnLoss)} / día
+                      </strong>
                     </div>
                     <div className="flex justify-between items-center text-slate-300">
                       <span>Gasto mensual en devoluciones:</span>
-                      <strong className="text-slate-200 font-bold">{formatValue(salesSimulation.monthlyReturnLoss)} / mes</strong>
+                      <strong className="text-slate-200 font-bold">
+                        {currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.monthlyReturnLoss) : formatSolesNoDecimals(salesSimulation.monthlyReturnLoss)} / mes
+                      </strong>
                     </div>
 
                     {/* Live conversion for daily returned cost */}
-                    <div className="pt-2 border-t border-red-500/20 flex items-center justify-between text-[11px] text-amber-300">
-                      <span>Equivalente en vivo:</span>
-                      {currency === 'PEN' ? (
-                        <span className="font-bold">🇬🇹 Q {(salesSimulation.dailyReturnLoss * ratePENtoGTQ).toFixed(2)} flete devuelto / día</span>
-                      ) : currency === 'GTQ' ? (
-                        <span className="font-bold">🇵🇪 S/ {(salesSimulation.dailyReturnLoss * rateGTQtoPEN).toFixed(2)} flete devuelto / día</span>
+                    <div className="pt-2 border-t border-red-500/20 flex items-center justify-between text-xs font-mono">
+                      {currency === 'GTQ' ? (
+                        <>
+                          <span className="text-slate-400">🇵🇪 En Soles:</span>
+                          <strong className="text-white font-bold">{formatSolesNoDecimals(salesSimulation.dailyReturnLoss)} / día</strong>
+                        </>
                       ) : (
-                        <span>🇵🇪 {formatSolesAndQuetzales(salesSimulation.dailyReturnLoss).soles} | 🇬🇹 {formatSolesAndQuetzales(salesSimulation.dailyReturnLoss).quetzales}</span>
+                        <>
+                          <span className="text-slate-400">🇬🇹 En Quetzales:</span>
+                          <strong className="text-amber-300 font-bold">{formatQuetzalesNoDecimals(salesSimulation.dailyReturnLoss)} / día</strong>
+                        </>
                       )}
                     </div>
                   </div>
@@ -3765,8 +3823,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
               </div>
 
               {/* Proportional Balance Bar */}
-              <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                <div className="flex justify-between text-[11px] font-bold text-slate-300">
+              <div className="p-3.5 rounded-xl bg-[#111] border border-white/10 space-y-2">
+                <div className="flex justify-between text-xs font-bold text-slate-300">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-400" />
                     Entregas: {salesSimulation.dailyDelivered} al día ({inputs.finalDeliveryPercent}%)
@@ -3778,7 +3836,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 </div>
                 <div className="h-2 w-full rounded-full bg-black/60 border border-white/10 overflow-hidden flex">
                   <div 
-                    className="h-full bg-[#00df9a] transition-all duration-300"
+                    className="h-full bg-emerald-500 transition-all duration-300"
                     style={{ width: `${inputs.finalDeliveryPercent}%` }}
                     title={`Entregas: ${inputs.finalDeliveryPercent}%`}
                   />
@@ -3788,39 +3846,33 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     title={`Devoluciones: ${salesSimulation.returnRate}%`}
                   />
                 </div>
-                <p className="text-[10px] text-slate-500 pt-0.5">
-                  💡 <strong>Nota del modelo:</strong> El flete y el CPA de los paquetes devueltos ya están costeados dentro de tu costo total, por lo que tu ganancia neta proyectada de {formatValue(salesSimulation.dailyProfit)} al día es 100% libre.
-                </p>
 
                 {/* Executive Daily Balance Summary */}
-                <div className="p-3.5 rounded-xl bg-black/60 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+                <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono mt-2">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm shrink-0">
-                      ⚖️
-                    </div>
                     <div>
-                      <span className="text-white font-black block text-[11px] uppercase tracking-wider">
-                        Balanza Diaria de Dinero (Entregas vs Devoluciones):
+                      <span className="text-white font-black block text-xs uppercase tracking-wider">
+                        Balanza Diaria (Entregas vs Devoluciones):
                       </span>
-                      <p className="text-slate-400 text-[11px]">
-                        Cobras <strong className="text-emerald-400">{formatValue(salesSimulation.dailyDeliveredRevenue)}/día</strong> (~{salesSimulation.dailyDelivered} pedidos) y pierdes <strong className="text-red-400">{formatValue(salesSimulation.dailyReturnLoss)}/día</strong> en fletes devueltos (~{salesSimulation.dailyReturned} pedidos).
+                      <p className="text-slate-400 text-xs">
+                        Cobras <strong className="text-emerald-400">{currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyDeliveredRevenue) : formatSolesNoDecimals(salesSimulation.dailyDeliveredRevenue)}/día</strong> y pierdes <strong className="text-red-400">{currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyReturnLoss) : formatSolesNoDecimals(salesSimulation.dailyReturnLoss)}/día</strong> en fletes devueltos.
                       </p>
                     </div>
                   </div>
-                  <div className="sm:text-right shrink-0 bg-white/5 px-3 py-2 rounded-lg border border-white/5">
+                  <div className="sm:text-right shrink-0 bg-[#111] px-3 py-2 rounded-lg border border-white/10">
                     <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold">
-                      Ganancia Neta en Bolsillo:
+                      Ganancia Neta Diaria:
                     </span>
-                    <span className="text-base font-black text-[#00df9a]">
-                      +{formatValue(salesSimulation.dailyProfit)} / día
+                    <span className="text-base font-black text-emerald-400">
+                      +{currency === 'GTQ' ? formatQuetzalesNoDecimals(salesSimulation.dailyProfit) : formatSolesNoDecimals(salesSimulation.dailyProfit)} / día
                     </span>
                     {currency === 'PEN' ? (
-                      <span className="text-[10px] text-amber-300 block font-bold">
-                        🇬🇹 +Q {(salesSimulation.dailyProfit * ratePENtoGTQ).toFixed(2)} / día
+                      <span className="text-xs text-amber-300 block font-bold">
+                        🇬🇹 +{formatQuetzalesNoDecimals(salesSimulation.dailyProfit)} / día
                       </span>
                     ) : currency === 'GTQ' ? (
-                      <span className="text-[10px] text-amber-300 block font-bold">
-                        🇵🇪 +S/ {(salesSimulation.dailyProfit * rateGTQtoPEN).toFixed(2)} / día
+                      <span className="text-xs text-white block font-bold">
+                        🇵🇪 +{formatSolesNoDecimals(salesSimulation.dailyProfit)} / día
                       </span>
                     ) : null}
                   </div>
@@ -3833,160 +3885,32 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
         )}
 
       </div>
-      <div className="bg-[#090909] border border-white/5 rounded-2xl p-6 space-y-6">
-        <div>
-          <h3 className="text-lg font-display font-black tracking-tight text-white uppercase">
-            FÓRMULAS CLAVE <span className="text-[#ff5500]">DEL MODELO</span>
-          </h3>
-          <p className="text-[12px] text-slate-400 mt-1">
-            Comprende los pilares matemáticos que sostienen el modelo de negocio COD.
-          </p>
-        </div>
-
-        {/* Quick high level model badges */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-white/5 pb-6">
-          <div className="bg-[#111] border border-white/5 rounded-xl p-4 flex gap-4 items-start">
-            <span className="bg-[#ff5500]/10 border border-[#ff5500]/20 text-[#ff5500] px-2 py-1 rounded font-black text-[12px]">PV</span>
-            <div>
-              <h4 className="text-[13px] font-black text-white">Precio de Venta</h4>
-              <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                Precio final facturado al cliente. Incluye todos los costos operativos más la utilidad neta deseada.
-              </p>
-            </div>
-          </div>
-          <div className="bg-[#111] border border-white/5 rounded-xl p-4 flex gap-4 items-start">
-            <span className="bg-[#00df9a]/10 border border-[#00df9a]/20 text-[#00df9a] px-2 py-1 rounded font-black text-[12px]">CT</span>
-            <div>
-              <h4 className="text-[13px] font-black text-white">Costos Totales</h4>
-              <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                Suma total de egresos (Proveedor + Flete con devoluciones + CPA + Admin + Fulfillment) antes de margen.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Core Formula Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          
-          {/* Card 1 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">Flete con devoluciones</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[12px] font-bold">
-              Flete base / % entrega despacho
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Calcula el costo real de envío ponderando los despachos fallidos y devoluciones.
-            </p>
-          </div>
-
-          {/* Card 2 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">CPA costeado</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[12px] font-bold">
-              CPA Ads Manager / % entrega final
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Ajusta tu costo por adquisición de publicidad sobre las órdenes entregadas reales.
-            </p>
-          </div>
-
-          {/* Card 3 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">Costos totales (CT)</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[11px] font-bold whitespace-normal break-all">
-              Proveedor + Flete c/dev + Admin + Fulfillment + CPA costeado
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Representa la suma absoluta de egresos e inversiones antes de aplicar el margen.
-            </p>
-          </div>
-
-          {/* Card 4 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">Precio de venta (PV)</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[12px] font-bold">
-              Costos totales / (1 - % utilidad)
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Determina el precio ideal de venta para asegurar tu porcentaje de margen neto.
-            </p>
-          </div>
-
-          {/* Card 5 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">Utilidad ($)</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[12px] font-bold">
-              Precio de venta - Costos totales
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Muestra la ganancia neta absoluta generada por cada venta o pack entregado.
-            </p>
-          </div>
-
-          {/* Card 6 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">Precio comparación</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[12px] font-bold">
-              Precio de venta * 2 (ancla 50% OFF)
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Establece un precio de referencia alto para detonar gatillos mentales de descuento.
-            </p>
-          </div>
-
-          {/* Card 7 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">% sobre PV</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[12px] font-bold">
-              (Valor del costo / Precio de venta) * 100
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Porcentaje que representa cada costo individual respecto al precio final de venta.
-            </p>
-          </div>
-
-          {/* Card 8 */}
-          <div className="bg-[#111] border border-white/5 hover:border-white/10 transition-all rounded-xl p-4 space-y-3">
-            <h4 className="text-[12px] font-black text-white uppercase tracking-wider">% sobre CT</h4>
-            <div className="bg-black/50 border border-white/5 text-[#ff5500] py-2 px-3 rounded-lg text-center font-mono text-[12px] font-bold">
-              (Valor del costo / Costos totales) * 100
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Porcentaje que representa cada costo individual respecto al costo total acumulado.
-            </p>
-          </div>
-
-        </div>
-
-      </div>
 
       {/* HISTORIAL DE CALCULOS */}
-      <div className="bg-[#090909] border border-white/5 rounded-2xl p-6 space-y-6 text-[15px]" style={{ fontSize: '15px' }}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-[#0b0b0b] border border-white/15 rounded-2xl p-6 space-y-6 shadow-xl text-[15px]" style={{ fontSize: '15px' }}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
           <div>
-            <h3 className="text-xl font-display font-black tracking-tight text-white uppercase">
-              HISTORIAL DE CÁLCULOS
+            <h3 className="text-xl sm:text-2xl font-display font-black tracking-tight flex items-center gap-2 flex-wrap">
+              <span className="text-white">HISTORIAL DE CÁLCULOS:</span>
+              <span className="text-sky-400">SIMULACIONES REGISTRADAS</span>
             </h3>
-            <p className="text-[15px] text-slate-400 mt-1">
-              Revisa tus simulaciones guardadas, compáralas o expórtalas.
-            </p>
           </div>
           <div className="flex items-center gap-3">
             {savedProducts.length > 0 && (
               <button 
                 onClick={() => setShowConfirm({ type: 'deleteAll' })}
-                className="bg-red-500/10 border border-red-500/20 text-red-400 px-3.5 py-2.5 rounded-xl text-[14px] sm:text-[15px] font-bold uppercase tracking-wider hover:bg-red-500/20 transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                className="bg-red-500/10 border border-red-500/30 text-red-400 px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-red-500/20 transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
               >
-                <Trash2 size={15} />
+                <Trash2 size={14} />
                 Limpiar Todo
               </button>
             )}
             <button 
               onClick={handleExportHistory}
               disabled={savedProducts.length === 0}
-              className="bg-[#111] border border-white/10 text-slate-200 disabled:opacity-40 hover:bg-slate-900 px-4 py-2.5 rounded-xl text-[14px] sm:text-[15px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+              className="bg-[#141414] border border-white/15 text-slate-200 disabled:opacity-40 hover:bg-white/10 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
             >
-              <Download size={15} />
+              <Download size={14} />
               CSV historial
             </button>
           </div>
@@ -4003,8 +3927,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                 <th className="py-4 px-4 text-center">UNID</th>
                 <th className="py-4 px-4 text-right">COSTOS TOT.</th>
                 <th className="py-4 px-4 text-right">UTILIDAD %</th>
-                <th className="py-4 px-4 text-right text-[#00df9a]">UTILIDAD $</th>
-                <th className="py-4 px-4 text-right text-[#ff5500]">PRECIO VENTA</th>
+                <th className="py-4 px-4 text-right text-emerald-400">UTILIDAD $</th>
+                <th className="py-4 px-4 text-right text-amber-400">PRECIO VENTA</th>
                 <th className="py-4 px-4 text-center">ACCIONES</th>
               </tr>
             </thead>
@@ -4074,7 +3998,7 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     key={p.id} 
                     className={`text-[15px] transition-colors ${
                       isCurrentlyEditing 
-                        ? 'bg-[#ff5500]/10 text-white border-l-4 border-l-[#ff5500]' 
+                        ? 'bg-amber-500/10 text-white border-l-4 border-l-amber-400' 
                         : 'text-slate-300 hover:bg-white/2'
                     }`}
                   >
@@ -4088,11 +4012,11 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                       <button
                         type="button"
                         onClick={() => handleEditProduct(p)}
-                        className="text-left font-bold text-white hover:text-[#ff5500] transition-colors flex items-center gap-1.5 group cursor-pointer text-[15px]"
+                        className="text-left font-bold text-white hover:text-amber-300 transition-colors flex items-center gap-1.5 group cursor-pointer text-[15px]"
                         title="Haz clic para cargar y editar este cálculo"
                       >
                         <span>{p.name}</span>
-                        <Edit2 size={13} className="opacity-0 group-hover:opacity-100 text-[#ff5500] transition-opacity shrink-0" />
+                        <Edit2 size={13} className="opacity-0 group-hover:opacity-100 text-amber-400 transition-opacity shrink-0" />
                       </button>
                       <div className="text-[12px] text-slate-400 font-bold uppercase mt-0.5">{presentationText}</div>
                     </td>
@@ -4108,10 +4032,10 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                     <td className="py-4 px-4 text-right font-mono text-white font-bold text-[15px]">
                       {utilityPercentFormatted}
                     </td>
-                    <td className="py-4 px-4 text-right font-mono font-black text-[#00df9a] text-[15px]">
+                    <td className="py-4 px-4 text-right font-mono font-black text-emerald-400 text-[15px]">
                       {utilityAbsFormatted}
                     </td>
-                    <td className="py-4 px-4 text-right font-mono font-black text-[#ff5500] text-[15px]">
+                    <td className="py-4 px-4 text-right font-mono font-black text-amber-300 text-[15px]">
                       {pvFormatted}
                     </td>
                     <td className="py-4 px-4 text-center">
@@ -4121,8 +4045,8 @@ const ProfitCalculator: React.FC<ProfitCalculatorProps> = ({
                           onClick={() => handleEditProduct(p)}
                           className={`px-3 py-1.5 rounded-lg text-[14px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                             isCurrentlyEditing 
-                              ? 'bg-[#ff5500] text-white shadow-md shadow-[#ff5500]/30 ring-1 ring-[#ff7700]' 
-                              : 'bg-white/5 hover:bg-[#ff5500]/15 text-slate-300 hover:text-[#ff5500] border border-white/10 hover:border-[#ff5500]/30'
+                              ? 'bg-amber-400 text-black font-extrabold shadow-md shadow-amber-400/20 ring-1 ring-amber-300' 
+                              : 'bg-white/5 hover:bg-amber-500/15 text-slate-300 hover:text-amber-300 border border-white/10 hover:border-amber-400/30'
                           }`}
                           title="Editar este cálculo en la calculadora"
                         >
